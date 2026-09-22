@@ -45,8 +45,35 @@ function load() {
     return { days: {}, profile: { ...DEFAULT_PROFILE } };
   }
 }
+// 기기 간 병합에 쓸 수정 시각. 바뀐 날짜에만 찍으려고 직전 내용과 비교한다.
+// (모든 수정 지점에 일일이 touch()를 넣는 것보다 빠뜨릴 일이 없다)
+let lastSeen = {};
+function coreOf(obj) {
+  return JSON.stringify({ ...obj, updatedAt: undefined });
+}
+function seedStamps() {
+  lastSeen = { profile: coreOf(state.profile) };
+  Object.entries(state.days).forEach(([date, d]) => { lastSeen[date] = coreOf(d); });
+}
+function stampChanges() {
+  const now = Date.now();
+  Object.entries(state.days).forEach(([date, d]) => {
+    const json = coreOf(d);
+    if (lastSeen[date] === json) return;
+    if (lastSeen[date] !== undefined || !d.updatedAt) d.updatedAt = now;
+    lastSeen[date] = json;
+  });
+  const pj = coreOf(state.profile);
+  if (lastSeen.profile !== pj) {
+    if (lastSeen.profile !== undefined || !state.profile.updatedAt) state.profile.updatedAt = now;
+    lastSeen.profile = pj;
+  }
+}
+
 function save() {
+  stampChanges();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  scheduleAutoSave();        // 파일 자동 저장 (sync.js)
 }
 
 let state = load();
@@ -83,6 +110,11 @@ function defaultMealType(d = new Date()) {
   if (h < 15) return '점심';
   if (h < 21) return '저녁';
   return '간식';
+}
+// 지운 항목의 id를 남겨둔다. 안 그러면 다른 기기와 합칠 때 지운 게 되살아난다.
+function markDeleted(id, date = currentDate) {
+  const d = day(date);
+  (d.deleted ??= []).push(id);
 }
 function isEmptyDay(d) {
   return !d || (d.meals.length === 0 && d.workouts.length === 0 && !d.note && !d.weight);
@@ -388,6 +420,7 @@ function render() {
   renderHistory();
   renderSuggestions();
   renderRoutineBtn();
+  renderSync();
   updateExHint();
   const note = $('#dayNote');
   if (document.activeElement !== note) note.value = day().note ?? '';
@@ -943,11 +976,13 @@ document.addEventListener('click', (e) => {
     if (!confirm(`'${meal?.name ?? '이 기록'}'을(를) 삭제할까요?`)) return;
     pushUndo(`'${meal?.name ?? '기록'}' 삭제함`);
     day().meals = day().meals.filter((m) => m.id !== ds.delMeal);
+    markDeleted(ds.delMeal);
   } else if (ds.delWorkout) {
     const w = findWorkout(ds.delWorkout);
     if (!confirm('이 운동을 삭제할까요?')) return;
     pushUndo(`'${w?.name ?? '운동'}' 삭제함`);
     day().workouts = day().workouts.filter((x) => x.id !== ds.delWorkout);
+    markDeleted(ds.delWorkout);
   } else if (ds.toggle) {
     const [id, i] = ds.toggle.split(':');
     const set = findWorkout(id).sets[i];
@@ -1005,6 +1040,7 @@ document.addEventListener('click', (e) => {
     } else if (confirm('마지막 세트예요. 이 운동을 삭제할까요?')) {
       pushUndo(`'${w.name}' 삭제함`);
       day().workouts = day().workouts.filter((x) => x.id !== id);
+      markDeleted(id);
     } else {
       return;
     }
@@ -1074,5 +1110,7 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
 }
 
 applyTheme();
+seedStamps();
 $('#mealType').value = defaultMealType();
 render();
+initSync();
