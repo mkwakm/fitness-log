@@ -52,7 +52,9 @@ function save() {
 let state = load();
 let currentDate = todayStr();
 let kcalTouched = false;
-let favCache = [];   // 사용자가 칼로리를 직접 고쳤으면 자동 계산으로 덮어쓰지 않는다
+let favCache = [];
+let range = 7;            // 통계 기간 (일)
+let liftPick = '';        // 중량 추이로 보고 있는 운동   // 사용자가 칼로리를 직접 고쳤으면 자동 계산으로 덮어쓰지 않는다
 
 function todayStr(d = new Date()) {
   const off = d.getTimezoneOffset() * 60000;
@@ -83,7 +85,7 @@ function defaultMealType(d = new Date()) {
   return '간식';
 }
 function isEmptyDay(d) {
-  return !d || (d.meals.length === 0 && d.workouts.length === 0 && !d.note);
+  return !d || (d.meals.length === 0 && d.workouts.length === 0 && !d.note && !d.weight);
 }
 function fmtDate(str) {
   return str.slice(5).replace('-', '/');   // 2026-09-21 → 09/21
@@ -182,9 +184,24 @@ function resetMealForm() {
 }
 
 // ---------- 소모 칼로리 ----------
-function bodyWeight() {
-  const w = Number(state.profile?.weight);
-  return w > 0 ? w : DEFAULT_WEIGHT;
+// 그 날 적은 체중 → 없으면 그 전에 마지막으로 적은 체중 → 그것도 없으면 기본값.
+// 과거 기록의 소모 칼로리가 "그때 체중"으로 계산되도록 날짜별로 본다.
+function bodyWeight(date = currentDate) {
+  const own = Number(state.days[date]?.weight);
+  if (own > 0) return own;
+  const past = Object.keys(state.days)
+    .filter((d) => d <= date && Number(state.days[d].weight) > 0)
+    .sort().reverse()[0];
+  if (past) return Number(state.days[past].weight);
+  const fallback = Number(state.profile?.weight);
+  return fallback > 0 ? fallback : DEFAULT_WEIGHT;
+}
+// 체중을 적은 날만 (추이 그래프용)
+function weightEntries() {
+  return Object.keys(state.days)
+    .filter((d) => Number(state.days[d].weight) > 0)
+    .sort()
+    .map((date) => ({ date, weight: Number(state.days[date].weight) }));
 }
 // 운동 이름별로 직접 지정한 MET. 이름이 같으면 모든 날짜에 함께 적용된다.
 function metKey(name) {
@@ -282,8 +299,10 @@ function lastWorkoutDate(before = currentDate) {
     .sort().reverse()[0] || null;
 }
 
-function dayBurn(d) {
-  const weight = bodyWeight();
+function dayBurn(date) {
+  const d = state.days[date];
+  if (!d) return 0;
+  const weight = bodyWeight(date);
   return d.workouts.reduce((s, w) => s + burnOf(w, weight), 0);
 }
 function dayIntake(d) {
@@ -378,7 +397,7 @@ function renderMeals() {
   const d = day();
   const meals = d.meals;
   const total = dayIntake(d);
-  const burn = dayBurn(d);
+  const burn = dayBurn(currentDate);
   const goal = Number(state.profile.goal) || 0;
   const left = goal + burn - total;   // 소모한 만큼 더 먹을 수 있다
   const parts = [];
@@ -462,7 +481,7 @@ function renderWorkouts() {
   const done = workouts.reduce((s, w) => s + doneCount(w), 0);
   const volume = workouts.reduce((s, w) => s + volumeOf(w), 0);
   const totalMin = workouts.reduce((s, w) => s + minutesOf(w), 0);
-  const burn = dayBurn(day());
+  const burn = dayBurn(currentDate);
   const setText = done ? `${done}/${totalSets}세트 완료` : `${totalSets}세트`;
 
   $('#workoutSummary').textContent = workouts.length
@@ -471,7 +490,7 @@ function renderWorkouts() {
 
   renderBurn(workouts, weight, burn);
 
-  $('#workoutList').innerHTML = workouts.map((w) => {
+  $('#workoutList').innerHTML = workouts.map((w, idx) => {
     const vol = volumeOf(w);
     const done = doneCount(w);
     const pr = personalBest(w.name);
@@ -482,7 +501,11 @@ function renderWorkouts() {
     const last = lastRecord(w.name);
     return `<div class="card">
     <div class="item"><h3>${esc(w.name)}</h3>
-      <button class="del" data-del-workout="${w.id}" aria-label="삭제">✕</button></div>
+      <span class="order">
+        ${idx > 0 ? `<button data-move="${w.id}:-1" aria-label="위로" title="위로">↑</button>` : ''}
+        ${idx < workouts.length - 1 ? `<button data-move="${w.id}:1" aria-label="아래로" title="아래로">↓</button>` : ''}
+        <button class="del" data-del-workout="${w.id}" aria-label="삭제">✕</button>
+      </span></div>
     <div class="item meta">
       <div class="meta-inputs">
         <label class="inline">시간
@@ -539,19 +562,24 @@ function renderBurn(workouts, weight, burn) {
       </div>`).join('')
     : '<p class="muted">운동을 추가하면 소모 칼로리가 자동으로 계산돼요.</p>';
 
-  [['#bodyWeight', 'weight'], ['#weightStep', 'weightStep'], ['#restSec', 'restSec']].forEach(([sel, key]) => {
+  [['#weightStep', 'weightStep'], ['#restSec', 'restSec']].forEach(([sel, key]) => {
     const el = $(sel);
     if (document.activeElement !== el) el.value = state.profile[key];
   });
+  const wEl = $('#bodyWeight');
+  if (document.activeElement !== wEl) wEl.value = state.days[currentDate]?.weight ?? '';
+  $('#weightHint').textContent = state.days[currentDate]?.weight
+    ? ''
+    : `안 적으면 ${bodyWeight()} kg으로 계산해요.`;
 }
 
 // 최근 7일 섭취·소모. 같은 단위(kcal)라 축 하나에 두 계열을 나란히 둔다.
-function weekData(days = 7) {
+function weekData(days = range) {
   const out = [];
   for (let i = days - 1; i >= 0; i--) {
     const date = shiftDate(currentDate, -i);
     const d = state.days[date];
-    out.push({ date, intake: d ? dayIntake(d) : 0, burn: d ? dayBurn(d) : 0 });
+    out.push({ date, intake: d ? dayIntake(d) : 0, burn: dayBurn(date), weight: Number(d?.weight) || null });
   }
   return out;
 }
@@ -562,6 +590,103 @@ function barPath(x, y, w, h, r = 4) {
   return `M${x} ${y + h}V${y + rr}a${rr} ${rr} 0 0 1 ${rr} ${-rr}h${w - rr * 2}a${rr} ${rr} 0 0 1 ${rr} ${rr}V${y + h}Z`;
 }
 
+// 값이 있는 점만 잇는 꺾은선. 계열이 하나뿐이라 제목이 곧 범례 역할을 한다.
+function lineChart(points, { unit, cls, fmt = (v) => v }) {
+  if (points.length < 1) return '';
+  const W = 340, H = 150, L = 38, R = 8, T = 12, B = 22;
+  const plotW = W - L - R, plotH = H - T - B;
+  const vals = points.map((p) => p.value);
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  if (hi === lo) { lo -= 1; hi += 1; }
+  const pad = (hi - lo) * 0.15;
+  lo -= pad; hi += pad;
+  const x = (i) => points.length === 1 ? L + plotW / 2 : L + (i / (points.length - 1)) * plotW;
+  const y = (v) => T + plotH - ((v - lo) / (hi - lo)) * plotH;
+
+  const grid = [0, 0.5, 1].map((f) => {
+    const gy = T + plotH - f * plotH;
+    return `<line x1="${L}" y1="${gy}" x2="${W - R}" y2="${gy}" class="grid"/>
+            <text x="${L - 6}" y="${gy + 4}" class="axis" text-anchor="end">${fmt(lo + (hi - lo) * f)}</text>`;
+  }).join('');
+
+  const path = points.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(p.value).toFixed(1)}`).join(' ');
+  const dots = points.map((p, i) => `<g>
+      <title>${fmtDate(p.date)} · ${p.value}${unit}</title>
+      <circle cx="${x(i).toFixed(1)}" cy="${y(p.value).toFixed(1)}" r="4.5" class="${cls}-dot"/>
+    </g>`).join('');
+
+  // 양 끝만 직접 라벨 (점마다 숫자를 적지 않는다)
+  const ends = [0, points.length - 1].filter((i, k, a) => a.indexOf(i) === k).map((i) => {
+    const p = points[i];
+    const anchor = i === 0 && points.length > 1 ? 'start' : points.length === 1 ? 'middle' : 'end';
+    return `<text x="${x(i).toFixed(1)}" y="${(y(p.value) - 10).toFixed(1)}" class="axis" text-anchor="${anchor}">${p.value}${unit}</text>`;
+  }).join('');
+
+  const xLabels = [0, points.length - 1].filter((i, k, a) => a.indexOf(i) === k)
+    .map((i) => `<text x="${x(i).toFixed(1)}" y="${H - 6}" class="axis" text-anchor="${i === 0 && points.length > 1 ? 'start' : points.length === 1 ? 'middle' : 'end'}">${fmtDate(points[i].date)}</text>`).join('');
+
+  return `<svg viewBox="0 0 ${W} ${H}" class="chart" role="img">
+    ${grid}<path d="${path}" class="${cls}-line"/>${dots}${ends}${xLabels}</svg>`;
+}
+
+function renderWeightChart() {
+  const all = weightEntries();
+  const from = shiftDate(currentDate, -(range - 1));
+  const points = all.filter((e) => e.date >= from && e.date <= currentDate)
+    .map((e) => ({ date: e.date, value: e.weight }));
+  const card = $('#weightCard');
+  if (points.length < 2) {
+    card.hidden = all.length === 0;
+    $('#weightChart').innerHTML = all.length
+      ? '<p class="muted">이 기간에 기록이 하나뿐이에요. 운동 탭에서 체중을 적으면 추이가 그려집니다.</p>'
+      : '';
+    return;
+  }
+  card.hidden = false;
+  const diff = Math.round((points[points.length - 1].value - points[0].value) * 10) / 10;
+  $('#weightChart').innerHTML =
+    `<p class="muted">${points.length}번 기록 · ${diff > 0 ? '+' : ''}${diff} kg</p>` +
+    lineChart(points, { unit: 'kg', cls: 'w', fmt: (v) => v.toFixed(1) });
+}
+
+// 그 운동을 한 날마다 그날의 최고 중량
+function liftHistory(name) {
+  const key = metKey(name);
+  return Object.keys(state.days).sort().map((date) => {
+    const w = state.days[date].workouts.find((x) => metKey(x.name) === key);
+    if (!w) return null;
+    const top = Math.max(0, ...countedSets(w).map((s) => Number(s.weight) || 0));
+    return top > 0 ? { date, value: top } : null;
+  }).filter(Boolean);
+}
+
+function renderLiftChart() {
+  const names = [...new Set(Object.keys(state.days).sort().reverse()
+    .flatMap((d) => state.days[d].workouts.map((w) => w.name)))];
+  const card = $('#liftCard');
+  if (!names.length) { card.hidden = true; return; }
+  card.hidden = false;
+
+  // 처음 열었을 땐 중량 기록이 가장 많은 운동을 보여준다 (빈 그래프로 시작하지 않게)
+  if (!names.some((n) => metKey(n) === metKey(liftPick))) {
+    liftPick = names.slice()
+      .sort((a, b) => liftHistory(b).length - liftHistory(a).length)[0];
+  }
+  $('#liftPick').innerHTML = names.map((n) =>
+    `<option value="${esc(n)}"${metKey(n) === metKey(liftPick) ? ' selected' : ''}>${esc(n)}</option>`).join('');
+
+  const from = shiftDate(currentDate, -(range - 1));
+  const points = liftHistory(liftPick).filter((p) => p.date >= from && p.date <= currentDate);
+  if (points.length < 2) {
+    $('#liftChart').innerHTML = `<p class="muted">${points.length ? '이 기간에 기록이 하나뿐이에요.' : '이 기간에 중량 기록이 없어요.'} (맨몸 운동은 중량이 없어 그려지지 않아요)</p>`;
+    return;
+  }
+  const diff = Math.round((points[points.length - 1].value - points[0].value) * 10) / 10;
+  $('#liftChart').innerHTML =
+    `<p class="muted">${points.length}회 · ${diff > 0 ? '+' : ''}${diff} kg</p>` +
+    lineChart(points, { unit: 'kg', cls: 'l' });
+}
+
 function renderWeekChart() {
   const data = weekData();
   const max = Math.max(1, ...data.flatMap((d) => [d.intake, d.burn]));
@@ -569,7 +694,8 @@ function renderWeekChart() {
   const W = 340, H = 160, L = 36, R = 6, T = 10, B = 24;
   const plotW = W - L - R, plotH = H - T - B;
   const step = plotW / data.length;
-  const barW = Math.min(16, (step - 8) / 2);
+  const barW = Math.max(1.5, Math.min(16, (step - Math.min(8, step * 0.25)) / 2));
+  const labelEvery = Math.ceil(data.length / 7);
   const y = (v) => T + plotH - (v / top) * plotH;
 
   const grid = [0, 0.5, 1].map((f) => {
@@ -591,18 +717,19 @@ function renderWeekChart() {
         <title>${label} · 소모 ${d.burn} kcal</title>
         ${d.burn ? `<path d="${barPath(x2, y(d.burn), barW, T + plotH - y(d.burn))}" class="bar-2"/>` : ''}
       </g>
-      <text x="${cx}" y="${H - 8}" class="axis" text-anchor="middle">${label}</text>`;
+      ${i % labelEvery === 0 ? `<text x="${cx}" y="${H - 8}" class="axis" text-anchor="middle">${label}</text>` : ''}`;
   }).join('');
 
   $('#weekChart').innerHTML = `<svg viewBox="0 0 ${W} ${H}" class="chart" role="img"
-    aria-label="최근 7일 섭취와 소모 칼로리">${grid}${bars}</svg>`;
+    aria-label="최근 ${range}일 섭취와 소모 칼로리">${grid}${bars}</svg>`;
+  $('#weekTitle').textContent = `📊 최근 ${range}일`;
 
   const withWorkout = data.filter((d) => d.burn > 0).length;
   const avg = (key) => Math.round(data.reduce((s, d) => s + d[key], 0) / data.length);
   $('#weekTiles').innerHTML = `
     <div class="tile"><span class="muted">평균 섭취</span><strong>${avg('intake')}<small> kcal</small></strong></div>
     <div class="tile"><span class="muted">평균 소모</span><strong>${avg('burn')}<small> kcal</small></strong></div>
-    <div class="tile"><span class="muted">운동한 날</span><strong>${withWorkout}<small> / 7일</small></strong></div>`;
+    <div class="tile"><span class="muted">운동한 날</span><strong>${withWorkout}<small> / ${range}일</small></strong></div>`;
 }
 
 // 하루에 들어있는 모든 글자 (검색용)
@@ -613,6 +740,8 @@ function dayText(d) {
 
 function renderHistory() {
   renderWeekChart();
+  renderWeightChart();
+  renderLiftChart();
   const q = $('#historySearch').value.trim().toLowerCase();
   const dates = Object.keys(state.days)
     .filter((d) => !isEmptyDay(state.days[d]))
@@ -634,7 +763,7 @@ function renderHistory() {
       ${list.map((date) => {
         const d = state.days[date];
         const kcal = dayIntake(d);
-        const burn = dayBurn(d);
+        const burn = dayBurn(date);
         const ex = d.workouts.map((w) => `${esc(w.name)} ${w.sets.length}×${w.sets[0]?.reps ?? 0}`).join(', ');
         return `<div class="card history-day" data-goto="${date}">
           <h3>${date}</h3>
@@ -716,6 +845,7 @@ $('#nextDay').addEventListener('click', () => { currentDate = shiftDate(currentD
 
 $('#todayBtn').addEventListener('click', () => { currentDate = todayStr(); render(); });
 $('#historySearch').addEventListener('input', renderHistory);
+$('#liftPick').addEventListener('change', (e) => { liftPick = e.target.value; renderLiftChart(); });
 $('#undoBtn').addEventListener('click', undo);
 
 // 좌우로 쓸어서 날짜 이동 (세로 스크롤과 헷갈리지 않게 가로 이동이 더 클 때만)
@@ -741,7 +871,8 @@ $('#themeBtn').addEventListener('click', () => {
 
 $('#bodyWeight').addEventListener('input', (e) => {
   const v = Number(e.target.value);
-  state.profile.weight = v > 0 ? v : DEFAULT_WEIGHT;
+  day().weight = v > 0 ? v : null;        // 그 날의 체중으로 기록
+  if (v > 0) state.profile.weight = v;    // 기본값 캐시
   save();
   refreshTotals();
 });
@@ -831,6 +962,18 @@ document.addEventListener('click', (e) => {
   } else if (ds.routine) {
     loadRoutine(ds.routine);
     return;                          // loadRoutine이 알아서 저장·렌더링한다
+  } else if (ds.move) {
+    const [id, dir] = ds.move.split(':');
+    const list = day().workouts;
+    const i = list.findIndex((w) => w.id === id);
+    const j = i + Number(dir);
+    if (i < 0 || j < 0 || j >= list.length) return;
+    [list[i], list[j]] = [list[j], list[i]];
+  } else if (ds.range) {
+    range = Number(ds.range);
+    document.querySelectorAll('#rangeSeg button').forEach((b) => b.classList.toggle('on', b === t));
+    renderHistory();
+    return;
   } else if (ds.fav) {
     const m = favCache[Number(ds.fav)]?.meal;
     if (!m) return;

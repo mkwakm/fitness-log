@@ -12,6 +12,8 @@
   /* 그래프 색 — dataviz 검증 통과 (다크 표면 #1e2427 기준 CVD ΔE 9.4, 대비 3:1 이상) */
   --chart-1: #199e70;   /* 섭취 */
   --chart-2: #d95926;   /* 소모 */
+  --chart-3: #3987e5;   /* 체중 */
+  --chart-4: #d55181;   /* 운동 중량 */
 }
 :root[data-theme="light"] {
   --bg: #f4f6f5;
@@ -26,6 +28,8 @@
   /* 밝은 표면(#ffffff) 기준 검증값. 섭취색 대비가 3:1 아래라 아래 날짜 목록이 표 역할을 한다 */
   --chart-1: #1baf7a;
   --chart-2: #eb6834;
+  --chart-3: #2a78d6;
+  --chart-4: #e87ba4;
 }
 
 * { box-sizing: border-box; }
@@ -234,3 +238,31 @@ h3 .hint { display: inline; font-weight: 400; }
 }
 .undo-bar[hidden] { display: none; }
 .undo-bar button { padding: 6px 12px; color: var(--accent); border-color: var(--accent); font-size: 0.8rem; }
+
+/* 꺾은선 (체중 · 운동 중량) */
+.chart .w-line, .chart .l-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart .w-line { stroke: var(--chart-3); }
+.chart .l-line { stroke: var(--chart-4); }
+.chart .w-dot { fill: var(--chart-3); stroke: var(--card); stroke-width: 2; }
+.chart .l-dot { fill: var(--chart-4); stroke: var(--card); stroke-width: 2; }
+#weightCard[hidden], #liftCard[hidden] { display: none; }
+
+/* 카드 제목줄 · 기간 토글 */
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.card-head h3 { margin: 0; }
+.card-head select { padding: 6px 8px; font-size: 0.85rem; max-width: 55%; }
+.seg { display: flex; gap: 0; }
+.seg button {
+  padding: 6px 10px; font-size: 0.8rem; border-radius: 0; color: var(--muted);
+  border-left-width: 0;
+}
+.seg button:first-child { border-radius: 8px 0 0 8px; border-left-width: 1px; }
+.seg button:last-child { border-radius: 0 8px 8px 0; }
+.seg button.on { background: var(--accent); border-color: var(--accent); color: #0d1412; font-weight: 600; }
+
+/* 운동 순서 이동 */
+.order { display: flex; align-items: center; gap: 2px; }
+.order button:not(.del) {
+  padding: 4px 8px; font-size: 0.9rem; color: var(--muted); background: none; border: none;
+}
+.order button:not(.del):hover { color: var(--accent); }
