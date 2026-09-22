@@ -1,0 +1,9 @@
+{
+  "name": "나의 식단·운동 기록",
+  "short_name": "운동기록",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#f4f6f5",
+  "theme_color": "#16a34a",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
