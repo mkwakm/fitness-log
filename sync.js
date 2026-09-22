@@ -13,6 +13,7 @@ let sync = { token: '', gistId: '', lastGist: 0, lastFile: 0 };
 let fileHandle = null;
 let autoSaveTimer = null;
 let syncMsg = '';
+let fileBlocked = false;  // 파일에 못 쓰고 있는 상태 (권한이 풀림 등)
 let advOpen = false;      // 'GitHub Gist' 섹션을 펼쳐 뒀는지 (다시 그려도 유지)
 
 function loadSync() {
@@ -35,6 +36,17 @@ function mergeList(mine, theirs, theirsNewer, deleted) {
   return [...map.values()].filter((x) => !deleted.has(x.id));
 }
 
+// 넘어온 날짜 하나를 안전한 모양으로 고친다. 손상된 파일이 그대로 저장되면 앱이 안 열린다.
+function safeDay(d) {
+  return {
+    ...d,
+    meals: Array.isArray(d.meals) ? d.meals.filter((x) => x && x.id) : [],
+    workouts: Array.isArray(d.workouts) ? d.workouts.filter((x) => x && x.id && Array.isArray(x.sets)) : [],
+    note: typeof d.note === 'string' ? d.note : '',
+    ...(Array.isArray(d.deleted) && d.deleted.length ? { deleted: d.deleted } : {}),
+  };
+}
+
 function mergeDay(mine, theirs) {
   const deleted = new Set([...(mine.deleted || []), ...(theirs.deleted || [])]);
   const theirsNewer = (theirs.updatedAt || 0) > (mine.updatedAt || 0);
@@ -44,7 +56,9 @@ function mergeDay(mine, theirs) {
     ...newer,                       // note·체중처럼 값이 하나뿐인 건 최근에 고친 쪽
     meals: mergeList(mine.meals || [], theirs.meals || [], theirsNewer, deleted),
     workouts: mergeList(mine.workouts || [], theirs.workouts || [], theirsNewer, deleted),
-    deleted: [...deleted],
+    // 빈 deleted를 굳이 넣으면 내용이 같은 날도 "바뀜"으로 보여서,
+    // 동기화할 때마다 모든 날의 수정시각이 밀리고 상대 기기의 최신 메모를 덮어쓴다.
+    ...(deleted.size ? { deleted: [...deleted] } : {}),
     updatedAt: Math.max(mine.updatedAt || 0, theirs.updatedAt || 0),
   };
 }
@@ -54,14 +68,15 @@ function mergeState(remote) {
   let changed = 0;
   for (const [date, rd] of Object.entries(remote.days)) {
     if (!rd || typeof rd !== 'object') continue;
+    const safe = safeDay(rd);
     const mine = state.days[date];
     if (!mine) {
-      state.days[date] = { meals: [], workouts: [], note: '', ...rd };
+      state.days[date] = safe;
       changed += 1;
       continue;
     }
     const before = JSON.stringify(mine);
-    const merged = mergeDay(mine, rd);
+    const merged = mergeDay(safeDay(mine), safe);
     if (JSON.stringify(merged) !== before) {
       state.days[date] = merged;
       changed += 1;
@@ -228,13 +243,18 @@ async function pickSyncFile() {
 async function writeSyncFile() {
   if (!fileHandle) return;
   try {
-    if ((await fileHandle.queryPermission?.({ mode: 'readwrite' })) === 'denied') return;
+    const perm = await fileHandle.queryPermission?.({ mode: 'readwrite' });
+    if (perm && perm !== 'granted') throw new Error('권한 없음');   // 브라우저를 다시 열면 권한이 풀린다
     const w = await fileHandle.createWritable();
     await w.write(JSON.stringify(state, null, 2));
     await w.close();
     sync.lastFile = Date.now();
     saveSync();
-  } catch { /* 드라이브가 잠깐 잠겨 있을 수 있다. 다음 저장 때 다시 쓴다 */ }
+    if (fileBlocked) { fileBlocked = false; renderSync(); }
+  } catch {
+    // 조용히 넘어가면 저장된 줄 알고 기록을 잃는다. 카드에 "다시 연결" 상태로 표시한다.
+    if (!fileBlocked) { fileBlocked = true; renderSync(); }
+  }
 }
 
 function scheduleAutoSave() {
@@ -259,10 +279,27 @@ async function readSyncFile({ quiet = false } = {}) {
   }
 }
 
+// 권한이 풀린 파일에 다시 접근 권한을 받는다 (버튼 클릭이라는 사용자 동작이 있어야 물어볼 수 있다)
+async function relinkSyncFile() {
+  if (!fileHandle) return;
+  try {
+    const perm = await fileHandle.requestPermission?.({ mode: 'readwrite' });
+    if (perm && perm !== 'granted') { toastSync('⚠️ 파일 권한이 없어요.'); return; }
+    fileBlocked = false;
+    await readSyncFile({ quiet: true });
+    await writeSyncFile();
+    if (!syncMsg) toastSync('다시 연결했어요.');
+  } catch {
+    toastSync('⚠️ 파일에 다시 연결하지 못했어요. 파일을 다시 지정해 주세요.');
+  }
+  renderSync();
+}
+
 async function forgetSyncFile() {
   if (!confirm('파일 자동 저장을 끌까요?\n(이미 저장된 파일은 그대로 남습니다)')) return;
   fileHandle = null;
-  await idb('readwrite', (st) => st.delete('file'));
+  fileBlocked = false;
+  await idb('readwrite', (st) => st.delete('file')).catch(() => {});
   sync.lastFile = 0;
   saveSync();
   toastSync('자동 저장을 껐어요.');
@@ -311,15 +348,20 @@ function renderSync() {
         <p class="hint">${canUseFile()
           ? `OneDrive·구글드라이브 폴더에 파일을 한 번 지정해 두면 이후 자동으로 저장돼요.
              다른 PC에서 같은 파일을 지정하면 합쳐집니다.<br>
-             ${fileHandle ? `마지막 저장: ${fmtAgo(sync.lastFile)}` : '아직 지정 안 함'}`
+             ${!fileHandle ? '아직 지정 안 함'
+               : fileBlocked ? '<b class="warn-text">⚠️ 지금은 파일에 저장되지 않고 있어요. 브라우저를 다시 열면 권한이 풀립니다 — 아래 버튼으로 다시 연결해 주세요.</b>'
+               : `마지막 저장: ${fmtAgo(sync.lastFile)}`}`
           : '이 브라우저는 지원하지 않아요. 아래 휴대폰 방법을 쓰거나 크롬·엣지 PC에서 열어 주세요.'}</p>
       </div>
       <div class="sync-btns">
         ${!canUseFile() ? ''
-          : fileHandle
-            ? `<button id="fileReadBtn" class="primary">파일에서 불러오기</button>
-               <button id="fileOffBtn">끄기</button>`
-            : '<button id="filePickBtn" class="primary">파일 지정</button>'}
+          : !fileHandle
+            ? '<button id="filePickBtn" class="primary">파일 지정</button>'
+            : fileBlocked
+              ? `<button id="fileRelinkBtn" class="primary">다시 연결</button>
+                 <button id="fileOffBtn">끄기</button>`
+              : `<button id="fileReadBtn" class="primary">파일에서 불러오기</button>
+                 <button id="fileOffBtn">끄기</button>`}
       </div>
     </div>
 
@@ -369,6 +411,7 @@ async function initSync() {
     else if (id === 'gistOffBtn') disconnectGist();
     else if (id === 'filePickBtn') pickSyncFile();
     else if (id === 'fileReadBtn') readSyncFile();
+    else if (id === 'fileRelinkBtn') relinkSyncFile();
     else if (id === 'fileOffBtn') forgetSyncFile();
     else if (id === 'shareBtn') shareBackup();
     else if (id === 'jumpBackup') document.querySelector('.card.backup')?.scrollIntoView({ behavior: 'smooth', block: 'center' });

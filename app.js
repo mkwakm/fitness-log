@@ -1,8 +1,11 @@
 // 데이터 구조 (localStorage "fitness-log-v1"):
-// { profile: { weight, theme },
+// { profile: { weight, theme, mets, weightStep, restSec, foods, goal, updatedAt },
 //   days: { "YYYY-MM-DD": { meals: [{id, type, name, amount, kcal}],
-//                            workouts: [{id, name, minutes, sets: [{reps, weight, done}]}] } } }
-// 음식 칼로리 표(FOOD_DB, DEFAULT_UNITS)는 food-db.js에 있습니다.
+//                           workouts: [{id, name, minutes, sets: [{reps, weight, done}]}],
+//                           note, weight, deleted: [지운 id], updatedAt } } }
+// updatedAt은 기기 간 병합 기준이라 save()가 자동으로 찍는다 (stampChanges).
+// 음식 칼로리 표(FOOD_DB, DEFAULT_UNITS)는 food-db.js, 동기화·병합은 sync.js에 있습니다.
+// ⚠️ 동기화 토큰은 이 저장값에 넣지 않는다 (별도 키 — sync.js 참고).
 const STORAGE_KEY = 'fitness-log-v1';
 const MEAL_ORDER = ['아침', '점심', '저녁', '간식'];
 const DEFAULT_WEIGHT = 70;      // 체중을 아직 안 적었을 때 쓰는 기본값 (kg)
@@ -37,10 +40,22 @@ const MET_TABLE = [
 
 const $ = (sel) => document.querySelector(sel);
 
+// 저장값이 한 번 깨지면 앱이 안 열리고 브라우저 데이터를 지우는 것 말곤 방법이 없다.
+// 읽을 때 모양을 한 번 고쳐서, 이상한 날짜는 버리고 나머지는 살린다. (safeDay는 sync.js)
+function sanitizeDays(days) {
+  const out = {};
+  if (!days || typeof days !== 'object') return out;
+  for (const [date, d] of Object.entries(days)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !d || typeof d !== 'object') continue;
+    out[date] = safeDay(d);
+  }
+  return out;
+}
 function load() {
   try {
     const raw = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
-    return { days: raw.days || {}, profile: { ...DEFAULT_PROFILE, ...(raw.profile || {}) } };
+    const profile = raw.profile && typeof raw.profile === 'object' ? raw.profile : {};
+    return { days: sanitizeDays(raw.days), profile: { ...DEFAULT_PROFILE, ...profile } };
   } catch {
     return { days: {}, profile: { ...DEFAULT_PROFILE } };
   }
@@ -70,6 +85,19 @@ function stampChanges() {
   }
 }
 
+// 입력 중에는 저장이 잦아져 기록이 많을수록 느려진다. 화면은 바로 갱신하고 저장만 미룬다.
+let saveTimer = null;
+function saveSoon() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { saveTimer = null; save(); }, 400);
+}
+function flushSave() {
+  if (!saveTimer) return;
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  save();
+}
+
 function save() {
   stampChanges();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -78,10 +106,10 @@ function save() {
 
 let state = load();
 let currentDate = todayStr();
-let kcalTouched = false;
-let favCache = [];
+let kcalTouched = false;  // 칼로리를 직접 고쳤으면 자동 계산으로 덮어쓰지 않는다
+let favCache = [];        // 자주 먹는 음식 칩이 가리키는 목록
 let range = 7;            // 통계 기간 (일)
-let liftPick = '';        // 중량 추이로 보고 있는 운동   // 사용자가 칼로리를 직접 고쳤으면 자동 계산으로 덮어쓰지 않는다
+let liftPick = '';        // 중량 추이로 보고 있는 운동
 
 function todayStr(d = new Date()) {
   const off = d.getTimezoneOffset() * 60000;
@@ -147,7 +175,7 @@ function findFood(name) {
   const n = foodName(name);
   if (!n) return null;
   const table = allFoods();
-  if (table[n]) return { key: n, food: table[n] };
+  if (Object.hasOwn(table, n)) return { key: n, food: table[n] };
   let best = null;
   for (const key of Object.keys(table)) {
     if (n.endsWith(key) && (!best || key.length > best.key.length)) best = { key, food: table[key] };
@@ -175,8 +203,10 @@ function amountToGrams(amount, food) {
   const unit = m[2] || 'g';
   if (unit === 'g' || unit === 'ml' || unit === 'cc') return n;
   if (unit === 'kg' || unit === 'l') return n * 1000;
-  const grams = { ...DEFAULT_UNITS, ...(food?.units || {}) }[unit];
-  return grams ? n * grams : null;
+  // Object.hasOwn 없이 찾으면 "1toString" 같은 입력이 프로토타입 함수를 집어 NaN이 된다
+  const table = { ...DEFAULT_UNITS, ...(food?.units || {}) };
+  const grams = Object.hasOwn(table, unit) ? Number(table[unit]) : 0;
+  return grams > 0 ? n * grams : null;
 }
 
 // 음식 이름 + 양 → { kcal, grams, key, assumed }. 모르는 음식이면 null.
@@ -369,30 +399,34 @@ function undo() {
 
 // ---------- 휴식 타이머 ----------
 let restTimer = null;
-let restLeft = 0;
-
+let restEndAt = 0;        // 끝나는 시각(ms). 1초씩 빼면 화면이 꺼졌을 때 브라우저가
+                          // setInterval을 늦춰서 타이머가 실제보다 느려진다.
+function restLeft() {
+  return Math.max(0, Math.ceil((restEndAt - Date.now()) / 1000));
+}
 function startRest(sec = Number(state.profile.restSec) || 90) {
-  restLeft = sec;
+  restEndAt = Date.now() + sec * 1000;
   $('#restBar').hidden = false;
   drawRest();
   clearInterval(restTimer);
   restTimer = setInterval(() => {
-    restLeft -= 1;
     drawRest();
-    if (restLeft <= 0) { stopRest(); alarm(); }
-  }, 1000);
+    if (Date.now() >= restEndAt) { stopRest(); alarm(); }
+  }, 250);
 }
 function stopRest() {
   clearInterval(restTimer);
   restTimer = null;
+  restEndAt = 0;
   $('#restBar').hidden = true;
 }
 function drawRest() {
-  const m = Math.floor(Math.max(0, restLeft) / 60);
-  const sec = Math.max(0, restLeft) % 60;
-  $('#restTime').textContent = `${m}:${String(sec).padStart(2, '0')}`;
-  $('#restBar').classList.toggle('almost', restLeft <= 10);
+  const left = restLeft();
+  $('#restTime').textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+  $('#restBar').classList.toggle('almost', left <= 10);
 }
+// 화면을 다시 켰을 때 남은 시간을 바로 맞춰 보여준다
+document.addEventListener('visibilitychange', () => { if (!document.hidden && restTimer) drawRest(); });
 // 파일 없이 소리를 내기 위해 WebAudio로 짧은 삐 소리를 만든다. 막혀 있으면 조용히 넘어간다.
 function alarm() {
   navigator.vibrate?.([200, 100, 200]);
@@ -460,17 +494,18 @@ function renderMeals() {
 
 // 많이 먹은 순서대로. 같은 음식은 가장 최근에 적은 양·칼로리를 쓴다.
 function favoriteFoods(limit = 6) {
-  const tally = {};
+  // 음식 이름이 그대로 키가 되므로 Map을 쓴다.
+  // 일반 객체면 "constructor" 같은 이름이 프로토타입을 건드려 집계가 어긋난다.
+  const tally = new Map();
   Object.keys(state.days).sort().forEach((date) => {
     state.days[date].meals.forEach((m) => {
       const key = foodName(m.name);
       if (!key) return;
-      if (!tally[key]) tally[key] = { count: 0, meal: m };
-      tally[key].count += 1;
-      tally[key].meal = m;
+      const cur = tally.get(key) ?? { count: 0, meal: m };
+      tally.set(key, { count: cur.count + 1, meal: m });
     });
   });
-  return Object.values(tally).sort((a, b) => b.count - a.count).slice(0, limit);
+  return [...tally.values()].sort((a, b) => b.count - a.count).slice(0, limit);
 }
 
 function renderFavorites() {
@@ -765,6 +800,9 @@ function renderWeekChart() {
     <div class="tile"><span class="muted">운동한 날</span><strong>${withWorkout}<small> / ${range}일</small></strong></div>`;
 }
 
+// 펼쳐 둔 달을 기억한다. 안 그러면 다시 그릴 때마다 도로 접힌다.
+const monthOpen = new Map();
+
 // 하루에 들어있는 모든 글자 (검색용)
 function dayText(d) {
   return [...d.workouts.map((w) => w.name), ...d.meals.map((m) => m.name), d.note ?? '']
@@ -791,7 +829,7 @@ function renderHistory() {
   dates.forEach((date) => (months[date.slice(0, 7)] ??= []).push(date));
 
   $('#historyList').innerHTML = Object.entries(months).map(([month, list], i) => `
-    <details class="month" ${i === 0 || q ? 'open' : ''}>
+    <details class="month" data-month="${month}" ${q || (monthOpen.has(month) ? monthOpen.get(month) : i === 0) ? 'open' : ''}>
       <summary>${month.replace('-', '년 ')}월 <span class="muted">${list.length}일</span></summary>
       ${list.map((date) => {
         const d = state.days[date];
@@ -807,6 +845,13 @@ function renderHistory() {
         </div>`;
       }).join('')}
     </details>`).join('');
+
+  // 검색 중에는 전부 펼쳐 보여주는 것이므로 그 상태를 기억하지 않는다
+  if (!q) {
+    $('#historyList').querySelectorAll('details.month').forEach((el) => {
+      el.addEventListener('toggle', () => monthOpen.set(el.dataset.month, el.open));
+    });
+  }
 }
 
 function updateExHint() {
@@ -906,25 +951,26 @@ $('#bodyWeight').addEventListener('input', (e) => {
   const v = Number(e.target.value);
   day().weight = v > 0 ? v : null;        // 그 날의 체중으로 기록
   if (v > 0) state.profile.weight = v;    // 기본값 캐시
-  save();
+  saveSoon();
   refreshTotals();
 });
 
 $('#exName').addEventListener('input', updateExHint);
-$('#dayNote').addEventListener('input', (e) => { day().note = e.target.value; save(); });
+$('#dayNote').addEventListener('input', (e) => { day().note = e.target.value; saveSoon(); });
+$('#dayNote').addEventListener('blur', flushSave);
 
 $('#weightStep').addEventListener('input', (e) => {
   const v = Number(e.target.value);
   state.profile.weightStep = v > 0 ? v : DEFAULT_PROFILE.weightStep;
-  save();
+  saveSoon();
 });
 $('#restSec').addEventListener('input', (e) => {
   const v = Number(e.target.value);
   state.profile.restSec = v > 0 ? v : DEFAULT_PROFILE.restSec;
-  save();
+  saveSoon();
 });
 $('#restStop').addEventListener('click', stopRest);
-$('#restPlus').addEventListener('click', () => { restLeft += 30; drawRest(); });
+$('#restPlus').addEventListener('click', () => { restEndAt += 30000; drawRest(); });
 
 $('#foodName').addEventListener('input', updateMealHint);
 $('#foodAmount').addEventListener('input', updateMealHint);
@@ -932,7 +978,7 @@ $('#foodKcal').addEventListener('input', () => { kcalTouched = true; updateMealH
 $('#goalKcal').addEventListener('input', (e) => {
   const v = Number(e.target.value);
   state.profile.goal = v > 0 ? v : null;
-  save();
+  saveSoon();
   renderMeals();
 });
 
@@ -1062,7 +1108,8 @@ document.addEventListener('change', (e) => {
     const v = Number(e.target.value);
     findWorkout(ds.minutes).minutes = v > 0 ? v : null;
   } else if (ds.met) {
-    setCustomMet(ds.met, Number(e.target.value));
+    const v = Number(e.target.value);
+    setCustomMet(ds.met, v > 0 ? Math.min(20, Math.max(1, v)) : 0);   // 0이면 자동 추정으로 복귀
   } else if (ds.edit) {
     const [id, i, field] = ds.edit.split(':');
     const v = e.target.value;
@@ -1082,11 +1129,14 @@ $('#exportBtn').addEventListener('click', () => {
   a.href = URL.createObjectURL(blob);
   a.download = `fitness-log-${todayStr()}.json`;
   a.click();
-  URL.revokeObjectURL(a.href);
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);   // 바로 해제하면 브라우저가 받다 말 수 있다
 });
 
 $('#importFile').addEventListener('change', async (e) => {
   const file = e.target.files[0];
+  // 같은 파일을 다시 고를 수 있으려면 값을 먼저 비워야 한다.
+  // (끝에서 비우면 취소로 빠져나갈 때 안 비워져서 두 번째 선택이 먹통이 된다)
+  e.target.value = '';
   if (!file) return;
   try {
     const data = JSON.parse(await file.text());
@@ -1103,12 +1153,16 @@ $('#importFile').addEventListener('change', async (e) => {
   } catch {
     alert('올바른 백업 파일이 아니에요.');
   }
-  e.target.value = '';
 });
 
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   navigator.serviceWorker.register('sw.js');
 }
+
+// 미뤄둔 저장은 탭을 벗어나거나 닫기 전에 반드시 반영한다
+document.addEventListener('visibilitychange', () => { if (document.hidden) flushSave(); });
+window.addEventListener('pagehide', flushSave);
+window.addEventListener('beforeunload', flushSave);
 
 applyTheme();
 seedStamps();

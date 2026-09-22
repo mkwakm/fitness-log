@@ -295,3 +295,4 @@ h3 .hint { display: inline; font-weight: 400; }
 .sync-adv > summary:hover { color: var(--text); }
 .sync-adv .sync-row { border-top: none; }
 .sync-adv code { font-size: 0.8em; background: var(--card-2); padding: 1px 5px; border-radius: 4px; }
+.warn-text { color: var(--danger); font-weight: 600; }
