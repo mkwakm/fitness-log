@@ -9,17 +9,19 @@ const DEFAULT_WEIGHT = 70;      // 체중을 아직 안 적었을 때 쓰는 기
 const MIN_PER_SET = 3;          // 운동 시간을 안 적었을 때 세트당 추정 시간 (분)
 const DEFAULT_MET = 5.0;        // 일반 웨이트 트레이닝
 
-// 운동 이름으로 MET(운동 강도) 추정. 위에서부터 먼저 걸리는 것을 사용.
+// 운동 이름으로 MET(운동 강도) 추정. 위에서부터 먼저 걸리는 것을 사용하므로 순서가 중요하다.
+// (예: "레그레이즈"가 6.0 줄에 안 걸리도록 그 줄에는 "레그프레스"처럼 구체적인 이름만 둔다)
+// 여기서 못 찾으면 DEFAULT_MET. 값이 안 맞으면 운동 카드에서 직접 고칠 수 있다(state.profile.mets).
 const MET_TABLE = [
-  [/버피|hiit|인터벌|크로스핏|타바타/, 9.0],
   [/줄넘기/, 11.0],
-  [/달리기|러닝|조깅|뛰기|트레드밀/, 8.0],
+  [/버피|hiit|인터벌|크로스핏|타바타|케틀벨|마운틴클라이머|점핑잭/, 9.0],
+  [/달리기|러닝|런닝|조깅|뛰기|트레드밀/, 8.0],
   [/수영/, 7.5],
-  [/자전거|사이클|스피닝|로잉|일립티컬|유산소|에어로빅/, 7.0],
+  [/자전거|바이크|사이클|스피닝|로잉|일립티컬|스텝퍼|유산소|에어로빅|복싱|배드민턴|테니스|농구|축구|풋살/, 7.0],
   [/등산|하이킹|계단/, 6.5],
-  [/스쿼트|데드리프트|런지|레그프레스|레그컬|레그익스텐션|하체/, 6.0],
-  [/벤치|프레스|풀업|턱걸이|로우|랫|딥스|푸시업|팔굽혀펴기|컬|숄더|어깨|가슴|등운동/, 5.0],
-  [/플랭크|복근|코어|크런치|윗몸|레그레이즈/, 3.8],
+  [/스쿼트|데드리프트|런지|레그프레스|레그컬|레그익스텐션|힙쓰러스트|힙스러스트|하체/, 6.0],
+  [/벤치|프레스|풀업|턱걸이|철봉|로우|랫|딥스|푸시업|팔굽혀펴기|컬|숄더|어깨|가슴|등운동|케이블|플라이|펙덱|레터럴|카프|trx/, 5.0],
+  [/플랭크|복근|코어|크런치|윗몸|레그레이즈|브릿지/, 3.8],
   [/걷기|산책|워킹/, 3.5],
   [/요가|필라테스|스트레칭|폼롤러/, 3.0],
 ];
@@ -29,9 +31,9 @@ const $ = (sel) => document.querySelector(sel);
 function load() {
   try {
     const raw = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
-    return { days: raw.days || {}, profile: { weight: DEFAULT_WEIGHT, theme: 'dark', ...(raw.profile || {}) } };
+    return { days: raw.days || {}, profile: { weight: DEFAULT_WEIGHT, theme: 'dark', mets: {}, ...(raw.profile || {}) } };
   } catch {
-    return { days: {}, profile: { weight: DEFAULT_WEIGHT, theme: 'dark' } };
+    return { days: {}, profile: { weight: DEFAULT_WEIGHT, theme: 'dark', mets: {} } };
   }
 }
 function save() {
@@ -139,8 +141,25 @@ function bodyWeight() {
   const w = Number(state.profile?.weight);
   return w > 0 ? w : DEFAULT_WEIGHT;
 }
+// 운동 이름별로 직접 지정한 MET. 이름이 같으면 모든 날짜에 함께 적용된다.
+function metKey(name) {
+  return String(name ?? '').trim().toLowerCase();
+}
+function customMet(name) {
+  const v = Number(state.profile.mets?.[metKey(name)]);
+  return v > 0 ? v : null;
+}
+function setCustomMet(name, value) {
+  if (!state.profile.mets) state.profile.mets = {};
+  const key = metKey(name);
+  if (value > 0) state.profile.mets[key] = value;
+  else delete state.profile.mets[key];   // 지우면 자동 추정으로 돌아간다
+}
 function metOf(name) {
-  const n = String(name ?? '').toLowerCase();
+  return customMet(name) ?? autoMet(name);
+}
+function autoMet(name) {
+  const n = metKey(name);
   for (const [re, met] of MET_TABLE) if (re.test(n)) return met;
   return DEFAULT_MET;
 }
@@ -218,10 +237,17 @@ function renderWorkouts() {
     <div class="item"><h3>${esc(w.name)}</h3>
       <button class="del" data-del-workout="${w.id}" aria-label="삭제">✕</button></div>
     <div class="item meta">
-      <label class="inline">시간
-        <input type="number" inputmode="numeric" min="0" step="1" value="${w.minutes ?? ''}"
-               placeholder="${w.sets.length * MIN_PER_SET}" data-minutes="${w.id}">분
-      </label>
+      <div class="meta-inputs">
+        <label class="inline">시간
+          <input type="number" inputmode="numeric" min="0" step="1" value="${w.minutes ?? ''}"
+                 placeholder="${w.sets.length * MIN_PER_SET}" data-minutes="${w.id}">분
+        </label>
+        <label class="inline" title="운동 강도. 직접 고치면 같은 이름의 운동에 모두 적용돼요.">MET
+          <input type="number" inputmode="decimal" min="1" max="20" step="0.5" value="${metOf(w.name)}"
+                 class="${customMet(w.name) ? 'custom' : ''}" data-met="${esc(w.name)}">
+        </label>
+        ${customMet(w.name) ? `<button class="link-btn" data-reset-met="${esc(w.name)}" title="자동 추정값으로 되돌리기">↺ 자동(${autoMet(w.name)})</button>` : ''}
+      </div>
       <span class="burn-chip">🔥 ${burnOf(w, weight)} kcal${isEstimated(w) ? ' (추정)' : ''}</span>
     </div>
     <div class="set-table">
@@ -245,7 +271,7 @@ function renderBurn(workouts, weight, burn) {
   $('#burnTotal').innerHTML = `${burn} <small>kcal</small>`;
   $('#burnList').innerHTML = workouts.length
     ? workouts.map((w) => `<div class="item">
-        <div>${esc(w.name)} <span class="muted">${minutesOf(w)}분 · MET ${metOf(w.name)}${isEstimated(w) ? ' · 시간 추정' : ''}</span></div>
+        <div>${esc(w.name)} <span class="muted">${minutesOf(w)}분 · MET ${metOf(w.name)}${customMet(w.name) ? '(직접)' : ''}${isEstimated(w) ? ' · 시간 추정' : ''}</span></div>
         <strong>${burnOf(w, weight)} kcal</strong>
       </div>`).join('')
     : '<p class="muted">운동을 추가하면 소모 칼로리가 자동으로 계산돼요.</p>';
@@ -382,6 +408,8 @@ document.addEventListener('click', (e) => {
     } else {
       return;
     }
+  } else if (ds.resetMet) {
+    setCustomMet(ds.resetMet, 0);
   } else if (ds.goto) {
     currentDate = ds.goto;
     showTab('workouts');
@@ -397,6 +425,8 @@ document.addEventListener('change', (e) => {
   if (ds.minutes) {
     const v = Number(e.target.value);
     findWorkout(ds.minutes).minutes = v > 0 ? v : null;
+  } else if (ds.met) {
+    setCustomMet(ds.met, Number(e.target.value));
   } else if (ds.edit) {
     const [id, i, field] = ds.edit.split(':');
     const v = e.target.value;
@@ -428,6 +458,7 @@ $('#importFile').addEventListener('change', async (e) => {
     if (!confirm('가져온 기록을 현재 기록과 합칠까요? (같은 날짜는 가져온 기록으로 덮어씁니다)')) return;
     state.days = { ...state.days, ...data.days };
     if (Number(data.profile?.weight) > 0) state.profile.weight = Number(data.profile.weight);
+    if (data.profile?.mets) state.profile.mets = { ...state.profile.mets, ...data.profile.mets };
     save();
     render();
     alert('가져오기 완료!');
