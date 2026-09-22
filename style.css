@@ -48,7 +48,11 @@ body {
   display: flex; align-items: center; justify-content: center; gap: 8px;
   padding: 12px 16px; position: sticky; top: 0; background: var(--bg); z-index: 2;
 }
-.top input[type=date] { font-size: 1.05rem; font-weight: 600; color-scheme: dark; }
+.top input[type=date] {
+  font-size: 1.05rem; font-weight: 600; color-scheme: dark;
+  flex: 1 1 auto; min-width: 0; padding: 10px 6px;
+}
+.top .icon-btn { flex: none; }
 :root[data-theme="light"] .top input[type=date] { color-scheme: light; }
 
 .tabs { display: flex; gap: 6px; padding: 0 16px 12px; }
@@ -71,10 +75,14 @@ main { padding: 0 16px 24px; }
 .row > * { flex: 1; }
 label { display: grid; gap: 4px; font-size: 0.8rem; color: var(--muted); }
 
-input, select, button {
+input, select, button, textarea {
   font: inherit; color: var(--text); background: var(--card-2);
   border: 1px solid var(--line); border-radius: 10px; padding: 10px; min-width: 0;
 }
+/* 라벨 글씨(0.8rem)를 물려받으면 12.8px이 되는데, iOS 사파리는 16px 미만 입력칸을 누르면
+   화면을 확대해 버린다. 라벨은 작게 두고 입력칸만 16px로 고정한다. */
+input, select, textarea { font-size: 16px; }
+.top input[type=date] { font-size: 1.05rem; }
 input::placeholder { color: var(--muted); opacity: 0.8; }
 button { cursor: pointer; }
 button.primary { background: var(--accent); border-color: var(--accent); color: #0d1412; font-weight: 700; }
@@ -102,9 +110,10 @@ h3 { margin: 0 0 8px; font-size: 1rem; }
   display: grid; grid-template-columns: 52px 1fr 1fr 36px; gap: 6px; align-items: center;
 }
 .set-row.head { font-size: 0.75rem; color: var(--muted); text-align: center; padding: 0 2px; }
-.set-row input { padding: 8px 6px; text-align: center; }
+.set-row input { padding: 11px 4px; text-align: center; }
+.set-row .del { padding: 12px 4px; font-size: 1rem; }
 .set-no {
-  background: var(--card-2); font-size: 0.85rem; padding: 8px 4px; text-align: center;
+  background: var(--card-2); font-size: 0.85rem; padding: 13px 4px; text-align: center;
 }
 .set-row.done .set-no { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 700; }
 .set-row.done input { border-color: var(--accent); }
@@ -151,7 +160,7 @@ label.inline input.custom { border-color: var(--accent); color: var(--accent); f
 .stepper { display: flex; align-items: center; gap: 3px; }
 .stepper input { flex: 1; width: 100%; }
 .stepper button {
-  flex: none; width: 30px; padding: 8px 0; font-size: 1rem; line-height: 1;
+  flex: none; width: 32px; padding: 13px 0; font-size: 1rem; line-height: 1;
   background: var(--card-2); color: var(--muted);
 }
 .stepper button:hover { color: var(--accent); border-color: var(--accent); }
@@ -169,10 +178,15 @@ label.inline input.custom { border-color: var(--accent); color: var(--accent); f
 }
 
 /* 휴식 타이머 */
-.rest-bar {
+.dock {
   position: fixed; left: 50%; transform: translateX(-50%);
   bottom: calc(12px + env(safe-area-inset-bottom));
-  display: flex; align-items: center; gap: 10px; z-index: 5;
+  display: flex; flex-direction: column-reverse; align-items: center; gap: 8px;
+  z-index: 6; pointer-events: none;      /* 바 사이 빈 곳은 아래 화면을 그대로 누를 수 있게 */
+}
+.dock > * { pointer-events: auto; }
+.rest-bar {
+  display: flex; align-items: center; gap: 10px;
   background: var(--card); border: 1px solid var(--accent); border-radius: 999px;
   padding: 8px 10px 8px 16px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
 }
@@ -195,7 +209,10 @@ label.inline input.custom { border-color: var(--accent); color: var(--accent); f
 h3 .hint { display: inline; font-weight: 400; }
 
 /* 오늘 버튼 */
-.today-btn { padding: 8px 10px; font-size: 0.85rem; color: var(--accent); border-color: var(--accent); }
+.today-btn {
+  padding: 8px 9px; font-size: 0.85rem; color: var(--accent); border-color: var(--accent);
+  white-space: nowrap; flex: none;        /* 좁은 화면에서 글자가 세로로 접히지 않게 */
+}
 .today-btn[hidden] { display: none; }
 
 /* 주간 요약 + 그래프 */
@@ -229,9 +246,7 @@ h3 .hint { display: inline; font-weight: 400; }
 
 /* 실행취소 */
 .undo-bar {
-  position: fixed; left: 50%; transform: translateX(-50%);
-  bottom: calc(12px + env(safe-area-inset-bottom));
-  display: flex; align-items: center; gap: 12px; z-index: 6;
+  display: flex; align-items: center; gap: 12px;
   background: var(--card); border: 1px solid var(--line); border-radius: 999px;
   padding: 8px 10px 8px 16px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
   font-size: 0.85rem;
@@ -250,7 +265,7 @@ h3 .hint { display: inline; font-weight: 400; }
 /* 카드 제목줄 · 기간 토글 */
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
 .card-head h3 { margin: 0; }
-.card-head select { padding: 6px 8px; font-size: 0.85rem; max-width: 55%; }
+.card-head select { padding: 8px 10px; font-size: 16px; max-width: 58%; }
 .seg { display: flex; gap: 0; }
 .seg button {
   padding: 6px 10px; font-size: 0.8rem; border-radius: 0; color: var(--muted);
@@ -263,8 +278,9 @@ h3 .hint { display: inline; font-weight: 400; }
 /* 운동 순서 이동 */
 .order { display: flex; align-items: center; gap: 2px; }
 .order button:not(.del) {
-  padding: 4px 8px; font-size: 0.9rem; color: var(--muted); background: none; border: none;
+  padding: 11px 13px; font-size: 1.05rem; color: var(--muted); background: none; border: none;
 }
+.order .del { padding: 11px 10px; }
 .order button:not(.del):hover { color: var(--accent); }
 
 /* 동기화 */
@@ -282,6 +298,11 @@ h3 .hint { display: inline; font-weight: 400; }
   background: var(--accent-soft); border-radius: 10px; padding: 8px 12px;
   margin: 0 0 10px; font-size: 0.85rem;
 }
+
+/* 긴 안내는 접어 둔다 (휴대폰에서 글 벽이 되지 않게) */
+.help > summary { cursor: pointer; font-size: 0.8rem; color: var(--muted); padding: 6px 0; }
+.help > summary:hover { color: var(--text); }
+.help .hint { margin-top: 4px; }
 
 /* 동기화 — 방법별 배지와 접어둔 고급 설정 */
 .tag {
