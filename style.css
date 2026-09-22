@@ -132,3 +132,7 @@ label.inline input.custom { border-color: var(--accent); color: var(--accent); f
   color: var(--muted); font-size: 0.75rem; text-decoration: underline;
 }
 .link-btn:hover { color: var(--accent); }
+
+/* 전체 기간 최고 기록 */
+.item.pr { font-size: 0.85rem; }
+.new-pr { color: var(--accent); font-weight: 700; font-size: 0.85rem; }

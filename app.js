@@ -63,6 +63,15 @@ function uid() {
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
+// 앱을 연 시각에 맞는 끼니를 골라둔다. (새벽/밤은 간식)
+function defaultMealType(d = new Date()) {
+  const h = d.getHours();
+  if (h < 5) return '간식';
+  if (h < 11) return '아침';
+  if (h < 15) return '점심';
+  if (h < 21) return '저녁';
+  return '간식';
+}
 function isEmptyDay(d) {
   return !d || (d.meals.length === 0 && d.workouts.length === 0);
 }
@@ -163,10 +172,10 @@ function autoMet(name) {
   for (const [re, met] of MET_TABLE) if (re.test(n)) return met;
   return DEFAULT_MET;
 }
-// 시간을 직접 안 적은 운동은 세트 수로 추정한다.
+// 시간을 직접 적었으면 그 값이 사실이므로 그대로 쓰고, 안 적었으면 완료한 세트 수로 추정한다.
 function minutesOf(w) {
   const m = Number(w.minutes);
-  return m > 0 ? m : w.sets.length * MIN_PER_SET;
+  return m > 0 ? m : countedSets(w).length * MIN_PER_SET;
 }
 function isEstimated(w) {
   return !(Number(w.minutes) > 0);
@@ -175,9 +184,40 @@ function isEstimated(w) {
 function burnOf(w, weight = bodyWeight()) {
   return Math.round(metOf(w.name) * weight * (minutesOf(w) / 60));
 }
-function volumeOf(w) {
-  return w.sets.reduce((v, s) => v + (Number(s.reps) || 0) * (Number(s.weight) || 0), 0);
+// 완료 체크한 세트만 집계한다. 하나도 체크 안 했으면 (체크를 안 쓰는 경우) 전체를 집계.
+// 덕분에 "계획만 넣어둔 세트"가 볼륨·칼로리에 먼저 잡히지 않는다.
+function countedSets(w) {
+  const done = w.sets.filter((s) => s.done);
+  return done.length ? done : w.sets;
 }
+function doneCount(w) {
+  return w.sets.filter((s) => s.done).length;
+}
+function volumeOf(w) {
+  return countedSets(w).reduce((v, s) => v + (Number(s.reps) || 0) * (Number(s.weight) || 0), 0);
+}
+// 모든 날짜를 통틀어 이 운동의 최고 기록. 중량이 없는 맨몸 운동은 횟수로 따진다.
+// 동점이면 먼저 세운 날이 남아서, 예전 기록을 다시 찍은 날은 신기록으로 치지 않는다.
+function personalBest(name) {
+  const key = metKey(name);
+  let best = null;
+  for (const [date, d] of Object.entries(state.days)) {
+    for (const w of d.workouts) {
+      if (metKey(w.name) !== key) continue;
+      for (const s of countedSets(w)) {
+        const weight = Number(s.weight) || 0;
+        const reps = Number(s.reps) || 0;
+        if (!weight && !reps) continue;
+        const better = !best
+          || weight > best.weight
+          || (weight === best.weight && reps > best.reps);
+        if (better) best = { weight, reps, date };
+      }
+    }
+  }
+  return best;
+}
+
 function dayBurn(d) {
   const weight = bodyWeight();
   return d.workouts.reduce((s, w) => s + burnOf(w, weight), 0);
@@ -220,19 +260,26 @@ function renderWorkouts() {
   const workouts = day().workouts;
   const weight = bodyWeight();
   const totalSets = workouts.reduce((s, w) => s + w.sets.length, 0);
+  const done = workouts.reduce((s, w) => s + doneCount(w), 0);
   const volume = workouts.reduce((s, w) => s + volumeOf(w), 0);
   const totalMin = workouts.reduce((s, w) => s + minutesOf(w), 0);
   const burn = dayBurn(day());
+  const setText = done ? `${done}/${totalSets}세트 완료` : `${totalSets}세트`;
 
   $('#workoutSummary').textContent = workouts.length
-    ? `운동 ${workouts.length}종 · ${totalSets}세트${volume ? ` · 볼륨 ${volume.toLocaleString()} kg` : ''} · ${totalMin}분 · 🔥 ${burn} kcal`
+    ? `운동 ${workouts.length}종 · ${setText}${volume ? ` · 볼륨 ${volume.toLocaleString()} kg` : ''} · ${totalMin}분 · 🔥 ${burn} kcal`
     : '';
 
   renderBurn(workouts, weight, burn);
 
   $('#workoutList').innerHTML = workouts.map((w) => {
     const vol = volumeOf(w);
-    const top = Math.max(0, ...w.sets.map((s) => Number(s.weight) || 0));
+    const done = doneCount(w);
+    const pr = personalBest(w.name);
+    const prText = !pr ? ''
+      : pr.weight ? `🏆 최고 ${pr.weight} kg × ${pr.reps}회`
+      : `🏆 최고 ${pr.reps}회`;
+    const isNewPr = pr && pr.date === currentDate;   // 보고 있는 날에 세운 기록
     return `<div class="card">
     <div class="item"><h3>${esc(w.name)}</h3>
       <button class="del" data-del-workout="${w.id}" aria-label="삭제">✕</button></div>
@@ -240,7 +287,7 @@ function renderWorkouts() {
       <div class="meta-inputs">
         <label class="inline">시간
           <input type="number" inputmode="numeric" min="0" step="1" value="${w.minutes ?? ''}"
-                 placeholder="${w.sets.length * MIN_PER_SET}" data-minutes="${w.id}">분
+                 placeholder="${countedSets(w).length * MIN_PER_SET}" data-minutes="${w.id}">분
         </label>
         <label class="inline" title="운동 강도. 직접 고치면 같은 이름의 운동에 모두 적용돼요.">MET
           <input type="number" inputmode="decimal" min="1" max="20" step="0.5" value="${metOf(w.name)}"
@@ -261,8 +308,12 @@ function renderWorkouts() {
     </div>
     <div class="item meta">
       <button data-add-set="${w.id}">+ 세트 추가</button>
-      <span class="muted">${top ? `최고 ${top} kg · ` : ''}볼륨 ${vol.toLocaleString()} kg</span>
+      <span class="muted">${done ? `${done}/${w.sets.length}세트 완료 · ` : ''}볼륨 ${vol.toLocaleString()} kg</span>
     </div>
+    ${prText ? `<div class="item pr">
+      <span>${prText}</span>
+      <span class="${isNewPr ? 'new-pr' : 'muted'}">${isNewPr ? '🎉 신기록!' : pr.date}</span>
+    </div>` : ''}
   </div>`;
   }).join('');
 }
@@ -386,6 +437,8 @@ document.addEventListener('click', (e) => {
   if (!t) return;
   const ds = t.dataset;
   if (ds.delMeal) {
+    const meal = day().meals.find((m) => m.id === ds.delMeal);
+    if (!confirm(`'${meal?.name ?? '이 기록'}'을(를) 삭제할까요?`)) return;
     day().meals = day().meals.filter((m) => m.id !== ds.delMeal);
   } else if (ds.delWorkout) {
     if (!confirm('이 운동을 삭제할까요?')) return;
@@ -473,4 +526,5 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
 }
 
 applyTheme();
+$('#mealType').value = defaultMealType();
 render();
