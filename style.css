@@ -9,6 +9,9 @@
   --accent: #34d399;
   --accent-soft: #1b3830;
   --danger: #f87171;
+  /* 그래프 색 — dataviz 검증 통과 (다크 표면 #1e2427 기준 CVD ΔE 9.4, 대비 3:1 이상) */
+  --chart-1: #199e70;   /* 섭취 */
+  --chart-2: #d95926;   /* 소모 */
 }
 :root[data-theme="light"] {
   --bg: #f4f6f5;
@@ -20,6 +23,9 @@
   --accent: #16a34a;
   --accent-soft: #dcfce7;
   --danger: #dc2626;
+  /* 밝은 표면(#ffffff) 기준 검증값. 섭취색 대비가 3:1 아래라 아래 날짜 목록이 표 역할을 한다 */
+  --chart-1: #1baf7a;
+  --chart-2: #eb6834;
 }
 
 * { box-sizing: border-box; }
@@ -183,3 +189,48 @@ label.inline input.custom { border-color: var(--accent); color: var(--accent); f
 .chip:hover { border-color: var(--accent); color: var(--accent); }
 .chip .muted { font-size: 0.75rem; }
 h3 .hint { display: inline; font-weight: 400; }
+
+/* 오늘 버튼 */
+.today-btn { padding: 8px 10px; font-size: 0.85rem; color: var(--accent); border-color: var(--accent); }
+.today-btn[hidden] { display: none; }
+
+/* 주간 요약 + 그래프 */
+.tiles { display: flex; gap: 8px; margin-bottom: 12px; }
+.tile {
+  flex: 1; background: var(--card-2); border-radius: 10px; padding: 8px 10px;
+  display: grid; gap: 2px;
+}
+.tile strong { font-size: 1.15rem; }
+.tile small { font-size: 0.7rem; font-weight: 400; color: var(--muted); }
+.chart { width: 100%; height: auto; display: block; }
+.chart .grid { stroke: var(--line); stroke-width: 1; }
+.chart .axis { fill: var(--muted); font-size: 9px; }
+.chart .bar-1 { fill: var(--chart-1); }
+.chart .bar-2 { fill: var(--chart-2); }
+.legend { display: flex; gap: 14px; justify-content: center; margin-top: 8px; font-size: 0.8rem; color: var(--muted); }
+.legend span { display: flex; align-items: center; gap: 5px; }
+.sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.sw-1 { background: var(--chart-1); }
+.sw-2 { background: var(--chart-2); }
+
+/* 검색 · 월별 묶음 */
+#historySearch { width: 100%; margin-bottom: 12px; }
+.month { margin-bottom: 8px; }
+.month > summary {
+  cursor: pointer; padding: 10px 12px; font-weight: 600;
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 8px;
+}
+.month[open] > summary { border-radius: 12px 12px 0 0; margin-bottom: 0; border-bottom: none; }
+.month[open] > .card.history-day:first-of-type { border-radius: 0 0 14px 14px; }
+
+/* 실행취소 */
+.undo-bar {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  display: flex; align-items: center; gap: 12px; z-index: 6;
+  background: var(--card); border: 1px solid var(--line); border-radius: 999px;
+  padding: 8px 10px 8px 16px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  font-size: 0.85rem;
+}
+.undo-bar[hidden] { display: none; }
+.undo-bar button { padding: 6px 12px; color: var(--accent); border-color: var(--accent); font-size: 0.8rem; }

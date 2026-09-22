@@ -290,6 +290,32 @@ function dayIntake(d) {
   return d.meals.reduce((s, m) => s + (Number(m.kcal) || 0), 0);
 }
 
+// ---------- 실행취소 ----------
+// 지우기 직전 상태를 통째로 들고 있다가 되돌린다. 개인용 기록이라 크기가 작아 이 방식이 가장 단순하다.
+let undoSnapshot = null;
+let undoTimer = null;
+
+function pushUndo(label) {
+  undoSnapshot = JSON.stringify(state);
+  $('#undoText').textContent = label;
+  $('#undoBar').hidden = false;
+  clearTimeout(undoTimer);
+  undoTimer = setTimeout(hideUndo, 7000);
+}
+function hideUndo() {
+  clearTimeout(undoTimer);
+  $('#undoBar').hidden = true;
+  undoSnapshot = null;
+}
+function undo() {
+  if (!undoSnapshot) return;
+  state = JSON.parse(undoSnapshot);
+  save();
+  hideUndo();
+  applyTheme();
+  render();
+}
+
 // ---------- 휴식 타이머 ----------
 let restTimer = null;
 let restLeft = 0;
@@ -337,6 +363,7 @@ function alarm() {
 // ---------- 렌더링 ----------
 function render() {
   $('#date').value = currentDate;
+  $('#todayBtn').hidden = currentDate === todayStr();
   renderMeals();
   renderWorkouts();
   renderHistory();
@@ -518,24 +545,106 @@ function renderBurn(workouts, weight, burn) {
   });
 }
 
+// 최근 7일 섭취·소모. 같은 단위(kcal)라 축 하나에 두 계열을 나란히 둔다.
+function weekData(days = 7) {
+  const out = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const date = shiftDate(currentDate, -i);
+    const d = state.days[date];
+    out.push({ date, intake: d ? dayIntake(d) : 0, burn: d ? dayBurn(d) : 0 });
+  }
+  return out;
+}
+
+// 막대 위쪽만 둥근 path (아래는 기준선에 붙어 있어야 한다)
+function barPath(x, y, w, h, r = 4) {
+  const rr = Math.min(r, w / 2, h);
+  return `M${x} ${y + h}V${y + rr}a${rr} ${rr} 0 0 1 ${rr} ${-rr}h${w - rr * 2}a${rr} ${rr} 0 0 1 ${rr} ${rr}V${y + h}Z`;
+}
+
+function renderWeekChart() {
+  const data = weekData();
+  const max = Math.max(1, ...data.flatMap((d) => [d.intake, d.burn]));
+  const top = Math.ceil(max / 200) * 200;   // 200 단위로 올려 눈금을 깔끔하게
+  const W = 340, H = 160, L = 36, R = 6, T = 10, B = 24;
+  const plotW = W - L - R, plotH = H - T - B;
+  const step = plotW / data.length;
+  const barW = Math.min(16, (step - 8) / 2);
+  const y = (v) => T + plotH - (v / top) * plotH;
+
+  const grid = [0, 0.5, 1].map((f) => {
+    const gy = T + plotH - f * plotH;
+    return `<line x1="${L}" y1="${gy}" x2="${W - R}" y2="${gy}" class="grid"/>
+            <text x="${L - 6}" y="${gy + 4}" class="axis" text-anchor="end">${Math.round(top * f)}</text>`;
+  }).join('');
+
+  const bars = data.map((d, i) => {
+    const cx = L + step * i + step / 2;
+    const x1 = cx - barW - 1, x2 = cx + 1;   // 두 막대 사이 2px 간격
+    const label = fmtDate(d.date);
+    return `
+      <g>
+        <title>${label} · 섭취 ${d.intake} kcal</title>
+        ${d.intake ? `<path d="${barPath(x1, y(d.intake), barW, T + plotH - y(d.intake))}" class="bar-1"/>` : ''}
+      </g>
+      <g>
+        <title>${label} · 소모 ${d.burn} kcal</title>
+        ${d.burn ? `<path d="${barPath(x2, y(d.burn), barW, T + plotH - y(d.burn))}" class="bar-2"/>` : ''}
+      </g>
+      <text x="${cx}" y="${H - 8}" class="axis" text-anchor="middle">${label}</text>`;
+  }).join('');
+
+  $('#weekChart').innerHTML = `<svg viewBox="0 0 ${W} ${H}" class="chart" role="img"
+    aria-label="최근 7일 섭취와 소모 칼로리">${grid}${bars}</svg>`;
+
+  const withWorkout = data.filter((d) => d.burn > 0).length;
+  const avg = (key) => Math.round(data.reduce((s, d) => s + d[key], 0) / data.length);
+  $('#weekTiles').innerHTML = `
+    <div class="tile"><span class="muted">평균 섭취</span><strong>${avg('intake')}<small> kcal</small></strong></div>
+    <div class="tile"><span class="muted">평균 소모</span><strong>${avg('burn')}<small> kcal</small></strong></div>
+    <div class="tile"><span class="muted">운동한 날</span><strong>${withWorkout}<small> / 7일</small></strong></div>`;
+}
+
+// 하루에 들어있는 모든 글자 (검색용)
+function dayText(d) {
+  return [...d.workouts.map((w) => w.name), ...d.meals.map((m) => m.name), d.note ?? '']
+    .join(' ').toLowerCase();
+}
+
 function renderHistory() {
-  const dates = Object.keys(state.days).filter((d) => !isEmptyDay(state.days[d])).sort().reverse();
+  renderWeekChart();
+  const q = $('#historySearch').value.trim().toLowerCase();
+  const dates = Object.keys(state.days)
+    .filter((d) => !isEmptyDay(state.days[d]))
+    .filter((d) => !q || dayText(state.days[d]).includes(q))
+    .sort().reverse();
+
   if (!dates.length) {
-    $('#historyList').innerHTML = '<p class="muted">아직 기록이 없어요.</p>';
+    $('#historyList').innerHTML = `<p class="muted">${q ? '검색 결과가 없어요.' : '아직 기록이 없어요.'}</p>`;
     return;
   }
-  $('#historyList').innerHTML = dates.map((date) => {
-    const d = state.days[date];
-    const kcal = dayIntake(d);
-    const burn = dayBurn(d);
-    const ex = d.workouts.map((w) => `${esc(w.name)} ${w.sets.length}×${w.sets[0]?.reps ?? 0}`).join(', ');
-    return `<div class="card history-day" data-goto="${date}">
-      <h3>${date}</h3>
-      <div class="muted">🍚 ${d.meals.length}개${kcal ? ` · ${kcal} kcal` : ''}</div>
-      <div class="muted">🏋️ ${ex || '운동 없음'}${burn ? ` · 🔥 ${burn} kcal` : ''}</div>
-      ${kcal && burn ? `<div class="muted">➖ 순 ${kcal - burn} kcal</div>` : ''}
-    </div>`;
-  }).join('');
+
+  // 달별로 묶고, 가장 최근 달(또는 검색 중일 때는 전부)만 펼쳐 둔다
+  const months = {};
+  dates.forEach((date) => (months[date.slice(0, 7)] ??= []).push(date));
+
+  $('#historyList').innerHTML = Object.entries(months).map(([month, list], i) => `
+    <details class="month" ${i === 0 || q ? 'open' : ''}>
+      <summary>${month.replace('-', '년 ')}월 <span class="muted">${list.length}일</span></summary>
+      ${list.map((date) => {
+        const d = state.days[date];
+        const kcal = dayIntake(d);
+        const burn = dayBurn(d);
+        const ex = d.workouts.map((w) => `${esc(w.name)} ${w.sets.length}×${w.sets[0]?.reps ?? 0}`).join(', ');
+        return `<div class="card history-day" data-goto="${date}">
+          <h3>${date}</h3>
+          <div class="muted">🍚 ${d.meals.length}개${kcal ? ` · ${kcal} kcal` : ''}</div>
+          <div class="muted">🏋️ ${ex || '운동 없음'}${burn ? ` · 🔥 ${burn} kcal` : ''}</div>
+          ${kcal && burn ? `<div class="muted">➖ 순 ${kcal - burn} kcal</div>` : ''}
+          ${d.note ? `<div class="muted">📝 ${esc(d.note)}</div>` : ''}
+        </div>`;
+      }).join('')}
+    </details>`).join('');
 }
 
 function updateExHint() {
@@ -604,6 +713,25 @@ function showTab(name) {
 $('#date').addEventListener('change', (e) => { currentDate = e.target.value || todayStr(); render(); });
 $('#prevDay').addEventListener('click', () => { currentDate = shiftDate(currentDate, -1); render(); });
 $('#nextDay').addEventListener('click', () => { currentDate = shiftDate(currentDate, 1); render(); });
+
+$('#todayBtn').addEventListener('click', () => { currentDate = todayStr(); render(); });
+$('#historySearch').addEventListener('input', renderHistory);
+$('#undoBtn').addEventListener('click', undo);
+
+// 좌우로 쓸어서 날짜 이동 (세로 스크롤과 헷갈리지 않게 가로 이동이 더 클 때만)
+let touch = null;
+document.querySelector('main').addEventListener('touchstart', (e) => {
+  touch = e.touches.length === 1 ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : null;
+}, { passive: true });
+document.querySelector('main').addEventListener('touchend', (e) => {
+  if (!touch) return;
+  const dx = e.changedTouches[0].clientX - touch.x;
+  const dy = e.changedTouches[0].clientY - touch.y;
+  touch = null;
+  if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+  currentDate = shiftDate(currentDate, dx < 0 ? 1 : -1);
+  render();
+}, { passive: true });
 
 $('#themeBtn').addEventListener('click', () => {
   state.profile.theme = state.profile.theme === 'light' ? 'dark' : 'light';
@@ -682,10 +810,13 @@ document.addEventListener('click', (e) => {
   if (ds.delMeal) {
     const meal = day().meals.find((m) => m.id === ds.delMeal);
     if (!confirm(`'${meal?.name ?? '이 기록'}'을(를) 삭제할까요?`)) return;
+    pushUndo(`'${meal?.name ?? '기록'}' 삭제함`);
     day().meals = day().meals.filter((m) => m.id !== ds.delMeal);
   } else if (ds.delWorkout) {
+    const w = findWorkout(ds.delWorkout);
     if (!confirm('이 운동을 삭제할까요?')) return;
-    day().workouts = day().workouts.filter((w) => w.id !== ds.delWorkout);
+    pushUndo(`'${w?.name ?? '운동'}' 삭제함`);
+    day().workouts = day().workouts.filter((x) => x.id !== ds.delWorkout);
   } else if (ds.toggle) {
     const [id, i] = ds.toggle.split(':');
     const set = findWorkout(id).sets[i];
@@ -710,6 +841,7 @@ document.addEventListener('click', (e) => {
     src.meals.forEach((m) => day().meals.push({ ...m, id: uid() }));
   } else if (ds.delFood) {
     if (!confirm(`등록한 음식 '${ds.delFood}'을(를) 지울까요?`)) return;
+    pushUndo(`등록 음식 '${ds.delFood}' 삭제함`);
     delete state.profile.foods[ds.delFood];
   } else if (t.id === 'rememberFood') {
     rememberFood($('#foodName').value, $('#foodAmount').value, Number($('#foodKcal').value));
@@ -725,8 +857,10 @@ document.addEventListener('click', (e) => {
     const [id, i] = ds.delSet.split(':');
     const w = findWorkout(id);
     if (w.sets.length > 1) {
+      pushUndo(`${w.name} ${Number(i) + 1}세트 삭제함`);
       w.sets.splice(Number(i), 1);
     } else if (confirm('마지막 세트예요. 이 운동을 삭제할까요?')) {
+      pushUndo(`'${w.name}' 삭제함`);
       day().workouts = day().workouts.filter((x) => x.id !== id);
     } else {
       return;
@@ -779,6 +913,7 @@ $('#importFile').addEventListener('change', async (e) => {
     const data = JSON.parse(await file.text());
     if (!data.days) throw new Error('형식 오류');
     if (!confirm('가져온 기록을 현재 기록과 합칠까요? (같은 날짜는 가져온 기록으로 덮어씁니다)')) return;
+    pushUndo('백업 가져오기 실행함');
     state.days = { ...state.days, ...data.days };
     if (Number(data.profile?.weight) > 0) state.profile.weight = Number(data.profile.weight);
     if (data.profile?.mets) state.profile.mets = { ...state.profile.mets, ...data.profile.mets };
