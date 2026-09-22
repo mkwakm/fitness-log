@@ -7,6 +7,9 @@
   <title>나의 식단·운동 기록</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="운동기록">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -137,6 +140,7 @@
       </div>
       <input id="historySearch" placeholder="🔍 운동·음식·메모 검색" autocomplete="off">
       <div id="historyList"></div>
+      <button id="installBtn" class="wide-btn" hidden>📲 홈 화면에 앱으로 설치하기</button>
       <div class="card" id="syncCard"></div>
       <div class="card backup">
         <h3>백업</h3>

@@ -98,9 +98,19 @@ function flushSave() {
   save();
 }
 
+let storageFull = false;
 function save() {
   stampChanges();
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    storageFull = false;
+  } catch (err) {
+    // 공간이 꽉 차면 예외가 그대로 튀어나와 화면이 반응 없이 멈춘다. 잡아서 알려준다.
+    if (!storageFull) {
+      storageFull = true;
+      alert('저장 공간이 꽉 찼어요.\n기록 탭에서 내보내기로 백업한 뒤, 오래된 기록을 정리해 주세요.\n(지금 적은 내용은 아직 저장되지 않았습니다)');
+    }
+  }
   scheduleAutoSave();        // 파일 자동 저장 (sync.js)
 }
 
@@ -1158,6 +1168,22 @@ $('#importFile').addEventListener('change', async (e) => {
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   navigator.serviceWorker.register('sw.js');
 }
+
+// 홈 화면에 설치할 수 있으면 버튼을 띄운다. (https로 띄워야 뜬다)
+let installPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  installPrompt = e;
+  $('#installBtn').hidden = false;
+});
+$('#installBtn').addEventListener('click', async () => {
+  if (!installPrompt) return;
+  installPrompt.prompt();
+  await installPrompt.userChoice;
+  installPrompt = null;
+  $('#installBtn').hidden = true;
+});
+window.addEventListener('appinstalled', () => { $('#installBtn').hidden = true; });
 
 // 미뤄둔 저장은 탭을 벗어나거나 닫기 전에 반드시 반영한다
 document.addEventListener('visibilitychange', () => { if (document.hidden) flushSave(); });
