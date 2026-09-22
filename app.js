@@ -14,6 +14,8 @@ const DEFAULT_PROFILE = {
   mets: {},          // 운동 이름별로 직접 지정한 MET
   weightStep: 2.5,   // 중량 ± 버튼 단위 (kg)
   restSec: 90,       // 세트 완료 시 시작하는 휴식 시간 (초)
+  foods: {},         // 직접 등록한 음식 { 이름: { kcal100, units } }
+  goal: null,        // 하루 목표 칼로리 (안 정했으면 null)
 };
 
 // 운동 이름으로 MET(운동 강도) 추정. 위에서부터 먼저 걸리는 것을 사용하므로 순서가 중요하다.
@@ -49,7 +51,8 @@ function save() {
 
 let state = load();
 let currentDate = todayStr();
-let kcalTouched = false;   // 사용자가 칼로리를 직접 고쳤으면 자동 계산으로 덮어쓰지 않는다
+let kcalTouched = false;
+let favCache = [];   // 사용자가 칼로리를 직접 고쳤으면 자동 계산으로 덮어쓰지 않는다
 
 function todayStr(d = new Date()) {
   const off = d.getTimezoneOffset() * 60000;
@@ -99,15 +102,33 @@ function applyTheme() {
 // 한국어는 "현미밥 / 볶음밥 / 바나나우유"처럼 뒤쪽이 핵심 단어라, 이름이 표의 키로 "끝날" 때만 잡는다.
 // (그냥 포함으로 찾으면 "김치전"이 "김치"로 잡혀 칼로리가 엉뚱해진다.)
 // 여러 개 걸리면 가장 긴(구체적인) 키를 쓴다. 예: "제로콜라"는 "콜라"가 아니라 "제로콜라".
+function foodName(name) {
+  return String(name ?? '').trim().toLowerCase().replace(/\s+/g, '');
+}
+// 직접 등록한 음식(profile.foods)이 기본 표(FOOD_DB)보다 우선한다.
+function allFoods() {
+  return { ...FOOD_DB, ...(state.profile.foods || {}) };
+}
 function findFood(name) {
-  const n = String(name ?? '').trim().toLowerCase().replace(/\s+/g, '');
+  const n = foodName(name);
   if (!n) return null;
-  if (FOOD_DB[n]) return { key: n, food: FOOD_DB[n] };
+  const table = allFoods();
+  if (table[n]) return { key: n, food: table[n] };
   let best = null;
-  for (const key of Object.keys(FOOD_DB)) {
-    if (n.endsWith(key) && (!best || key.length > best.key.length)) best = { key, food: FOOD_DB[key] };
+  for (const key of Object.keys(table)) {
+    if (n.endsWith(key) && (!best || key.length > best.key.length)) best = { key, food: table[key] };
   }
   return best;
+}
+
+// 표에 없는 음식을 지금 적은 양·칼로리 기준으로 등록한다.
+function rememberFood(name, amount, kcal) {
+  const key = foodName(name);
+  if (!key || !(kcal > 0)) return;
+  const grams = amountToGrams(amount, null) ?? DEFAULT_UNITS['인분'];
+  if (!state.profile.foods) state.profile.foods = {};
+  state.profile.foods[key] = { kcal100: Math.round(kcal / grams * 1000) / 10, units: {} };
+  save();
 }
 
 // "200g", "1공기", "1.5개", "300ml" → 그램 수. 모르는 단위면 null.
@@ -139,14 +160,19 @@ function estimateKcal(name, amount) {
 
 function updateMealHint() {
   const name = $('#foodName').value;
+  const kcal = Number($('#foodKcal').value);
   const est = estimateKcal(name, $('#foodAmount').value);
   const hint = $('#mealHint');
   if (!est) {
-    hint.textContent = name.trim() ? '표에 없는 음식이에요. 칼로리를 직접 적어 주세요.' : '';
     if (!kcalTouched) $('#foodKcal').value = '';   // 앞서 자동으로 채운 값을 남겨두지 않는다
+    hint.innerHTML = !name.trim() ? ''
+      : kcal > 0
+        ? `표에 없는 음식이에요. <button type="button" class="link-btn" id="rememberFood">＋ 이 음식 기억하기</button>`
+        : '표에 없는 음식이에요. 칼로리를 직접 적어 주세요.';
     return;
   }
-  hint.textContent = `🧮 ${est.key} ${est.grams}g 기준 약 ${est.kcal} kcal${est.assumed ? ' (양을 안 적어 1인분으로 추정)' : ''}`;
+  const custom = state.profile.foods?.[est.key] ? ' (내가 등록한 음식)' : '';
+  hint.textContent = `🧮 ${est.key} ${est.grams}g 기준 약 ${est.kcal} kcal${custom}${est.assumed ? ' · 양을 안 적어 1인분으로 추정' : ''}`;
   if (!kcalTouched) $('#foodKcal').value = est.kcal;
 }
 function resetMealForm() {
@@ -326,9 +352,20 @@ function renderMeals() {
   const meals = d.meals;
   const total = dayIntake(d);
   const burn = dayBurn(d);
-  $('#mealSummary').textContent = meals.length
-    ? `오늘 ${meals.length}개 · 총 ${total} kcal${burn ? ` · 🔥 ${burn} kcal 소모 · 순 ${total - burn} kcal` : ''}`
-    : '';
+  const goal = Number(state.profile.goal) || 0;
+  const left = goal + burn - total;   // 소모한 만큼 더 먹을 수 있다
+  const parts = [];
+  if (meals.length) parts.push(`오늘 ${meals.length}개 · 총 ${total} kcal`);
+  if (burn) parts.push(`🔥 ${burn} kcal 소모`);
+  if (goal) parts.push(left >= 0 ? `🎯 ${left} kcal 남음` : `🎯 ${-left} kcal 초과`);
+  else if (meals.length && burn) parts.push(`순 ${total - burn} kcal`);
+  $('#mealSummary').textContent = parts.join(' · ');
+
+  renderFavorites();
+  renderMealCopyBtn();
+  renderMyFoods();
+  const goalInput = $('#goalKcal');
+  if (document.activeElement !== goalInput) goalInput.value = state.profile.goal ?? '';
 
   $('#mealList').innerHTML = MEAL_ORDER.map((type) => {
     const list = meals.filter((m) => m.type === type);
@@ -340,6 +377,55 @@ function renderMeals() {
         <button class="del" data-del-meal="${m.id}" aria-label="삭제">✕</button>
       </div>`).join('')}</div>`;
   }).join('');
+}
+
+// 많이 먹은 순서대로. 같은 음식은 가장 최근에 적은 양·칼로리를 쓴다.
+function favoriteFoods(limit = 6) {
+  const tally = {};
+  Object.keys(state.days).sort().forEach((date) => {
+    state.days[date].meals.forEach((m) => {
+      const key = foodName(m.name);
+      if (!key) return;
+      if (!tally[key]) tally[key] = { count: 0, meal: m };
+      tally[key].count += 1;
+      tally[key].meal = m;
+    });
+  });
+  return Object.values(tally).sort((a, b) => b.count - a.count).slice(0, limit);
+}
+
+function renderFavorites() {
+  const favs = favoriteFoods();
+  $('#favFoods').innerHTML = favs.length
+    ? `<h3>⭐ 자주 먹는 음식 <span class="hint">누르면 바로 추가돼요</span></h3>
+       <div class="chips">${favs.map((f, i) => `<button class="chip" data-fav="${i}">
+         ${esc(f.meal.name)} <span class="muted">${f.meal.kcal ? f.meal.kcal + 'kcal' : esc(f.meal.amount)}</span>
+       </button>`).join('')}</div>`
+    : '';
+  $('#favFoods').hidden = !favs.length;
+  favCache = favs;
+}
+
+function renderMealCopyBtn() {
+  const btn = $('#loadMeals');
+  const date = Object.keys(state.days)
+    .filter((d) => d < currentDate && state.days[d].meals.length)
+    .sort().reverse()[0];
+  if (!date) { btn.hidden = true; return; }
+  btn.hidden = false;
+  btn.textContent = `↩ ${fmtDate(date)} 식단 ${state.days[date].meals.length}개 그대로 불러오기`;
+  btn.dataset.copyMeals = date;
+}
+
+function renderMyFoods() {
+  const foods = Object.entries(state.profile.foods || {});
+  $('#myFoods').innerHTML = foods.length
+    ? `<div class="card"><h3>🍽 내가 등록한 음식</h3>
+        ${foods.map(([key, f]) => `<div class="item">
+          <div>${esc(key)} <span class="muted">100g당 ${f.kcal100} kcal</span></div>
+          <button class="del" data-del-food="${esc(key)}" aria-label="삭제">✕</button>
+        </div>`).join('')}</div>`
+    : '';
 }
 
 function renderWorkouts() {
@@ -550,7 +636,13 @@ $('#restPlus').addEventListener('click', () => { restLeft += 30; drawRest(); });
 
 $('#foodName').addEventListener('input', updateMealHint);
 $('#foodAmount').addEventListener('input', updateMealHint);
-$('#foodKcal').addEventListener('input', () => { kcalTouched = true; });
+$('#foodKcal').addEventListener('input', () => { kcalTouched = true; updateMealHint(); });
+$('#goalKcal').addEventListener('input', (e) => {
+  const v = Number(e.target.value);
+  state.profile.goal = v > 0 ? v : null;
+  save();
+  renderMeals();
+});
 
 $('#mealForm').addEventListener('submit', (e) => {
   e.preventDefault();
@@ -608,6 +700,23 @@ document.addEventListener('click', (e) => {
   } else if (ds.routine) {
     loadRoutine(ds.routine);
     return;                          // loadRoutine이 알아서 저장·렌더링한다
+  } else if (ds.fav) {
+    const m = favCache[Number(ds.fav)]?.meal;
+    if (!m) return;
+    day().meals.push({ id: uid(), type: $('#mealType').value, name: m.name, amount: m.amount, kcal: m.kcal });
+  } else if (ds.copyMeals) {
+    const src = state.days[ds.copyMeals];
+    if (!confirm(`${fmtDate(ds.copyMeals)} 식단 ${src.meals.length}개를 그대로 불러올까요?`)) return;
+    src.meals.forEach((m) => day().meals.push({ ...m, id: uid() }));
+  } else if (ds.delFood) {
+    if (!confirm(`등록한 음식 '${ds.delFood}'을(를) 지울까요?`)) return;
+    delete state.profile.foods[ds.delFood];
+  } else if (t.id === 'rememberFood') {
+    rememberFood($('#foodName').value, $('#foodAmount').value, Number($('#foodKcal').value));
+    kcalTouched = false;
+    updateMealHint();
+    renderMyFoods();
+    return;
   } else if (ds.addSet) {
     const w = findWorkout(ds.addSet);
     const last = w.sets[w.sets.length - 1] || { reps: 10, weight: null };

@@ -172,3 +172,14 @@ label.inline input.custom { border-color: var(--accent); color: var(--accent); f
 .rest-label { font-size: 0.85rem; color: var(--muted); }
 .rest-bar.almost { border-color: var(--danger); }
 .rest-bar.almost strong { color: var(--danger); }
+
+/* 자주 먹는 음식 칩 */
+.card.fav[hidden] { display: none; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  background: var(--card-2); border: 1px solid var(--line); border-radius: 999px;
+  padding: 7px 12px; font-size: 0.85rem;
+}
+.chip:hover { border-color: var(--accent); color: var(--accent); }
+.chip .muted { font-size: 0.75rem; }
+h3 .hint { display: inline; font-weight: 400; }

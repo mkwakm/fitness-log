@@ -40,7 +40,21 @@
         <p class="hint" id="mealHint"></p>
         <button type="submit" class="primary">식단 추가</button>
       </form>
+
+      <div id="favFoods" class="card fav"></div>
+      <button id="loadMeals" class="wide-btn"></button>
       <div id="mealList"></div>
+
+      <div class="card">
+        <h3>🎯 하루 목표 칼로리</h3>
+        <div class="row">
+          <label>목표 (kcal)
+            <input id="goalKcal" type="number" inputmode="numeric" min="0" step="50" placeholder="예: 2000">
+          </label>
+        </div>
+        <p class="hint">정해두면 요약에 남은 칼로리가 같이 나와요. 소모 칼로리만큼 더 먹을 수 있게 계산합니다.</p>
+      </div>
+      <div id="myFoods"></div>
     </section>
 
     <!-- 운동 -->
