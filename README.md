@@ -11,3 +11,5 @@ git clone https://github.com/mkwakm/fitness-log.git
 ```
 - 작업 시작 전: `git pull`
 - 작업 끝난 후: `git add -A && git commit -m "메시지" && git push`
+
+📱 휴대폰 연결 테스트 완료
