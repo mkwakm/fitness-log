@@ -32,6 +32,7 @@
     <section id="meals" class="panel active">
       <div class="summary" id="mealSummary"></div>
       <div class="card meter" id="proteinBar" hidden></div>
+      <div class="card meter" id="waterRow"></div>
       <form id="mealForm" class="card form">
         <select id="mealType">
           <option>아침</option><option>점심</option><option>저녁</option><option>간식</option>
@@ -70,6 +71,14 @@
     <!-- 운동 -->
     <section id="workouts" class="panel">
       <div class="summary" id="workoutSummary"></div>
+
+      <div class="card session">
+        <div>
+          <h3>⏱ 운동 시간</h3>
+          <p class="hint" id="sessionText"></p>
+        </div>
+        <button id="sessionBtn" class="primary">▶️ 운동 시작</button>
+      </div>
 
       <!-- 소모 칼로리 창 -->
       <div class="card burn">
@@ -115,6 +124,12 @@
 
     <!-- 기록 -->
     <section id="history" class="panel">
+      <div class="card" id="streakCard">
+        <h3>🔥 운동 꾸준함</h3>
+        <div class="tiles" id="streakTiles"></div>
+        <p class="hint" id="streakMsg"></p>
+      </div>
+
       <div class="card" id="weekCard">
         <div class="card-head">
           <h3 id="weekTitle">📊 최근 7일</h3>
@@ -130,6 +145,12 @@
           <span><i class="sw sw-1"></i>섭취</span>
           <span><i class="sw sw-2"></i>소모</span>
         </div>
+      </div>
+
+      <div class="card" id="balanceCard">
+        <h3>🧩 부위별 밸런스</h3>
+        <div id="balanceList"></div>
+        <p class="hint" id="balanceHint"></p>
       </div>
 
       <div class="card" id="weightCard">

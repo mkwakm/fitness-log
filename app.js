@@ -20,6 +20,8 @@ const DEFAULT_PROFILE = {
   foods: {},         // 직접 등록한 음식 { 이름: { kcal100, units } }
   goal: null,        // 하루 목표 칼로리 (안 정했으면 null)
   proteinGoal: null, // 하루 목표 단백질 g (안 정했으면 체중 × 1.6 제안)
+  weeklyGoal: 3,     // 주 몇 번 운동할지
+  waterGoal: 8,      // 하루 물 몇 잔
 };
 
 // 운동 이름으로 MET(운동 강도) 추정. 위에서부터 먼저 걸리는 것을 사용하므로 순서가 중요하다.
@@ -38,6 +40,24 @@ const MET_TABLE = [
   [/걷기|산책|워킹/, 3.5],
   [/요가|필라테스|스트레칭|폼롤러/, 3.0],
 ];
+
+// 운동 이름으로 부위 추정. MET_TABLE과 같은 규칙 — 위에서 먼저 걸리는 줄을 쓰므로 순서가 중요하다.
+const PART_TABLE = [
+  ['하체', /스쿼트|데드리프트|런지|레그프레스|레그컬|레그익스텐션|힙쓰러스트|힙스러스트|카프|하체|둔근/],
+  ['코어', /플랭크|복근|코어|크런치|윗몸|레그레이즈|브릿지/],
+  ['유산소', /줄넘기|버피|hiit|인터벌|크로스핏|타바타|달리기|러닝|런닝|조깅|뛰기|트레드밀|수영|자전거|바이크|사이클|스피닝|로잉|일립티컬|스텝퍼|유산소|에어로빅|등산|하이킹|계단|걷기|산책|워킹|복싱|배드민턴|테니스|농구|축구|풋살/],
+  ['등', /풀업|턱걸이|철봉|로우|랫|등운동|시티드로|바벨로/],
+  ['가슴', /벤치|푸시업|팔굽혀펴기|가슴|체스트|플라이|펙덱|딥스|체스트프레스/],
+  ['어깨', /숄더|어깨|레터럴|오버헤드|밀리터리|슈러그/],
+  ['팔', /컬|삼두|이두|트라이셉|바이셉|킥백/],
+  ['전신', /요가|필라테스|스트레칭|폼롤러|케틀벨|마운틴클라이머|점핑잭|trx/],
+];
+const PART_ORDER = ['가슴', '등', '하체', '어깨', '팔', '코어', '유산소', '전신', '기타'];
+function partOf(name) {
+  const n = metKey(name);
+  for (const [part, re] of PART_TABLE) if (re.test(n)) return part;
+  return '기타';
+}
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -156,7 +176,7 @@ function markDeleted(id, date = currentDate) {
   (d.deleted ??= []).push(id);
 }
 function isEmptyDay(d) {
-  return !d || (d.meals.length === 0 && d.workouts.length === 0 && !d.note && !d.weight);
+  return !d || (d.meals.length === 0 && d.workouts.length === 0 && !d.note && !d.weight && !d.water && !d.sessionMin);
 }
 function fmtDate(str) {
   return str.slice(5).replace('-', '/');   // 2026-09-21 → 09/21
@@ -396,6 +416,47 @@ function dayBurn(date) {
   const weight = bodyWeight(date);
   return d.workouts.reduce((s, w) => s + burnOf(w, weight), 0);
 }
+// 운동을 한 날인지 (세트가 하나라도 있는 날)
+function didWorkout(date) {
+  return (state.days[date]?.workouts?.length || 0) > 0;
+}
+// 오늘(또는 어제)부터 거꾸로 세는 연속 운동 일수.
+// 오늘 아직 안 했어도 어제까지 이어온 기록은 살아 있는 것으로 본다.
+function workoutStreak(from = todayStr()) {
+  let start = from;
+  if (!didWorkout(start)) {
+    start = shiftDate(from, -1);
+    if (!didWorkout(start)) return 0;
+  }
+  let n = 0;
+  for (let d = start; didWorkout(d); d = shiftDate(d, -1)) n += 1;
+  return n;
+}
+// 이번 주(월요일 시작) 운동한 날 수
+function weekStart(date = currentDate) {
+  const d = new Date(date + 'T00:00:00');
+  const back = (d.getDay() + 6) % 7;      // 월요일을 0으로
+  return shiftDate(date, -back);
+}
+function weeklyCount(date = currentDate) {
+  const start = weekStart(date);
+  let n = 0;
+  for (let i = 0; i < 7; i++) if (didWorkout(shiftDate(start, i))) n += 1;
+  return n;
+}
+// 최근 N일 부위별 세트 수
+function partBalance(days = range, endDate = currentDate) {
+  const tally = new Map(PART_ORDER.map((p) => [p, 0]));
+  for (let i = 0; i < days; i++) {
+    const d = state.days[shiftDate(endDate, -i)];
+    d?.workouts?.forEach((w) => {
+      const n = countedSets(w).length;
+      tally.set(partOf(w.name), (tally.get(partOf(w.name)) || 0) + n);
+    });
+  }
+  return [...tally].filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
+}
+
 function dayIntake(d) {
   return d.meals.reduce((s, m) => s + (Number(m.kcal) || 0), 0);
 }
@@ -432,6 +493,44 @@ function undo() {
   hideUndo();
   applyTheme();
   render();
+}
+
+// ---------- 운동 세션 (전체 시간) ----------
+// 시작을 누르면 그 날에 시작 시각을 적어두고, 끝내면 분으로 바꿔 저장한다.
+let sessionTicker = null;
+
+function sessionOn() {
+  return Number(day().sessionStart) > 0;
+}
+function toggleSession() {
+  const d = day();
+  if (sessionOn()) {
+    const mins = Math.max(1, Math.round((Date.now() - d.sessionStart) / 60000));
+    d.sessionMin = (Number(d.sessionMin) || 0) + mins;
+    d.sessionStart = null;
+  } else {
+    d.sessionStart = Date.now();
+  }
+  save();
+  renderSession();
+  renderWorkouts();
+}
+function renderSession() {
+  const d = state.days[currentDate];
+  const done = Number(d?.sessionMin) || 0;
+  const running = Number(d?.sessionStart) > 0;
+  const live = running ? Math.floor((Date.now() - d.sessionStart) / 60000) : 0;
+  const total = done + live;
+
+  $('#sessionBtn').textContent = running ? '⏹ 운동 끝내기' : '▶️ 운동 시작';
+  $('#sessionBtn').classList.toggle('primary', !running);
+  $('#sessionBtn').classList.toggle('running', running);
+  $('#sessionText').textContent = running
+    ? `진행 중 · ${total}분`
+    : (total ? `오늘 ${total}분 운동` : '눌러서 시간을 재요');
+
+  clearInterval(sessionTicker);
+  if (running) sessionTicker = setInterval(renderSession, 20000);
 }
 
 // ---------- 휴식 타이머 ----------
@@ -491,6 +590,7 @@ function render() {
   renderHistory();
   renderSuggestions();
   renderRoutineBtn();
+  renderSession();
   renderSync();
   updateExHint();
   const note = $('#dayNote');
@@ -522,6 +622,7 @@ function renderMeals() {
   }
 
   renderFavorites();
+  renderWater();
   renderMealCopyBtn();
   renderMyFoods();
   const goalInput = $('#goalKcal');
@@ -570,6 +671,20 @@ function renderFavorites() {
     : '';
   $('#favFoods').hidden = !favs.length;
   favCache = favs;
+}
+
+function renderWater() {
+  const cups = Number(day().water) || 0;
+  const goal = Number(state.profile.waterGoal) || 8;
+  $('#waterRow').innerHTML = `
+    <div class="bar-head"><span>💧 물</span><strong>${cups} / ${goal}잔</strong></div>
+    <div class="cups">
+      ${Array.from({ length: goal }, (_, i) => `<span class="cup ${i < cups ? 'on' : ''}"></span>`).join('')}
+    </div>
+    <div class="row water-btns">
+      <button data-water="-1" aria-label="한 잔 빼기">−</button>
+      <button data-water="1" class="primary">💧 한 잔 마심</button>
+    </div>`;
 }
 
 function renderMealCopyBtn() {
@@ -810,6 +925,40 @@ function renderLiftChart() {
     lineChart(points, { unit: 'kg', cls: 'l' });
 }
 
+function renderBalance() {
+  const parts = partBalance();
+  const total = parts.reduce((s, [, n]) => s + n, 0);
+  const card = $('#balanceCard');
+  if (!total) { card.hidden = true; return; }
+  card.hidden = false;
+  const max = parts[0][1];
+  // 부위는 순위가 아니라 크기를 비교하는 것이라 한 가지 색의 길이로만 나타낸다
+  $('#balanceList').innerHTML = parts.map(([part, n]) => `
+    <div class="bal">
+      <span class="bal-name">${part}</span>
+      <span class="bar"><span style="width:${Math.round(n / max * 100)}%"></span></span>
+      <span class="bal-n">${n}세트</span>
+    </div>`).join('');
+  const missing = ['가슴', '등', '하체'].filter((p) => !parts.some(([q]) => q === p));
+  $('#balanceHint').textContent = missing.length
+    ? `최근 ${range}일 동안 ${missing.join('·')} 운동이 없어요.`
+    : `최근 ${range}일 · 총 ${total}세트`;
+}
+
+function renderStreak() {
+  const streak = workoutStreak();
+  const wk = weeklyCount();
+  const goal = Number(state.profile.weeklyGoal) || 3;
+  $('#streakTiles').innerHTML = `
+    <div class="tile"><span class="muted">이번 주</span><strong>${wk}<small> / ${goal}회</small></strong></div>
+    <div class="tile"><span class="muted">연속</span><strong>${streak}<small> 일</small></strong></div>
+    <div class="tile"><span class="muted">주간 목표</span>
+      <input id="weeklyGoal" type="number" inputmode="numeric" min="1" max="7" value="${goal}"></div>`;
+  $('#streakMsg').textContent = wk >= goal
+    ? '🎉 이번 주 목표를 채웠어요!'
+    : `이번 주 ${goal - wk}번 더 하면 목표 달성이에요.`;
+}
+
 function renderWeekChart() {
   const data = weekData();
   const max = Math.max(1, ...data.flatMap((d) => [d.intake, d.burn]));
@@ -865,7 +1014,9 @@ function dayText(d) {
 }
 
 function renderHistory() {
+  renderStreak();
   renderWeekChart();
+  renderBalance();
   renderWeightChart();
   renderLiftChart();
   const q = $('#historySearch').value.trim().toLowerCase();
@@ -979,6 +1130,13 @@ $('#nextDay').addEventListener('click', () => { currentDate = shiftDate(currentD
 $('#todayBtn').addEventListener('click', () => { currentDate = todayStr(); render(); });
 $('#historySearch').addEventListener('input', renderHistory);
 $('#liftPick').addEventListener('change', (e) => { liftPick = e.target.value; renderLiftChart(); });
+document.addEventListener('input', (e) => {
+  if (e.target.id !== 'weeklyGoal') return;
+  const v = Number(e.target.value);
+  state.profile.weeklyGoal = v > 0 ? Math.min(7, v) : 3;
+  saveSoon();
+  $('#streakMsg').textContent = '';
+});
 $('#undoBtn').addEventListener('click', undo);
 
 // 좌우로 쓸어서 날짜 이동 (세로 스크롤과 헷갈리지 않게 가로 이동이 더 클 때만)
@@ -1024,6 +1182,7 @@ $('#restSec').addEventListener('input', (e) => {
   state.profile.restSec = v > 0 ? v : DEFAULT_PROFILE.restSec;
   saveSoon();
 });
+$('#sessionBtn').addEventListener('click', toggleSession);
 $('#restStop').addEventListener('click', stopRest);
 $('#restPlus').addEventListener('click', () => { restEndAt += 30000; drawRest(); });
 
@@ -1113,6 +1272,9 @@ document.addEventListener('click', (e) => {
     const j = i + Number(dir);
     if (i < 0 || j < 0 || j >= list.length) return;
     [list[i], list[j]] = [list[j], list[i]];
+  } else if (ds.water) {
+    const cups = Math.max(0, (Number(day().water) || 0) + Number(ds.water));
+    day().water = cups || null;
   } else if (ds.range) {
     range = Number(ds.range);
     document.querySelectorAll('#rangeSeg button').forEach((b) => b.classList.toggle('on', b === t));

@@ -305,3 +305,32 @@ h3 .hint { display: inline; font-weight: 400; }
 .bar > span { display: block; height: 100%; border-radius: 999px; background: var(--accent); transition: width 0.2s; }
 #mealForm .row { flex-wrap: wrap; }
 #mealForm .row > label { flex: 1 1 30%; }
+
+/* 운동 세션 */
+.card.session { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.card.session h3 { margin: 0; }
+.card.session button { flex: none; padding: 12px 16px; font-weight: 700; }
+.card.session button.running { background: var(--danger); border-color: var(--danger); color: #fff; }
+
+/* 물 */
+.cups { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
+.cup {
+  width: 18px; height: 22px; border-radius: 3px 3px 7px 7px;
+  border: 1px solid var(--line); background: var(--card-2);
+}
+.cup.on { background: var(--chart-3); border-color: var(--chart-3); }
+.water-btns button { padding: 10px; }
+.water-btns button:first-child { flex: 0 0 56px; }
+
+/* 부위별 밸런스 — 순위가 아니라 크기 비교라 한 가지 색의 길이로만 나타낸다 */
+#balanceCard[hidden] { display: none; }
+.bal { display: grid; grid-template-columns: 44px 1fr 48px; align-items: center; gap: 8px; margin-bottom: 7px; }
+.bal-name { font-size: 0.85rem; }
+.bal-n { font-size: 0.8rem; color: var(--muted); text-align: right; }
+.bal .bar { height: 10px; }
+
+/* 연속 기록 타일 안의 입력칸 */
+#streakTiles input {
+  width: 100%; padding: 2px 6px; font-size: 1.15rem; font-weight: 700;
+  background: transparent; border: none; border-bottom: 1px solid var(--line); border-radius: 0;
+}
