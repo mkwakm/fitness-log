@@ -13,3 +13,5 @@ git clone https://github.com/mkwakm/fitness-log.git
 - 작업 끝난 후: `git add -A && git commit -m "메시지" && git push`
 
 📱 휴대폰 연결 테스트 완료
+
+☁️ 클라우드 세션 테스트 완료
