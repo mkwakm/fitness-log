@@ -1116,6 +1116,53 @@ function refreshTotals() {
   renderHistory();
 }
 
+// ---------- 날짜 이동 연출 ----------
+// 날짜만 조용히 바뀌면 바뀐 걸 알아채기 어렵다. 내용이 옆에서 밀려 들어오게 하고
+// 요일이 적힌 알약을 잠깐 띄운다.
+const MAIN = document.querySelector('main');
+const SLIDE_PX = 60;              // 이만큼 쓸어야 날짜가 넘어간다
+let pillTimer = null;
+
+function reduceMotion() {
+  return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+}
+function dateLabel(date) {
+  const d = new Date(date + 'T00:00:00');
+  const w = ['일', '월', '화', '수', '목', '금', '토'][d.getDay()];
+  const rel = date === todayStr() ? ' · 오늘'
+    : date === shiftDate(todayStr(), -1) ? ' · 어제'
+    : date === shiftDate(todayStr(), 1) ? ' · 내일' : '';
+  return `${d.getMonth() + 1}월 ${d.getDate()}일 (${w})${rel}`;
+}
+function showDatePill() {
+  const el = $('#datePill');
+  el.textContent = dateLabel(currentDate);
+  // 탭 바로 아래에 띄운다. 화면 크기에 따라 헤더 높이가 달라져서 그때그때 잰다.
+  el.style.top = `${document.querySelector('.tabs').getBoundingClientRect().bottom + 6}px`;
+  el.hidden = false;
+  el.classList.remove('pop');
+  void el.offsetWidth;            // 같은 방향으로 연달아 넘겨도 다시 재생되게
+  el.classList.add('pop');
+  clearTimeout(pillTimer);
+  pillTimer = setTimeout(() => { el.hidden = true; }, 1200);
+}
+// dir: 1이면 다음 날(오른쪽에서 들어옴), -1이면 이전 날
+function goToDate(date, dir) {
+  if (date === currentDate) return;
+  currentDate = date;
+  render();
+  showDatePill();
+  if (reduceMotion() || !dir) return;
+  const panel = document.querySelector('.panel.active');
+  if (!panel) return;
+  panel.classList.remove('from-right', 'from-left');
+  void panel.offsetWidth;
+  panel.classList.add(dir > 0 ? 'from-right' : 'from-left');
+}
+function stepDate(delta) {
+  goToDate(shiftDate(currentDate, delta), delta);
+}
+
 // ---------- 이벤트 ----------
 document.querySelectorAll('.tab').forEach((btn) => btn.addEventListener('click', () => showTab(btn.dataset.tab)));
 function showTab(name) {
@@ -1123,11 +1170,17 @@ function showTab(name) {
   document.querySelectorAll('.panel').forEach((p) => p.classList.toggle('active', p.id === name));
 }
 
-$('#date').addEventListener('change', (e) => { currentDate = e.target.value || todayStr(); render(); });
-$('#prevDay').addEventListener('click', () => { currentDate = shiftDate(currentDate, -1); render(); });
-$('#nextDay').addEventListener('click', () => { currentDate = shiftDate(currentDate, 1); render(); });
+$('#date').addEventListener('change', (e) => {
+  const next = e.target.value || todayStr();
+  goToDate(next, next > currentDate ? 1 : -1);
+});
+$('#prevDay').addEventListener('click', () => stepDate(-1));
+$('#nextDay').addEventListener('click', () => stepDate(1));
 
-$('#todayBtn').addEventListener('click', () => { currentDate = todayStr(); render(); });
+$('#todayBtn').addEventListener('click', () => {
+  const t = todayStr();
+  goToDate(t, t > currentDate ? 1 : -1);
+});
 $('#historySearch').addEventListener('input', renderHistory);
 $('#liftPick').addEventListener('change', (e) => { liftPick = e.target.value; renderLiftChart(); });
 document.addEventListener('input', (e) => {
@@ -1139,19 +1192,45 @@ document.addEventListener('input', (e) => {
 });
 $('#undoBtn').addEventListener('click', undo);
 
-// 좌우로 쓸어서 날짜 이동 (세로 스크롤과 헷갈리지 않게 가로 이동이 더 클 때만)
+// 좌우로 쓸어서 날짜 이동. 손가락을 따라 내용이 밀리고, 덜 쓸면 제자리로 돌아온다.
+// 세로 스크롤을 방해하면 안 되므로 가로로 확실히 움직였을 때만 따라간다.
 let touch = null;
-document.querySelector('main').addEventListener('touchstart', (e) => {
-  touch = e.touches.length === 1 ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : null;
+MAIN.addEventListener('touchstart', (e) => {
+  touch = e.touches.length === 1
+    ? { x: e.touches[0].clientX, y: e.touches[0].clientY, engaged: false }
+    : null;
 }, { passive: true });
-document.querySelector('main').addEventListener('touchend', (e) => {
+
+MAIN.addEventListener('touchmove', (e) => {
+  if (!touch || e.touches.length !== 1) return;
+  const dx = e.touches[0].clientX - touch.x;
+  const dy = e.touches[0].clientY - touch.y;
+  if (!touch.engaged) {
+    if (Math.abs(dy) > 16 && Math.abs(dy) > Math.abs(dx)) { touch = null; return; }  // 세로 스크롤
+    if (Math.abs(dx) < 16) return;
+    touch.engaged = true;
+    MAIN.classList.add('dragging');
+  }
+  MAIN.style.transform = `translateX(${dx * 0.35}px)`;   // 조금만 따라가게 (고무줄 느낌)
+}, { passive: true });
+
+function endSwipe(dx) {
+  MAIN.classList.remove('dragging');
+  MAIN.style.transform = '';
+  if (Math.abs(dx) < SLIDE_PX) return;
+  stepDate(dx < 0 ? 1 : -1);
+}
+MAIN.addEventListener('touchend', (e) => {
   if (!touch) return;
+  const engaged = touch.engaged;
   const dx = e.changedTouches[0].clientX - touch.x;
-  const dy = e.changedTouches[0].clientY - touch.y;
   touch = null;
-  if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-  currentDate = shiftDate(currentDate, dx < 0 ? 1 : -1);
-  render();
+  endSwipe(engaged ? dx : 0);
+}, { passive: true });
+MAIN.addEventListener('touchcancel', () => {
+  if (!touch) return;
+  touch = null;
+  endSwipe(0);
 }, { passive: true });
 
 $('#themeBtn').addEventListener('click', () => {

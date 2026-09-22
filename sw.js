@@ -1,5 +1,5 @@
 // 오프라인에서도 앱이 열리도록 파일을 캐시합니다. 파일을 바꾸면 CACHE 버전을 올리세요.
-const CACHE = 'fitness-log-v17';
+const CACHE = 'fitness-log-v18';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'manifest.json', 'food-db.js', 'sync.js',
   'icon.svg', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png'];
 
