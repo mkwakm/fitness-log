@@ -1,7 +1,8 @@
-// 기기 간 동기화. 서버가 없어서 두 가지 방법을 쓴다.
-//  ① GitHub Gist — 비공개 Gist 하나에 기록을 올리고 내린다. 휴대폰 포함 어디서나 된다.
-//  ② 파일 자동 저장 — 클라우드 드라이브 폴더의 파일 하나에 자동으로 써 둔다. 토큰이 필요 없다.
-// 둘 다 아래 mergeState()를 써서 "날짜별로 더 최근에 고친 쪽"을 남긴다.
+// 기기 간 동기화. 서버가 없어서 파일을 주고받는 방식이 기본이다.
+//  ① 파일 자동 저장 — 클라우드 드라이브 폴더의 파일 하나에 자동으로 써 둔다 (PC, 토큰 불필요)
+//  ② 휴대폰은 내보내기/공유 → 드라이브에 올리고, 가져오기로 합친다 (토큰 불필요)
+//  ③ GitHub Gist — 토큰이 필요해서 기본에서 내렸다. 자동 동기화를 원할 때만 쓴다.
+// 셋 다 아래 mergeState()로 항목 단위 병합을 한다.
 //
 // ⚠️ 토큰은 state가 아니라 별도 키(SYNC_KEY)에 둔다. 백업 JSON 내보내기에 절대 섞이지 않게 하기 위함.
 const SYNC_KEY = 'fitness-log-sync';
@@ -12,6 +13,7 @@ let sync = { token: '', gistId: '', lastGist: 0, lastFile: 0 };
 let fileHandle = null;
 let autoSaveTimer = null;
 let syncMsg = '';
+let advOpen = false;      // 'GitHub Gist' 섹션을 펼쳐 뒀는지 (다시 그려도 유지)
 
 function loadSync() {
   try {
@@ -267,6 +269,19 @@ async function forgetSyncFile() {
   renderSync();
 }
 
+// ---------- ③ 휴대폰: 파일로 내보내 공유 ----------
+function backupFile() {
+  return new File([JSON.stringify(state, null, 2)], 'fitness-log.json', { type: 'application/json' });
+}
+const canShare = () => typeof navigator !== 'undefined'
+  && !!navigator.canShare?.({ files: [new File([''], 'x.json', { type: 'application/json' })] });
+
+async function shareBackup() {
+  try {
+    await navigator.share({ files: [backupFile()], title: '식단·운동 기록' });
+  } catch { /* 사용자가 취소했거나 공유할 앱이 없는 경우 */ }
+}
+
 // ---------- 화면 ----------
 function fmtAgo(ts) {
   if (!ts) return '아직 없음';
@@ -287,28 +302,17 @@ function renderSync() {
   el.innerHTML = `
     <h3>🔄 다른 기기와 동기화</h3>
     ${syncMsg ? `<p class="sync-msg">${esc(syncMsg)}</p>` : ''}
+    <p class="hint">기록은 기기마다 따로 저장돼요. 아래 방법으로 맞출 수 있고, <b>어느 쪽이든 합칠 때 기록이 사라지지 않아요.</b>
+      같은 날에 이 PC에서 점심을, 휴대폰에서 저녁을 적었어도 둘 다 남습니다.</p>
 
     <div class="sync-row">
       <div>
-        <strong>GitHub Gist</strong>
-        <p class="hint">휴대폰 포함 어디서나. 비공개 Gist에 저장돼요.<br>
-          ${sync.token ? `마지막 동기화: ${fmtAgo(sync.lastGist)}` : '토큰은 이 기기에만 저장되고 백업 JSON에는 안 들어가요.'}</p>
-      </div>
-      <div class="sync-btns">
-        ${sync.token
-          ? `<button id="gistSyncBtn" class="primary">지금 동기화</button>
-             <button id="gistOffBtn">연결 해제</button>`
-          : '<button id="gistOnBtn" class="primary">연결하기</button>'}
-      </div>
-    </div>
-
-    <div class="sync-row">
-      <div>
-        <strong>파일 자동 저장</strong>
+        <strong>💻 PC · 파일 자동 저장 <span class="tag">토큰 없음</span></strong>
         <p class="hint">${canUseFile()
-          ? `OneDrive·구글드라이브 폴더에 파일을 지정해 두면 자동 저장돼요. 토큰이 필요 없어요.<br>
+          ? `OneDrive·구글드라이브 폴더에 파일을 한 번 지정해 두면 이후 자동으로 저장돼요.
+             다른 PC에서 같은 파일을 지정하면 합쳐집니다.<br>
              ${fileHandle ? `마지막 저장: ${fmtAgo(sync.lastFile)}` : '아직 지정 안 함'}`
-          : '이 브라우저는 지원하지 않아요. (크롬·엣지 PC에서만 됩니다)'}</p>
+          : '이 브라우저는 지원하지 않아요. 아래 휴대폰 방법을 쓰거나 크롬·엣지 PC에서 열어 주세요.'}</p>
       </div>
       <div class="sync-btns">
         ${!canUseFile() ? ''
@@ -317,12 +321,47 @@ function renderSync() {
                <button id="fileOffBtn">끄기</button>`
             : '<button id="filePickBtn" class="primary">파일 지정</button>'}
       </div>
-    </div>`;
+    </div>
+
+    <div class="sync-row">
+      <div>
+        <strong>📱 휴대폰 <span class="tag">토큰 없음</span></strong>
+        <p class="hint">휴대폰은 브라우저 제약으로 자동 저장이 안 돼요.
+          ${canShare() ? '<b>내보내 공유</b>를 눌러 드라이브 앱에 저장하고' : '아래 <b>내보내기</b>로 파일을 드라이브에 올리고'},
+          다른 기기에선 <b>가져오기</b>로 그 파일을 고르면 합쳐집니다.</p>
+      </div>
+      <div class="sync-btns">
+        ${canShare() ? '<button id="shareBtn" class="primary">내보내 공유</button>' : ''}
+        <button id="jumpBackup">내보내기 / 가져오기</button>
+      </div>
+    </div>
+
+    <details class="sync-adv"${advOpen ? ' open' : ''}>
+      <summary>자동으로 맞추고 싶다면 — GitHub Gist <span class="tag warn">토큰 필요</span></summary>
+      <div class="sync-row">
+        <div>
+          <p class="hint">휴대폰까지 자동으로 맞출 수 있는 유일한 방법이지만, GitHub 개인 토큰을 이 기기 브라우저에 저장해야 해요.
+            (<code>gist</code> 권한만 준 토큰을 쓰고, 공용 PC에서는 쓰지 마세요. 토큰은 백업 파일에 들어가지 않아요.)<br>
+            ${sync.token ? `마지막 동기화: ${fmtAgo(sync.lastGist)}` : '연결 안 됨'}</p>
+        </div>
+        <div class="sync-btns">
+          ${sync.token
+            ? `<button id="gistSyncBtn" class="primary">지금 동기화</button>
+               <button id="gistOffBtn">연결 해제</button>`
+            : '<button id="gistOnBtn">연결하기</button>'}
+        </div>
+      </div>
+    </details>`;
+
+  // 다시 그릴 때마다 접히지 않도록 펼침 상태를 기억한다
+  const adv = el.querySelector('.sync-adv');
+  if (adv) adv.addEventListener('toggle', () => { advOpen = adv.open; });
 }
 
 // ---------- 시작 ----------
 async function initSync() {
   loadSync();
+  advOpen = advOpen || !!sync.token;   // 이미 쓰고 있으면 펼쳐 둔다 (사용자가 먼저 펼쳤으면 그대로)
   document.addEventListener('click', (e) => {
     const id = e.target.closest('button')?.id;
     if (id === 'gistOnBtn') connectGist();
@@ -331,6 +370,8 @@ async function initSync() {
     else if (id === 'filePickBtn') pickSyncFile();
     else if (id === 'fileReadBtn') readSyncFile();
     else if (id === 'fileOffBtn') forgetSyncFile();
+    else if (id === 'shareBtn') shareBackup();
+    else if (id === 'jumpBackup') document.querySelector('.card.backup')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   });
 
   if (canUseFile()) {

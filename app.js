@@ -1091,14 +1091,15 @@ $('#importFile').addEventListener('change', async (e) => {
   try {
     const data = JSON.parse(await file.text());
     if (!data.days) throw new Error('형식 오류');
-    if (!confirm('가져온 기록을 현재 기록과 합칠까요? (같은 날짜는 가져온 기록으로 덮어씁니다)')) return;
+    if (!confirm('가져온 기록을 지금 기록과 합칠까요?\n(같은 날에 적은 것도 양쪽 다 남습니다)')) return;
     pushUndo('백업 가져오기 실행함');
-    state.days = { ...state.days, ...data.days };
-    if (Number(data.profile?.weight) > 0) state.profile.weight = Number(data.profile.weight);
-    if (data.profile?.mets) state.profile.mets = { ...state.profile.mets, ...data.profile.mets };
+    // 덮어쓰지 않고 항목 단위로 합친다. 휴대폰↔PC를 파일로 주고받아도 기록이 사라지지 않게.
+    const changed = mergeState(data);
     save();
+    seedStamps();
+    applyTheme();
     render();
-    alert('가져오기 완료!');
+    alert(changed ? `${changed}일치를 합쳤어요.` : '가져온 파일에 새로운 내용이 없어요.');
   } catch {
     alert('올바른 백업 파일이 아니에요.');
   }
