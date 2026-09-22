@@ -160,11 +160,11 @@ function estimateKcal(name, amount) {
 
 function updateMealHint() {
   const name = $('#foodName').value;
-  const kcal = Number($('#foodKcal').value);
   const est = estimateKcal(name, $('#foodAmount').value);
   const hint = $('#mealHint');
   if (!est) {
     if (!kcalTouched) $('#foodKcal').value = '';   // 앞서 자동으로 채운 값을 남겨두지 않는다
+    const kcal = Number($('#foodKcal').value);     // 비운 뒤에 읽어야 직전 음식 값이 섞이지 않는다
     hint.innerHTML = !name.trim() ? ''
       : kcal > 0
         ? `표에 없는 음식이에요. <button type="button" class="link-btn" id="rememberFood">＋ 이 음식 기억하기</button>`
