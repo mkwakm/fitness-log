@@ -31,6 +31,7 @@
     <!-- 식단 -->
     <section id="meals" class="panel active">
       <div class="summary" id="mealSummary"></div>
+      <div class="card meter" id="proteinBar" hidden></div>
       <form id="mealForm" class="card form">
         <select id="mealType">
           <option>아침</option><option>점심</option><option>저녁</option><option>간식</option>
@@ -39,7 +40,8 @@
         <datalist id="foodSuggestions"></datalist>
         <div class="row">
           <label>양<input id="foodAmount" placeholder="예: 200g, 1공기, 2개" autocomplete="off"></label>
-          <label>칼로리(kcal)<input id="foodKcal" type="number" inputmode="numeric" min="0" placeholder="자동 계산"></label>
+          <label>칼로리(kcal)<input id="foodKcal" type="number" inputmode="numeric" min="0" placeholder="자동"></label>
+          <label>단백질(g)<input id="foodProtein" type="number" inputmode="decimal" min="0" step="0.1" placeholder="자동"></label>
         </div>
         <p class="hint" id="mealHint"></p>
         <button type="submit" class="primary">식단 추가</button>
@@ -50,13 +52,17 @@
       <div id="mealList"></div>
 
       <div class="card">
-        <h3>🎯 하루 목표 칼로리</h3>
+        <h3>🎯 하루 목표</h3>
         <div class="row">
-          <label>목표 (kcal)
+          <label>칼로리 (kcal)
             <input id="goalKcal" type="number" inputmode="numeric" min="0" step="50" placeholder="예: 2000">
+          </label>
+          <label>단백질 (g)
+            <input id="proteinGoal" type="number" inputmode="numeric" min="0" step="5" placeholder="자동">
           </label>
         </div>
         <p class="hint">정해두면 요약에 남은 칼로리가 같이 나와요. 소모 칼로리만큼 더 먹을 수 있게 계산합니다.</p>
+        <p class="hint" id="proteinGoalHint"></p>
       </div>
       <div id="myFoods"></div>
     </section>
@@ -133,7 +139,7 @@
 
       <div class="card" id="liftCard">
         <div class="card-head">
-          <h3>🏋️ 운동별 중량 추이</h3>
+          <h3>🏋️ 운동별 1RM 추이</h3>
           <select id="liftPick"></select>
         </div>
         <div id="liftChart"></div>

@@ -19,6 +19,7 @@ const DEFAULT_PROFILE = {
   restSec: 90,       // 세트 완료 시 시작하는 휴식 시간 (초)
   foods: {},         // 직접 등록한 음식 { 이름: { kcal100, units } }
   goal: null,        // 하루 목표 칼로리 (안 정했으면 null)
+  proteinGoal: null, // 하루 목표 단백질 g (안 정했으면 체중 × 1.6 제안)
 };
 
 // 운동 이름으로 MET(운동 강도) 추정. 위에서부터 먼저 걸리는 것을 사용하므로 순서가 중요하다.
@@ -194,12 +195,16 @@ function findFood(name) {
 }
 
 // 표에 없는 음식을 지금 적은 양·칼로리 기준으로 등록한다.
-function rememberFood(name, amount, kcal) {
+function rememberFood(name, amount, kcal, protein) {
   const key = foodName(name);
   if (!key || !(kcal > 0)) return;
   const grams = amountToGrams(amount, null) ?? DEFAULT_UNITS['인분'];
   if (!state.profile.foods) state.profile.foods = {};
-  state.profile.foods[key] = { kcal100: Math.round(kcal / grams * 1000) / 10, units: {} };
+  state.profile.foods[key] = {
+    kcal100: Math.round(kcal / grams * 1000) / 10,
+    protein: protein > 0 ? Math.round(protein / grams * 1000) / 10 : 0,
+    units: {},
+  };
   save();
 }
 
@@ -223,13 +228,17 @@ function amountToGrams(amount, food) {
 function estimateKcal(name, amount) {
   const hit = findFood(name);
   if (!hit) return null;
+  const per = (g) => ({
+    kcal: Math.round(hit.food.kcal100 * g / 100),
+    protein: Math.round((hit.food.protein || 0) * g / 100 * 10) / 10,
+    grams: g,
+    key: hit.key,
+  });
   const grams = amountToGrams(amount, hit.food);
-  if (grams != null) {
-    return { kcal: Math.round(hit.food.kcal100 * grams / 100), grams, key: hit.key, assumed: false };
-  }
+  if (grams != null) return { ...per(grams), assumed: false };
   // 양을 안 적었거나 모르는 단위면 1인분 기준으로 추정
   const base = hit.food.units?.['인분'] ?? hit.food.units?.['개'] ?? hit.food.units?.['그릇'] ?? 100;
-  return { kcal: Math.round(hit.food.kcal100 * base / 100), grams: base, key: hit.key, assumed: true };
+  return { ...per(base), assumed: true };
 }
 
 function updateMealHint() {
@@ -237,7 +246,7 @@ function updateMealHint() {
   const est = estimateKcal(name, $('#foodAmount').value);
   const hint = $('#mealHint');
   if (!est) {
-    if (!kcalTouched) $('#foodKcal').value = '';   // 앞서 자동으로 채운 값을 남겨두지 않는다
+    if (!kcalTouched) { $('#foodKcal').value = ''; $('#foodProtein').value = ''; }
     const kcal = Number($('#foodKcal').value);     // 비운 뒤에 읽어야 직전 음식 값이 섞이지 않는다
     hint.innerHTML = !name.trim() ? ''
       : kcal > 0
@@ -246,11 +255,11 @@ function updateMealHint() {
     return;
   }
   const custom = state.profile.foods?.[est.key] ? ' (내가 등록한 음식)' : '';
-  hint.textContent = `🧮 ${est.key} ${est.grams}g 기준 약 ${est.kcal} kcal${custom}${est.assumed ? ' · 양을 안 적어 1인분으로 추정' : ''}`;
-  if (!kcalTouched) $('#foodKcal').value = est.kcal;
+  hint.textContent = `🧮 ${est.key} ${est.grams}g 기준 약 ${est.kcal} kcal · 단백질 ${est.protein}g${custom}${est.assumed ? ' · 양을 안 적어 1인분으로 추정' : ''}`;
+  if (!kcalTouched) { $('#foodKcal').value = est.kcal; $('#foodProtein').value = est.protein || ''; }
 }
 function resetMealForm() {
-  $('#foodName').value = $('#foodAmount').value = $('#foodKcal').value = '';
+  $('#foodName').value = $('#foodAmount').value = $('#foodKcal').value = $('#foodProtein').value = '';
   $('#mealHint').textContent = '';
   kcalTouched = false;
 }
@@ -321,6 +330,14 @@ function doneCount(w) {
 function volumeOf(w) {
   return countedSets(w).reduce((v, s) => v + (Number(s.reps) || 0) * (Number(s.weight) || 0), 0);
 }
+// 1회 최대 중량 추정 (Epley). 100kg×1(=100)보다 90kg×8(=114)이 더 센 기록인데,
+// 최고 중량만 보면 그걸 구분하지 못해서 세트끼리 비교할 땐 이 값을 쓴다.
+function oneRM(weight, reps) {
+  if (!(weight > 0) || !(reps > 0)) return 0;
+  if (reps === 1) return Math.round(weight);      // 1회를 실제로 들었으면 그게 곧 1RM (공식대로면 3% 부풀려진다)
+  if (reps > 12) reps = 12;                       // 고반복은 공식이 과하게 잡혀 12회로 제한
+  return Math.round(weight * (1 + reps / 30));
+}
 // 모든 날짜를 통틀어 이 운동의 최고 기록. 중량이 없는 맨몸 운동은 횟수로 따진다.
 // 동점이면 먼저 세운 날이 남아서, 예전 기록을 다시 찍은 날은 신기록으로 치지 않는다.
 function personalBest(name) {
@@ -335,10 +352,12 @@ function personalBest(name) {
         const weight = Number(s.weight) || 0;
         const reps = Number(s.reps) || 0;
         if (!weight && !reps) continue;
+        const rm = oneRM(weight, reps);
         const better = !best
-          || weight > best.weight
-          || (weight === best.weight && reps > best.reps);
-        if (better) best = { weight, reps, date };
+          || rm > best.rm
+          || (rm === best.rm && weight > best.weight)   // 같은 1RM이면 더 무겁게 든 쪽
+          || (!rm && !best.rm && reps > best.reps);     // 맨몸 운동은 횟수로
+        if (better) best = { weight, reps, rm, date };
       }
     }
   }
@@ -379,6 +398,14 @@ function dayBurn(date) {
 }
 function dayIntake(d) {
   return d.meals.reduce((s, m) => s + (Number(m.kcal) || 0), 0);
+}
+function dayProtein(d) {
+  return Math.round(d.meals.reduce((s, m) => s + (Number(m.protein) || 0), 0));
+}
+// 목표를 안 정했으면 체중 1kg당 1.6g을 기준으로 제안한다 (근력 운동 시 흔히 쓰는 값)
+function proteinGoal() {
+  const g = Number(state.profile.proteinGoal);
+  return g > 0 ? g : Math.round(bodyWeight() * 1.6);
 }
 
 // ---------- 실행취소 ----------
@@ -484,19 +511,34 @@ function renderMeals() {
   else if (meals.length && burn) parts.push(`순 ${total - burn} kcal`);
   $('#mealSummary').textContent = parts.join(' · ');
 
+  const prot = dayProtein(d);
+  const pg = proteinGoal();
+  $('#proteinBar').hidden = !meals.length;
+  if (meals.length) {
+    const pct = Math.min(100, Math.round(prot / pg * 100));
+    $('#proteinBar').innerHTML = `
+      <div class="bar-head"><span>🥩 단백질</span><strong>${prot} / ${pg} g</strong></div>
+      <div class="bar"><span style="width:${pct}%"></span></div>`;
+  }
+
   renderFavorites();
   renderMealCopyBtn();
   renderMyFoods();
   const goalInput = $('#goalKcal');
   if (document.activeElement !== goalInput) goalInput.value = state.profile.goal ?? '';
+  const pgInput = $('#proteinGoal');
+  if (document.activeElement !== pgInput) pgInput.value = state.profile.proteinGoal ?? '';
+  $('#proteinGoalHint').textContent = state.profile.proteinGoal
+    ? '' : `안 적으면 체중 × 1.6 = ${proteinGoal()}g으로 잡아요.`;
 
   $('#mealList').innerHTML = MEAL_ORDER.map((type) => {
     const list = meals.filter((m) => m.type === type);
     if (!list.length) return '';
     const sub = list.reduce((s, m) => s + (Number(m.kcal) || 0), 0);
-    return `<div class="card"><h3>${type} <span class="muted">${sub ? sub + ' kcal' : ''}</span></h3>
+    const subP = Math.round(list.reduce((s, m) => s + (Number(m.protein) || 0), 0));
+    return `<div class="card"><h3>${type} <span class="muted">${sub ? sub + ' kcal' : ''}${subP ? ` · 단백질 ${subP}g` : ''}</span></h3>
       ${list.map((m) => `<div class="item">
-        <div>${esc(m.name)} <span class="muted">${esc(m.amount)}${m.kcal ? ' · ' + m.kcal + ' kcal' : ''}</span></div>
+        <div>${esc(m.name)} <span class="muted">${esc(m.amount)}${m.kcal ? ' · ' + m.kcal + ' kcal' : ''}${m.protein ? ' · 단백질 ' + m.protein + 'g' : ''}</span></div>
         <button class="del" data-del-meal="${m.id}" aria-label="삭제">✕</button>
       </div>`).join('')}</div>`;
   }).join('');
@@ -546,7 +588,7 @@ function renderMyFoods() {
   $('#myFoods').innerHTML = foods.length
     ? `<div class="card"><h3>🍽 내가 등록한 음식</h3>
         ${foods.map(([key, f]) => `<div class="item">
-          <div>${esc(key)} <span class="muted">100g당 ${f.kcal100} kcal</span></div>
+          <div>${esc(key)} <span class="muted">100g당 ${f.kcal100} kcal${f.protein ? ` · 단백질 ${f.protein}g` : ''}</span></div>
           <button class="del" data-del-food="${esc(key)}" aria-label="삭제">✕</button>
         </div>`).join('')}</div>`
     : '';
@@ -573,10 +615,11 @@ function renderWorkouts() {
     const done = doneCount(w);
     const pr = personalBest(w.name);
     const prText = !pr ? ''
-      : pr.weight ? `🏆 최고 ${pr.weight} kg × ${pr.reps}회`
+      : pr.rm ? `🏆 최고 ${pr.weight} kg × ${pr.reps}회 <span class="muted">(1RM ${pr.rm}kg)</span>`
       : `🏆 최고 ${pr.reps}회`;
     const isNewPr = pr && pr.date === currentDate;   // 보고 있는 날에 세운 기록
     const last = lastRecord(w.name);
+    const todayRm = Math.max(0, ...countedSets(w).map((x) => oneRM(Number(x.weight) || 0, Number(x.reps) || 0)));
     return `<div class="card">
     <div class="item"><h3>${esc(w.name)}</h3>
       <span class="order">
@@ -617,7 +660,8 @@ function renderWorkouts() {
     </div>
     <div class="item meta">
       <button data-add-set="${w.id}">+ 세트 추가</button>
-      <span class="muted">${done ? `${done}/${w.sets.length}세트 완료 · ` : ''}볼륨 ${vol.toLocaleString()} kg</span>
+      <span class="muted">${done ? `${done}/${w.sets.length}세트 완료 · ` : ''}볼륨 ${vol.toLocaleString()} kg${
+        todayRm ? ` · 오늘 1RM ${todayRm}kg` : ''}</span>
     </div>
     ${last ? `<div class="item pr">
       <span class="muted">↩ 지난번 ${fmtDate(last.date)}</span>
@@ -727,13 +771,14 @@ function renderWeightChart() {
     lineChart(points, { unit: 'kg', cls: 'w', fmt: (v) => v.toFixed(1) });
 }
 
-// 그 운동을 한 날마다 그날의 최고 중량
+// 그 운동을 한 날마다 그날의 최고 1RM.
+// 그냥 최고 중량으로 그리면 "같은 무게로 횟수를 늘린 날"이 제자리처럼 보인다.
 function liftHistory(name) {
   const key = metKey(name);
   return Object.keys(state.days).sort().map((date) => {
     const w = state.days[date].workouts.find((x) => metKey(x.name) === key);
     if (!w) return null;
-    const top = Math.max(0, ...countedSets(w).map((s) => Number(s.weight) || 0));
+    const top = Math.max(0, ...countedSets(w).map((s) => oneRM(Number(s.weight) || 0, Number(s.reps) || 0)));
     return top > 0 ? { date, value: top } : null;
   }).filter(Boolean);
 }
@@ -985,6 +1030,13 @@ $('#restPlus').addEventListener('click', () => { restEndAt += 30000; drawRest();
 $('#foodName').addEventListener('input', updateMealHint);
 $('#foodAmount').addEventListener('input', updateMealHint);
 $('#foodKcal').addEventListener('input', () => { kcalTouched = true; updateMealHint(); });
+$('#foodProtein').addEventListener('input', () => { kcalTouched = true; });
+$('#proteinGoal').addEventListener('input', (e) => {
+  const v = Number(e.target.value);
+  state.profile.proteinGoal = v > 0 ? v : null;
+  saveSoon();
+  renderMeals();
+});
 $('#goalKcal').addEventListener('input', (e) => {
   const v = Number(e.target.value);
   state.profile.goal = v > 0 ? v : null;
@@ -1000,6 +1052,7 @@ $('#mealForm').addEventListener('submit', (e) => {
     name: $('#foodName').value.trim(),
     amount: $('#foodAmount').value.trim(),
     kcal: $('#foodKcal').value ? Number($('#foodKcal').value) : null,
+    protein: $('#foodProtein').value ? Number($('#foodProtein').value) : null,
   });
   save();
   resetMealForm();
@@ -1068,7 +1121,7 @@ document.addEventListener('click', (e) => {
   } else if (ds.fav) {
     const m = favCache[Number(ds.fav)]?.meal;
     if (!m) return;
-    day().meals.push({ id: uid(), type: $('#mealType').value, name: m.name, amount: m.amount, kcal: m.kcal });
+    day().meals.push({ id: uid(), type: $('#mealType').value, name: m.name, amount: m.amount, kcal: m.kcal, protein: m.protein });
   } else if (ds.copyMeals) {
     const src = state.days[ds.copyMeals];
     if (!confirm(`${fmtDate(ds.copyMeals)} 식단 ${src.meals.length}개를 그대로 불러올까요?`)) return;
@@ -1078,7 +1131,7 @@ document.addEventListener('click', (e) => {
     pushUndo(`등록 음식 '${ds.delFood}' 삭제함`);
     delete state.profile.foods[ds.delFood];
   } else if (t.id === 'rememberFood') {
-    rememberFood($('#foodName').value, $('#foodAmount').value, Number($('#foodKcal').value));
+    rememberFood($('#foodName').value, $('#foodAmount').value, Number($('#foodKcal').value), Number($('#foodProtein').value));
     kcalTouched = false;
     updateMealHint();
     renderMyFoods();
