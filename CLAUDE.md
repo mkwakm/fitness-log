@@ -1,6 +1,7 @@
 # 식단·운동 기록 앱 (fitness-log)
 
-개인용 식단/운동 기록 웹앱(PWA). 사용자는 회사 PC와 집 PC에서 번갈아 작업하며, GitHub 저장소로 코드를 동기화한다.
+개인용 식단/운동 기록 웹앱(PWA). 사용자는 회사 PC, 집 PC, 휴대폰(Claude 앱의 클라우드 세션 / Remote Control)에서 번갈아 작업하며, GitHub 저장소(mkwakm/fitness-log)로 코드를 동기화한다.
+클라우드 세션에서 작업했다면 끝날 때 반드시 main에 커밋·push 해서 PC에서 pull 할 수 있게 할 것.
 
 ## 구조
 - 빌드 도구 없음: 순수 HTML/CSS/JS. `index.html`을 브라우저로 열면 바로 동작.
