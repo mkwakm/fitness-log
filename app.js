@@ -8,6 +8,13 @@ const MEAL_ORDER = ['아침', '점심', '저녁', '간식'];
 const DEFAULT_WEIGHT = 70;      // 체중을 아직 안 적었을 때 쓰는 기본값 (kg)
 const MIN_PER_SET = 3;          // 운동 시간을 안 적었을 때 세트당 추정 시간 (분)
 const DEFAULT_MET = 5.0;        // 일반 웨이트 트레이닝
+const DEFAULT_PROFILE = {
+  weight: DEFAULT_WEIGHT,
+  theme: 'dark',
+  mets: {},          // 운동 이름별로 직접 지정한 MET
+  weightStep: 2.5,   // 중량 ± 버튼 단위 (kg)
+  restSec: 90,       // 세트 완료 시 시작하는 휴식 시간 (초)
+};
 
 // 운동 이름으로 MET(운동 강도) 추정. 위에서부터 먼저 걸리는 것을 사용하므로 순서가 중요하다.
 // (예: "레그레이즈"가 6.0 줄에 안 걸리도록 그 줄에는 "레그프레스"처럼 구체적인 이름만 둔다)
@@ -31,9 +38,9 @@ const $ = (sel) => document.querySelector(sel);
 function load() {
   try {
     const raw = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
-    return { days: raw.days || {}, profile: { weight: DEFAULT_WEIGHT, theme: 'dark', mets: {}, ...(raw.profile || {}) } };
+    return { days: raw.days || {}, profile: { ...DEFAULT_PROFILE, ...(raw.profile || {}) } };
   } catch {
-    return { days: {}, profile: { weight: DEFAULT_WEIGHT, theme: 'dark', mets: {} } };
+    return { days: {}, profile: { ...DEFAULT_PROFILE } };
   }
 }
 function save() {
@@ -54,7 +61,7 @@ function shiftDate(str, delta) {
   return todayStr(d);
 }
 function day(date = currentDate) {
-  if (!state.days[date]) state.days[date] = { meals: [], workouts: [] };
+  if (!state.days[date]) state.days[date] = { meals: [], workouts: [], note: '' };
   return state.days[date];
 }
 function uid() {
@@ -73,7 +80,10 @@ function defaultMealType(d = new Date()) {
   return '간식';
 }
 function isEmptyDay(d) {
-  return !d || (d.meals.length === 0 && d.workouts.length === 0);
+  return !d || (d.meals.length === 0 && d.workouts.length === 0 && !d.note);
+}
+function fmtDate(str) {
+  return str.slice(5).replace('-', '/');   // 2026-09-21 → 09/21
 }
 
 // ---------- 테마 ----------
@@ -201,8 +211,10 @@ function volumeOf(w) {
 function personalBest(name) {
   const key = metKey(name);
   let best = null;
-  for (const [date, d] of Object.entries(state.days)) {
-    for (const w of d.workouts) {
+  // 날짜 오름차순으로 봐야 동점일 때 "먼저 세운 날"이 남는다.
+  // (Object.entries는 키를 만든 순서라 날짜순이 아니다)
+  for (const date of Object.keys(state.days).sort()) {
+    for (const w of state.days[date].workouts) {
       if (metKey(w.name) !== key) continue;
       for (const s of countedSets(w)) {
         const weight = Number(s.weight) || 0;
@@ -218,12 +230,82 @@ function personalBest(name) {
   return best;
 }
 
+// 보고 있는 날보다 이전에 같은 운동을 한 가장 최근 기록
+function lastRecord(name, before = currentDate) {
+  const key = metKey(name);
+  if (!key) return null;
+  for (const date of Object.keys(state.days).filter((d) => d < before).sort().reverse()) {
+    const w = state.days[date].workouts.find((x) => metKey(x.name) === key);
+    if (w) return { date, workout: w };
+  }
+  return null;
+}
+// 세트를 "60kg×10, 60×10" 처럼 짧게
+function setsText(w) {
+  return w.sets.map((s, i) => {
+    const reps = Number(s.reps) || 0;
+    const kg = Number(s.weight) || 0;
+    if (!kg) return `${reps}회`;
+    return i === 0 ? `${kg}kg×${reps}` : `${kg}×${reps}`;
+  }).join(', ');
+}
+// 운동이 있는 가장 최근 이전 날짜 (루틴 불러오기용)
+function lastWorkoutDate(before = currentDate) {
+  return Object.keys(state.days)
+    .filter((d) => d < before && state.days[d].workouts.length)
+    .sort().reverse()[0] || null;
+}
+
 function dayBurn(d) {
   const weight = bodyWeight();
   return d.workouts.reduce((s, w) => s + burnOf(w, weight), 0);
 }
 function dayIntake(d) {
   return d.meals.reduce((s, m) => s + (Number(m.kcal) || 0), 0);
+}
+
+// ---------- 휴식 타이머 ----------
+let restTimer = null;
+let restLeft = 0;
+
+function startRest(sec = Number(state.profile.restSec) || 90) {
+  restLeft = sec;
+  $('#restBar').hidden = false;
+  drawRest();
+  clearInterval(restTimer);
+  restTimer = setInterval(() => {
+    restLeft -= 1;
+    drawRest();
+    if (restLeft <= 0) { stopRest(); alarm(); }
+  }, 1000);
+}
+function stopRest() {
+  clearInterval(restTimer);
+  restTimer = null;
+  $('#restBar').hidden = true;
+}
+function drawRest() {
+  const m = Math.floor(Math.max(0, restLeft) / 60);
+  const sec = Math.max(0, restLeft) % 60;
+  $('#restTime').textContent = `${m}:${String(sec).padStart(2, '0')}`;
+  $('#restBar').classList.toggle('almost', restLeft <= 10);
+}
+// 파일 없이 소리를 내기 위해 WebAudio로 짧은 삐 소리를 만든다. 막혀 있으면 조용히 넘어간다.
+function alarm() {
+  navigator.vibrate?.([200, 100, 200]);
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type = 'sine';
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.25, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.6);
+    setTimeout(() => ctx.close(), 1000);
+  } catch { /* 소리를 못 내도 기능은 계속 동작해야 한다 */ }
 }
 
 // ---------- 렌더링 ----------
@@ -233,6 +315,10 @@ function render() {
   renderWorkouts();
   renderHistory();
   renderSuggestions();
+  renderRoutineBtn();
+  updateExHint();
+  const note = $('#dayNote');
+  if (document.activeElement !== note) note.value = day().note ?? '';
 }
 
 function renderMeals() {
@@ -280,6 +366,7 @@ function renderWorkouts() {
       : pr.weight ? `🏆 최고 ${pr.weight} kg × ${pr.reps}회`
       : `🏆 최고 ${pr.reps}회`;
     const isNewPr = pr && pr.date === currentDate;   // 보고 있는 날에 세운 기록
+    const last = lastRecord(w.name);
     return `<div class="card">
     <div class="item"><h3>${esc(w.name)}</h3>
       <button class="del" data-del-workout="${w.id}" aria-label="삭제">✕</button></div>
@@ -301,8 +388,16 @@ function renderWorkouts() {
       <div class="set-row head"><span>세트</span><span>중량(kg)</span><span>횟수</span><span></span></div>
       ${w.sets.map((s, i) => `<div class="set-row ${s.done ? 'done' : ''}">
         <button class="set-no" data-toggle="${w.id}:${i}" title="완료 표시">${i + 1}${s.done ? ' ✓' : ''}</button>
-        <input type="number" inputmode="decimal" min="0" step="0.5" value="${s.weight ?? ''}" placeholder="맨몸" data-edit="${w.id}:${i}:weight">
-        <input type="number" inputmode="numeric" min="0" value="${s.reps ?? ''}" data-edit="${w.id}:${i}:reps">
+        <span class="stepper">
+          <button data-step="${w.id}:${i}:weight:-1" aria-label="중량 줄이기">−</button>
+          <input type="number" inputmode="decimal" min="0" step="0.5" value="${s.weight ?? ''}" placeholder="맨몸" data-edit="${w.id}:${i}:weight">
+          <button data-step="${w.id}:${i}:weight:1" aria-label="중량 늘리기">+</button>
+        </span>
+        <span class="stepper">
+          <button data-step="${w.id}:${i}:reps:-1" aria-label="횟수 줄이기">−</button>
+          <input type="number" inputmode="numeric" min="0" value="${s.reps ?? ''}" data-edit="${w.id}:${i}:reps">
+          <button data-step="${w.id}:${i}:reps:1" aria-label="횟수 늘리기">+</button>
+        </span>
         <button class="del" data-del-set="${w.id}:${i}" aria-label="세트 삭제">✕</button>
       </div>`).join('')}
     </div>
@@ -310,6 +405,10 @@ function renderWorkouts() {
       <button data-add-set="${w.id}">+ 세트 추가</button>
       <span class="muted">${done ? `${done}/${w.sets.length}세트 완료 · ` : ''}볼륨 ${vol.toLocaleString()} kg</span>
     </div>
+    ${last ? `<div class="item pr">
+      <span class="muted">↩ 지난번 ${fmtDate(last.date)}</span>
+      <span class="muted">${setsText(last.workout)}</span>
+    </div>` : ''}
     ${prText ? `<div class="item pr">
       <span>${prText}</span>
       <span class="${isNewPr ? 'new-pr' : 'muted'}">${isNewPr ? '🎉 신기록!' : pr.date}</span>
@@ -327,8 +426,10 @@ function renderBurn(workouts, weight, burn) {
       </div>`).join('')
     : '<p class="muted">운동을 추가하면 소모 칼로리가 자동으로 계산돼요.</p>';
 
-  const input = $('#bodyWeight');
-  if (document.activeElement !== input) input.value = state.profile.weight;
+  [['#bodyWeight', 'weight'], ['#weightStep', 'weightStep'], ['#restSec', 'restSec']].forEach(([sel, key]) => {
+    const el = $(sel);
+    if (document.activeElement !== el) el.value = state.profile[key];
+  });
 }
 
 function renderHistory() {
@@ -349,6 +450,40 @@ function renderHistory() {
       ${kcal && burn ? `<div class="muted">➖ 순 ${kcal - burn} kcal</div>` : ''}
     </div>`;
   }).join('');
+}
+
+function updateExHint() {
+  const name = $('#exName').value.trim();
+  const last = name ? lastRecord(name) : null;
+  $('#exHint').textContent = last
+    ? `↩ 지난번 ${fmtDate(last.date)}: ${setsText(last.workout)}`
+    : (name ? '처음 하는 운동이에요.' : '');
+}
+
+function renderRoutineBtn() {
+  const btn = $('#loadRoutine');
+  const date = lastWorkoutDate();
+  if (!date) { btn.hidden = true; return; }
+  const n = state.days[date].workouts.length;
+  btn.hidden = false;
+  btn.textContent = `↩ ${fmtDate(date)} 운동 ${n}종 그대로 불러오기`;
+  btn.dataset.routine = date;
+}
+
+// 지난 운동을 오늘로 복사한다. 완료 체크는 풀고 기록만 가져온다.
+function loadRoutine(date) {
+  const src = state.days[date];
+  if (!src || !confirm(`${fmtDate(date)} 운동 ${src.workouts.length}종을 그대로 불러올까요?`)) return;
+  src.workouts.forEach((w) => {
+    day().workouts.push({
+      id: uid(),
+      name: w.name,
+      minutes: w.minutes,
+      sets: w.sets.map((s) => ({ reps: s.reps, weight: s.weight, done: false })),
+    });
+  });
+  save();
+  render();
 }
 
 function renderSuggestions() {
@@ -396,6 +531,22 @@ $('#bodyWeight').addEventListener('input', (e) => {
   save();
   refreshTotals();
 });
+
+$('#exName').addEventListener('input', updateExHint);
+$('#dayNote').addEventListener('input', (e) => { day().note = e.target.value; save(); });
+
+$('#weightStep').addEventListener('input', (e) => {
+  const v = Number(e.target.value);
+  state.profile.weightStep = v > 0 ? v : DEFAULT_PROFILE.weightStep;
+  save();
+});
+$('#restSec').addEventListener('input', (e) => {
+  const v = Number(e.target.value);
+  state.profile.restSec = v > 0 ? v : DEFAULT_PROFILE.restSec;
+  save();
+});
+$('#restStop').addEventListener('click', stopRest);
+$('#restPlus').addEventListener('click', () => { restLeft += 30; drawRest(); });
 
 $('#foodName').addEventListener('input', updateMealHint);
 $('#foodAmount').addEventListener('input', updateMealHint);
@@ -445,8 +596,18 @@ document.addEventListener('click', (e) => {
     day().workouts = day().workouts.filter((w) => w.id !== ds.delWorkout);
   } else if (ds.toggle) {
     const [id, i] = ds.toggle.split(':');
-    const s = findWorkout(id).sets[i];
-    s.done = !s.done;
+    const set = findWorkout(id).sets[i];
+    set.done = !set.done;
+    if (set.done) startRest();      // 세트를 끝냈으니 휴식 시작
+  } else if (ds.step) {
+    const [id, i, field, dir] = ds.step.split(':');
+    const set = findWorkout(id).sets[i];
+    const unit = field === 'weight' ? (Number(state.profile.weightStep) || 2.5) : 1;
+    const next = (Number(set[field]) || 0) + unit * Number(dir);
+    set[field] = next > 0 ? Math.round(next * 100) / 100 : (field === 'reps' ? 0 : null);
+  } else if (ds.routine) {
+    loadRoutine(ds.routine);
+    return;                          // loadRoutine이 알아서 저장·렌더링한다
   } else if (ds.addSet) {
     const w = findWorkout(ds.addSet);
     const last = w.sets[w.sets.length - 1] || { reps: 10, weight: null };

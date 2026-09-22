@@ -136,3 +136,39 @@ label.inline input.custom { border-color: var(--accent); color: var(--accent); f
 /* 전체 기간 최고 기록 */
 .item.pr { font-size: 0.85rem; }
 .new-pr { color: var(--accent); font-weight: 700; font-size: 0.85rem; }
+
+/* 중량·횟수 ± 버튼 */
+.stepper { display: flex; align-items: center; gap: 3px; }
+.stepper input { flex: 1; width: 100%; }
+.stepper button {
+  flex: none; width: 30px; padding: 8px 0; font-size: 1rem; line-height: 1;
+  background: var(--card-2); color: var(--muted);
+}
+.stepper button:hover { color: var(--accent); border-color: var(--accent); }
+.set-row { grid-template-columns: 44px 1fr 1fr 30px; gap: 4px; }
+
+/* 루틴 불러오기 · 메모 */
+.wide-btn {
+  width: 100%; margin-bottom: 12px; padding: 12px;
+  background: var(--card); border: 1px dashed var(--line); color: var(--muted); font-size: 0.9rem;
+}
+.wide-btn:hover { border-color: var(--accent); color: var(--accent); }
+#dayNote {
+  width: 100%; font: inherit; color: var(--text); background: var(--card-2);
+  border: 1px solid var(--line); border-radius: 10px; padding: 10px; resize: vertical;
+}
+
+/* 휴식 타이머 */
+.rest-bar {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  display: flex; align-items: center; gap: 10px; z-index: 5;
+  background: var(--card); border: 1px solid var(--accent); border-radius: 999px;
+  padding: 8px 10px 8px 16px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+.rest-bar[hidden] { display: none; }
+.rest-bar strong { font-size: 1.15rem; min-width: 46px; text-align: center; color: var(--accent); }
+.rest-bar button { padding: 6px 10px; font-size: 0.8rem; }
+.rest-label { font-size: 0.85rem; color: var(--muted); }
+.rest-bar.almost { border-color: var(--danger); }
+.rest-bar.almost strong { color: var(--danger); }

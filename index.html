@@ -56,6 +56,12 @@
           <label>내 체중 (kg)
             <input id="bodyWeight" type="number" inputmode="decimal" min="20" max="250" step="0.1">
           </label>
+          <label>중량 ± 단위
+            <input id="weightStep" type="number" inputmode="decimal" min="0.5" max="20" step="0.5">
+          </label>
+          <label>휴식 (초)
+            <input id="restSec" type="number" inputmode="numeric" min="10" max="600" step="10">
+          </label>
         </div>
         <p class="hint">운동 종류별 MET × 체중 × 운동 시간으로 계산한 추정치예요. 시간을 안 적으면 세트당 3분으로 추정합니다.<br>
           MET(운동 강도)는 운동 이름으로 자동 추정하는데, 값이 안 맞으면 운동 카드에서 직접 고칠 수 있어요. 같은 이름의 운동에는 모두 적용됩니다.<br>
@@ -71,9 +77,15 @@
           <label>횟수<input id="exReps" type="number" inputmode="numeric" min="0" value="10" required></label>
           <label>시간(분)<input id="exMinutes" type="number" inputmode="numeric" min="0" step="1" placeholder="선택"></label>
         </div>
+        <p class="hint" id="exHint"></p>
         <button type="submit" class="primary">운동 추가</button>
       </form>
+      <button id="loadRoutine" class="wide-btn"></button>
       <div id="workoutList"></div>
+      <div class="card">
+        <h3>📝 오늘 메모</h3>
+        <textarea id="dayNote" rows="2" placeholder="컨디션, 통증, 다음에 기억할 것…"></textarea>
+      </div>
     </section>
 
     <!-- 기록 -->
@@ -89,6 +101,13 @@
       </div>
     </section>
   </main>
+
+  <div id="restBar" class="rest-bar" hidden>
+    <span class="rest-label">⏱ 휴식</span>
+    <strong id="restTime">0:00</strong>
+    <button id="restPlus">+30초</button>
+    <button id="restStop">정지</button>
+  </div>
 
   <script src="food-db.js"></script>
   <script src="app.js"></script>
