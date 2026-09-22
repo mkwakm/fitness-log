@@ -1146,18 +1146,60 @@ function showDatePill() {
   clearTimeout(pillTimer);
   pillTimer = setTimeout(() => { el.hidden = true; }, 1200);
 }
-// dir: 1이면 다음 날(오른쪽에서 들어옴), -1이면 이전 날
+// 날짜 넘김 연출: 화면 전체(main)가 진행 방향으로 빠져나갔다가, 반대편에서 다시 들어온다.
+// 나가는 것과 들어오는 것을 같은 요소 하나로 처리해야 방향이 엇갈리지 않는다.
+// (예전에는 main이 제자리로 튕겨 돌아오는 동시에 패널이 반대로 들어와 서로 상쇄됐다)
+const LEAVE_MS = 120;
+const ENTER_MS = 300;
+const SLIDE_OUT = 32;             // 나갈 때 옆으로 비키는 정도 (%)
+let animating = false;
+
+let animTimers = [];
+function clearAnim() {
+  animTimers.forEach(clearTimeout);
+  animTimers = [];
+}
+
+// dir: 1이면 다음 날, -1이면 이전 날
 function goToDate(date, dir) {
   if (date === currentDate) return;
+  if (reduceMotion() || !dir) {
+    currentDate = date;
+    render();
+    showDatePill();
+    return;
+  }
+  // 날짜는 먼저 확정한다. 연출이 끝날 때 바꾸면 빠르게 두 번 누를 때
+  // 두 번째가 같은 날짜를 가리켜 하루만 넘어간다.
   currentDate = date;
-  render();
-  showDatePill();
-  if (reduceMotion() || !dir) return;
-  const panel = document.querySelector('.panel.active');
-  if (!panel) return;
-  panel.classList.remove('from-right', 'from-left');
-  void panel.offsetWidth;
-  panel.classList.add(dir > 0 ? 'from-right' : 'from-left');
+  clearAnim();                    // 진행 중이던 연출은 접고 지금 위치에서 이어서
+  animating = true;
+  MAIN.classList.remove('dragging', 'entering', 'no-anim');
+  MAIN.classList.add('leaving');
+  MAIN.style.transform = `translateX(${dir > 0 ? -SLIDE_OUT : SLIDE_OUT}%)`;
+  MAIN.style.opacity = '0';
+
+  animTimers.push(setTimeout(() => {
+    render();
+    showDatePill();
+    window.scrollTo(0, 0);        // 새 날짜는 맨 위부터 보이게
+
+    // 반대편에 순간이동시켜 놓고
+    MAIN.classList.remove('leaving');
+    MAIN.classList.add('no-anim');
+    MAIN.style.transform = `translateX(${dir > 0 ? SLIDE_OUT : -SLIDE_OUT}%)`;
+    void MAIN.offsetWidth;        // 여기서 한 번 끊어줘야 아래 값이 애니메이션으로 이어진다
+
+    // 제자리로 쫀득하게 들어온다
+    MAIN.classList.remove('no-anim');
+    MAIN.classList.add('entering');
+    MAIN.style.transform = '';
+    MAIN.style.opacity = '';
+    animTimers.push(setTimeout(() => {
+      MAIN.classList.remove('entering');
+      animating = false;
+    }, ENTER_MS));
+  }, LEAVE_MS));
 }
 function stepDate(delta) {
   goToDate(shiftDate(currentDate, delta), delta);
@@ -1196,6 +1238,7 @@ $('#undoBtn').addEventListener('click', undo);
 // 세로 스크롤을 방해하면 안 되므로 가로로 확실히 움직였을 때만 따라간다.
 let touch = null;
 MAIN.addEventListener('touchstart', (e) => {
+  if (animating) { touch = null; return; }
   touch = e.touches.length === 1
     ? { x: e.touches[0].clientX, y: e.touches[0].clientY, engaged: false }
     : null;
@@ -1211,7 +1254,7 @@ MAIN.addEventListener('touchmove', (e) => {
     touch.engaged = true;
     MAIN.classList.add('dragging');
   }
-  MAIN.style.transform = `translateX(${dx * 0.35}px)`;   // 조금만 따라가게 (고무줄 느낌)
+  MAIN.style.transform = `translateX(${dx * 0.45}px)`;   // 손가락을 따라오되 살짝 저항이 있게
 }, { passive: true });
 
 function endSwipe(dx) {
@@ -1326,18 +1369,20 @@ document.addEventListener('click', (e) => {
     markDeleted(ds.delMeal);
   } else if (ds.delWorkout) {
     const w = findWorkout(ds.delWorkout);
-    if (!confirm('이 운동을 삭제할까요?')) return;
+    if (!w || !confirm('이 운동을 삭제할까요?')) return;
     pushUndo(`'${w?.name ?? '운동'}' 삭제함`);
     day().workouts = day().workouts.filter((x) => x.id !== ds.delWorkout);
     markDeleted(ds.delWorkout);
   } else if (ds.toggle) {
     const [id, i] = ds.toggle.split(':');
-    const set = findWorkout(id).sets[i];
+    const set = findWorkout(id)?.sets[i];
+    if (!set) return;
     set.done = !set.done;
     if (set.done) startRest();      // 세트를 끝냈으니 휴식 시작
   } else if (ds.step) {
     const [id, i, field, dir] = ds.step.split(':');
-    const set = findWorkout(id).sets[i];
+    const set = findWorkout(id)?.sets[i];
+    if (!set) return;
     const unit = field === 'weight' ? (Number(state.profile.weightStep) || 2.5) : 1;
     const next = (Number(set[field]) || 0) + unit * Number(dir);
     set[field] = next > 0 ? Math.round(next * 100) / 100 : (field === 'reps' ? 0 : null);
@@ -1379,11 +1424,13 @@ document.addEventListener('click', (e) => {
     return;
   } else if (ds.addSet) {
     const w = findWorkout(ds.addSet);
+    if (!w) return;
     const last = w.sets[w.sets.length - 1] || { reps: 10, weight: null };
     w.sets.push({ reps: last.reps, weight: last.weight, done: false });
   } else if (ds.delSet) {
     const [id, i] = ds.delSet.split(':');
     const w = findWorkout(id);
+    if (!w) return;
     if (w.sets.length > 1) {
       pushUndo(`${w.name} ${Number(i) + 1}세트 삭제함`);
       w.sets.splice(Number(i), 1);
@@ -1409,15 +1456,19 @@ document.addEventListener('click', (e) => {
 document.addEventListener('change', (e) => {
   const ds = e.target.dataset;
   if (ds.minutes) {
+    const w = findWorkout(ds.minutes);
+    if (!w) return;
     const v = Number(e.target.value);
-    findWorkout(ds.minutes).minutes = v > 0 ? v : null;
+    w.minutes = v > 0 ? v : null;
   } else if (ds.met) {
     const v = Number(e.target.value);
     setCustomMet(ds.met, v > 0 ? Math.min(20, Math.max(1, v)) : 0);   // 0이면 자동 추정으로 복귀
   } else if (ds.edit) {
     const [id, i, field] = ds.edit.split(':');
+    const set = findWorkout(id)?.sets[i];
+    if (!set) return;
     const v = e.target.value;
-    findWorkout(id).sets[i][field] = v === '' ? null : Number(v);
+    set[field] = v === '' ? null : Number(v);
   } else {
     return;
   }

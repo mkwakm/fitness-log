@@ -357,19 +357,31 @@ h3 .hint { display: inline; font-weight: 400; }
 }
 
 /* ---------- 날짜 이동 연출 ---------- */
-/* 손가락을 따라 밀렸다가 놓으면 제자리로 돌아온다 */
+/* 화면 전체(main)를 하나로 움직인다. 나갈 때와 들어올 때를 같은 요소로 처리해야
+   방향이 엇갈리지 않고, 내용 길이가 달라도 똑같이 보인다. */
 main {
-  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);   /* 덜 쓸었을 때 제자리로 */
   overflow-x: hidden;
   overflow-x: clip;        /* 지원하는 브라우저에선 스크롤 컨테이너를 만들지 않는 clip으로 */
 }
-main.dragging { transition: none; }
+main.dragging,
+main.no-anim { transition: none; }
 
-/* 날짜가 바뀌면 새 내용이 옆에서 밀려 들어온다 */
-@keyframes fromRight { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
-@keyframes fromLeft  { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
-.panel.from-right { animation: fromRight 0.24s cubic-bezier(0.22, 1, 0.36, 1); }
-.panel.from-left  { animation: fromLeft  0.24s cubic-bezier(0.22, 1, 0.36, 1); }
+/* 나갈 땐 점점 빨라지며 짧게.
+   이 동안은 화면에 아직 이전 날짜 내용이 있는데 currentDate는 이미 새 날짜라,
+   누르면 엉뚱한 날을 건드린다. 아예 못 누르게 막는다. */
+main.leaving {
+  transition: transform 0.12s cubic-bezier(0.4, 0, 1, 1), opacity 0.12s linear;
+  pointer-events: none;
+}
+/* 들어올 땐 살짝 지나쳤다가 자리를 잡는다 (쫀득한 느낌) */
+main.entering {
+  transition: transform 0.3s cubic-bezier(0.2, 1.45, 0.35, 1), opacity 0.18s ease-out;
+}
+
+/* 넘기는 동안 main이 화면 밖으로 나가므로 가로 스크롤이 생기지 않게 잘라낸다.
+   clip은 hidden과 달리 스크롤 컨테이너를 만들지 않아 헤더의 sticky가 유지된다. */
+html { overflow-x: clip; }
 
 /* 어느 날로 갔는지 요일과 함께 잠깐 띄운다 */
 .date-pill {
@@ -391,6 +403,6 @@ main.dragging { transition: none; }
 
 /* 움직임을 줄이는 설정을 켠 사람에게는 애니메이션을 끈다 */
 @media (prefers-reduced-motion: reduce) {
-  main, .panel.from-right, .panel.from-left, .date-pill.pop { transition: none; animation: none; }
+  main, .date-pill.pop { transition: none; animation: none; }
   .date-pill.pop { opacity: 1; }
 }
