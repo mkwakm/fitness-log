@@ -1,6 +1,19 @@
+/* 기본은 어두운 톤. 헤더의 버튼으로 밝은 테마로 바꿀 수 있습니다. */
 :root {
+  --bg: #15191b;
+  --card: #1e2427;
+  --card-2: #262d31;
+  --text: #e6ebe8;
+  --muted: #98a3a0;
+  --line: #2f3739;
+  --accent: #34d399;
+  --accent-soft: #1b3830;
+  --danger: #f87171;
+}
+:root[data-theme="light"] {
   --bg: #f4f6f5;
   --card: #ffffff;
+  --card-2: #f0f3f1;
   --text: #1c1f1d;
   --muted: #6b7280;
   --line: #e3e7e4;
@@ -8,19 +21,9 @@
   --accent-soft: #dcfce7;
   --danger: #dc2626;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #111413;
-    --card: #1b1f1d;
-    --text: #e8ece9;
-    --muted: #9aa39e;
-    --line: #2c322f;
-    --accent: #22c55e;
-    --accent-soft: #163a24;
-  }
-}
 
 * { box-sizing: border-box; }
+html { background: var(--bg); }
 body {
   margin: 0;
   font-family: -apple-system, "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
@@ -35,14 +38,15 @@ body {
   display: flex; align-items: center; justify-content: center; gap: 8px;
   padding: 12px 16px; position: sticky; top: 0; background: var(--bg); z-index: 2;
 }
-.top input[type=date] { font-size: 1.05rem; font-weight: 600; }
+.top input[type=date] { font-size: 1.05rem; font-weight: 600; color-scheme: dark; }
+:root[data-theme="light"] .top input[type=date] { color-scheme: light; }
 
 .tabs { display: flex; gap: 6px; padding: 0 16px 12px; }
 .tab {
   flex: 1; padding: 10px; border-radius: 10px; border: 1px solid var(--line);
   background: var(--card); color: var(--text); font-size: 0.95rem;
 }
-.tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.tab.active { background: var(--accent); color: #0d1412; border-color: var(--accent); font-weight: 600; }
 
 main { padding: 0 16px 24px; }
 .panel { display: none; }
@@ -58,41 +62,42 @@ main { padding: 0 16px 24px; }
 label { display: grid; gap: 4px; font-size: 0.8rem; color: var(--muted); }
 
 input, select, button {
-  font: inherit; color: var(--text); background: var(--card);
+  font: inherit; color: var(--text); background: var(--card-2);
   border: 1px solid var(--line); border-radius: 10px; padding: 10px; min-width: 0;
 }
+input::placeholder { color: var(--muted); opacity: 0.8; }
 button { cursor: pointer; }
-button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #0d1412; font-weight: 700; }
 .icon-btn { width: 40px; font-size: 1.3rem; padding: 6px; }
 .del { border: none; background: none; color: var(--muted); font-size: 1.1rem; padding: 4px 8px; }
 .del:hover { color: var(--danger); }
 
 .summary {
-  background: var(--accent-soft); border-radius: 12px; padding: 10px 14px;
-  margin-bottom: 12px; font-weight: 600;
+  background: var(--accent-soft); border: 1px solid var(--line); border-radius: 12px;
+  padding: 10px 14px; margin-bottom: 12px; font-weight: 600;
 }
 .summary:empty { display: none; }
 
 h3 { margin: 0 0 8px; font-size: 1rem; }
 .muted { color: var(--muted); font-size: 0.85rem; }
+.hint { color: var(--muted); font-size: 0.8rem; margin: 2px 0 0; line-height: 1.5; }
+.hint:empty { display: none; }
 
 .item { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; }
 .item + .item { border-top: 1px solid var(--line); }
 
-.sets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.set {
-  display: flex; align-items: center; gap: 4px; font-size: 0.8rem;
-  border: 1px solid var(--line); border-radius: 8px; padding: 4px 6px;
+/* 세트별 중량·횟수 기록표 */
+.set-table { margin-top: 10px; display: grid; gap: 6px; }
+.set-row {
+  display: grid; grid-template-columns: 52px 1fr 1fr 36px; gap: 6px; align-items: center;
 }
-.set.done { background: var(--accent-soft); border-color: var(--accent); }
-.set input { width: 48px; padding: 4px; font-size: 0.85rem; text-align: center; }
-.set button { padding: 2px 6px; font-size: 0.8rem; }
-
-.history-day { cursor: pointer; }
-.file-btn {
-  display: flex; align-items: center; justify-content: center; font-size: 1rem; color: var(--text);
-  border: 1px solid var(--line); border-radius: 10px; padding: 10px; cursor: pointer;
+.set-row.head { font-size: 0.75rem; color: var(--muted); text-align: center; padding: 0 2px; }
+.set-row input { padding: 8px 6px; text-align: center; }
+.set-no {
+  background: var(--card-2); font-size: 0.85rem; padding: 8px 4px; text-align: center;
 }
+.set-row.done .set-no { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 700; }
+.set-row.done input { border-color: var(--accent); }
 
 /* 소모 칼로리 창 */
 .burn-total {
@@ -112,3 +117,9 @@ label.inline input { width: 64px; padding: 6px; text-align: center; }
 /* 운동 입력 칸이 많아 좁은 화면에서는 두 줄로 */
 #workoutForm .row { flex-wrap: wrap; }
 #workoutForm .row > label { flex: 1 1 calc(50% - 8px); }
+
+.history-day { cursor: pointer; }
+.file-btn {
+  display: flex; align-items: center; justify-content: center; font-size: 1rem; color: var(--text);
+  background: var(--card-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px; cursor: pointer;
+}

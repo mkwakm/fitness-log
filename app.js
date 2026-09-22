@@ -1,7 +1,8 @@
 // 데이터 구조 (localStorage "fitness-log-v1"):
-// { profile: { weight },
+// { profile: { weight, theme },
 //   days: { "YYYY-MM-DD": { meals: [{id, type, name, amount, kcal}],
 //                            workouts: [{id, name, minutes, sets: [{reps, weight, done}]}] } } }
+// 음식 칼로리 표(FOOD_DB, DEFAULT_UNITS)는 food-db.js에 있습니다.
 const STORAGE_KEY = 'fitness-log-v1';
 const MEAL_ORDER = ['아침', '점심', '저녁', '간식'];
 const DEFAULT_WEIGHT = 70;      // 체중을 아직 안 적었을 때 쓰는 기본값 (kg)
@@ -28,9 +29,9 @@ const $ = (sel) => document.querySelector(sel);
 function load() {
   try {
     const raw = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
-    return { days: raw.days || {}, profile: { weight: DEFAULT_WEIGHT, ...(raw.profile || {}) } };
+    return { days: raw.days || {}, profile: { weight: DEFAULT_WEIGHT, theme: 'dark', ...(raw.profile || {}) } };
   } catch {
-    return { days: {}, profile: { weight: DEFAULT_WEIGHT } };
+    return { days: {}, profile: { weight: DEFAULT_WEIGHT, theme: 'dark' } };
   }
 }
 function save() {
@@ -39,6 +40,7 @@ function save() {
 
 let state = load();
 let currentDate = todayStr();
+let kcalTouched = false;   // 사용자가 칼로리를 직접 고쳤으면 자동 계산으로 덮어쓰지 않는다
 
 function todayStr(d = new Date()) {
   const off = d.getTimezoneOffset() * 60000;
@@ -63,6 +65,75 @@ function isEmptyDay(d) {
   return !d || (d.meals.length === 0 && d.workouts.length === 0);
 }
 
+// ---------- 테마 ----------
+function applyTheme() {
+  const dark = state.profile.theme !== 'light';
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  $('#themeBtn').textContent = dark ? '🌙' : '☀️';
+  $('#themeColor').content = dark ? '#15191b' : '#f4f6f5';
+}
+
+// ---------- 식단 칼로리 계산 ----------
+// 입력한 이름에서 음식 표의 항목을 찾는다.
+// 한국어는 "현미밥 / 볶음밥 / 바나나우유"처럼 뒤쪽이 핵심 단어라, 이름이 표의 키로 "끝날" 때만 잡는다.
+// (그냥 포함으로 찾으면 "김치전"이 "김치"로 잡혀 칼로리가 엉뚱해진다.)
+// 여러 개 걸리면 가장 긴(구체적인) 키를 쓴다. 예: "제로콜라"는 "콜라"가 아니라 "제로콜라".
+function findFood(name) {
+  const n = String(name ?? '').trim().toLowerCase().replace(/\s+/g, '');
+  if (!n) return null;
+  if (FOOD_DB[n]) return { key: n, food: FOOD_DB[n] };
+  let best = null;
+  for (const key of Object.keys(FOOD_DB)) {
+    if (n.endsWith(key) && (!best || key.length > best.key.length)) best = { key, food: FOOD_DB[key] };
+  }
+  return best;
+}
+
+// "200g", "1공기", "1.5개", "300ml" → 그램 수. 모르는 단위면 null.
+function amountToGrams(amount, food) {
+  const s = String(amount ?? '').trim().replace(/\s+/g, '');
+  const m = s.match(/^([\d.]+)(.*)$/);
+  if (!m) return null;
+  const n = Number(m[1]);
+  if (!(n > 0)) return null;
+  const unit = m[2] || 'g';
+  if (unit === 'g' || unit === 'ml' || unit === 'cc') return n;
+  if (unit === 'kg' || unit === 'l') return n * 1000;
+  const grams = { ...DEFAULT_UNITS, ...(food?.units || {}) }[unit];
+  return grams ? n * grams : null;
+}
+
+// 음식 이름 + 양 → { kcal, grams, key, assumed }. 모르는 음식이면 null.
+function estimateKcal(name, amount) {
+  const hit = findFood(name);
+  if (!hit) return null;
+  const grams = amountToGrams(amount, hit.food);
+  if (grams != null) {
+    return { kcal: Math.round(hit.food.kcal100 * grams / 100), grams, key: hit.key, assumed: false };
+  }
+  // 양을 안 적었거나 모르는 단위면 1인분 기준으로 추정
+  const base = hit.food.units?.['인분'] ?? hit.food.units?.['개'] ?? hit.food.units?.['그릇'] ?? 100;
+  return { kcal: Math.round(hit.food.kcal100 * base / 100), grams: base, key: hit.key, assumed: true };
+}
+
+function updateMealHint() {
+  const name = $('#foodName').value;
+  const est = estimateKcal(name, $('#foodAmount').value);
+  const hint = $('#mealHint');
+  if (!est) {
+    hint.textContent = name.trim() ? '표에 없는 음식이에요. 칼로리를 직접 적어 주세요.' : '';
+    if (!kcalTouched) $('#foodKcal').value = '';   // 앞서 자동으로 채운 값을 남겨두지 않는다
+    return;
+  }
+  hint.textContent = `🧮 ${est.key} ${est.grams}g 기준 약 ${est.kcal} kcal${est.assumed ? ' (양을 안 적어 1인분으로 추정)' : ''}`;
+  if (!kcalTouched) $('#foodKcal').value = est.kcal;
+}
+function resetMealForm() {
+  $('#foodName').value = $('#foodAmount').value = $('#foodKcal').value = '';
+  $('#mealHint').textContent = '';
+  kcalTouched = false;
+}
+
 // ---------- 소모 칼로리 ----------
 function bodyWeight() {
   const w = Number(state.profile?.weight);
@@ -84,6 +155,9 @@ function isEstimated(w) {
 // 소모 칼로리 = MET × 체중(kg) × 시간(h)
 function burnOf(w, weight = bodyWeight()) {
   return Math.round(metOf(w.name) * weight * (minutesOf(w) / 60));
+}
+function volumeOf(w) {
+  return w.sets.reduce((v, s) => v + (Number(s.reps) || 0) * (Number(s.weight) || 0), 0);
 }
 function dayBurn(d) {
   const weight = bodyWeight();
@@ -127,7 +201,7 @@ function renderWorkouts() {
   const workouts = day().workouts;
   const weight = bodyWeight();
   const totalSets = workouts.reduce((s, w) => s + w.sets.length, 0);
-  const volume = workouts.reduce((s, w) => s + w.sets.reduce((v, x) => v + (Number(x.reps) || 0) * (Number(x.weight) || 0), 0), 0);
+  const volume = workouts.reduce((s, w) => s + volumeOf(w), 0);
   const totalMin = workouts.reduce((s, w) => s + minutesOf(w), 0);
   const burn = dayBurn(day());
 
@@ -137,7 +211,10 @@ function renderWorkouts() {
 
   renderBurn(workouts, weight, burn);
 
-  $('#workoutList').innerHTML = workouts.map((w) => `<div class="card">
+  $('#workoutList').innerHTML = workouts.map((w) => {
+    const vol = volumeOf(w);
+    const top = Math.max(0, ...w.sets.map((s) => Number(s.weight) || 0));
+    return `<div class="card">
     <div class="item"><h3>${esc(w.name)}</h3>
       <button class="del" data-del-workout="${w.id}" aria-label="삭제">✕</button></div>
     <div class="item meta">
@@ -147,16 +224,21 @@ function renderWorkouts() {
       </label>
       <span class="burn-chip">🔥 ${burnOf(w, weight)} kcal${isEstimated(w) ? ' (추정)' : ''}</span>
     </div>
-    <div class="sets">
-      ${w.sets.map((s, i) => `<div class="set ${s.done ? 'done' : ''}">
-        <button data-toggle="${w.id}:${i}" title="완료 표시">${i + 1}세트${s.done ? ' ✓' : ''}</button>
-        <input type="number" inputmode="numeric" min="0" value="${s.reps}" data-edit="${w.id}:${i}:reps">회
-        <input type="number" inputmode="decimal" min="0" step="0.5" value="${s.weight ?? ''}" placeholder="-" data-edit="${w.id}:${i}:weight">kg
+    <div class="set-table">
+      <div class="set-row head"><span>세트</span><span>중량(kg)</span><span>횟수</span><span></span></div>
+      ${w.sets.map((s, i) => `<div class="set-row ${s.done ? 'done' : ''}">
+        <button class="set-no" data-toggle="${w.id}:${i}" title="완료 표시">${i + 1}${s.done ? ' ✓' : ''}</button>
+        <input type="number" inputmode="decimal" min="0" step="0.5" value="${s.weight ?? ''}" placeholder="맨몸" data-edit="${w.id}:${i}:weight">
+        <input type="number" inputmode="numeric" min="0" value="${s.reps ?? ''}" data-edit="${w.id}:${i}:reps">
+        <button class="del" data-del-set="${w.id}:${i}" aria-label="세트 삭제">✕</button>
       </div>`).join('')}
-      <button data-add-set="${w.id}">+ 세트</button>
-      ${w.sets.length > 1 ? `<button data-remove-set="${w.id}">− 세트</button>` : ''}
     </div>
-  </div>`).join('');
+    <div class="item meta">
+      <button data-add-set="${w.id}">+ 세트 추가</button>
+      <span class="muted">${top ? `최고 ${top} kg · ` : ''}볼륨 ${vol.toLocaleString()} kg</span>
+    </div>
+  </div>`;
+  }).join('');
 }
 
 function renderBurn(workouts, weight, burn) {
@@ -193,13 +275,25 @@ function renderHistory() {
 }
 
 function renderSuggestions() {
-  const names = new Set();
-  Object.values(state.days).forEach((d) => d.workouts.forEach((w) => names.add(w.name)));
-  $('#exSuggestions').innerHTML = [...names].map((n) => `<option value="${esc(n)}">`).join('');
+  const exNames = new Set();
+  const foodNames = new Set(Object.keys(FOOD_DB));
+  Object.values(state.days).forEach((d) => {
+    d.workouts.forEach((w) => exNames.add(w.name));
+    d.meals.forEach((m) => foodNames.add(m.name));
+  });
+  $('#exSuggestions').innerHTML = [...exNames].map((n) => `<option value="${esc(n)}">`).join('');
+  $('#foodSuggestions').innerHTML = [...foodNames].map((n) => `<option value="${esc(n)}">`).join('');
 }
 
 function findWorkout(id) {
   return day().workouts.find((w) => w.id === id);
+}
+
+// 합계에 영향을 주는 값이 바뀌었을 때 (음식 추천 목록은 그대로 두고) 다시 그린다.
+function refreshTotals() {
+  renderWorkouts();
+  renderMeals();
+  renderHistory();
 }
 
 // ---------- 이벤트 ----------
@@ -213,14 +307,22 @@ $('#date').addEventListener('change', (e) => { currentDate = e.target.value || t
 $('#prevDay').addEventListener('click', () => { currentDate = shiftDate(currentDate, -1); render(); });
 $('#nextDay').addEventListener('click', () => { currentDate = shiftDate(currentDate, 1); render(); });
 
+$('#themeBtn').addEventListener('click', () => {
+  state.profile.theme = state.profile.theme === 'light' ? 'dark' : 'light';
+  save();
+  applyTheme();
+});
+
 $('#bodyWeight').addEventListener('input', (e) => {
   const v = Number(e.target.value);
   state.profile.weight = v > 0 ? v : DEFAULT_WEIGHT;
   save();
-  renderWorkouts();
-  renderMeals();
-  renderHistory();
+  refreshTotals();
 });
+
+$('#foodName').addEventListener('input', updateMealHint);
+$('#foodAmount').addEventListener('input', updateMealHint);
+$('#foodKcal').addEventListener('input', () => { kcalTouched = true; });
 
 $('#mealForm').addEventListener('submit', (e) => {
   e.preventDefault();
@@ -232,7 +334,7 @@ $('#mealForm').addEventListener('submit', (e) => {
     kcal: $('#foodKcal').value ? Number($('#foodKcal').value) : null,
   });
   save();
-  $('#foodName').value = $('#foodAmount').value = $('#foodKcal').value = '';
+  resetMealForm();
   render();
 });
 
@@ -270,8 +372,16 @@ document.addEventListener('click', (e) => {
     const w = findWorkout(ds.addSet);
     const last = w.sets[w.sets.length - 1] || { reps: 10, weight: null };
     w.sets.push({ reps: last.reps, weight: last.weight, done: false });
-  } else if (ds.removeSet) {
-    findWorkout(ds.removeSet).sets.pop();
+  } else if (ds.delSet) {
+    const [id, i] = ds.delSet.split(':');
+    const w = findWorkout(id);
+    if (w.sets.length > 1) {
+      w.sets.splice(Number(i), 1);
+    } else if (confirm('마지막 세트예요. 이 운동을 삭제할까요?')) {
+      day().workouts = day().workouts.filter((x) => x.id !== id);
+    } else {
+      return;
+    }
   } else if (ds.goto) {
     currentDate = ds.goto;
     showTab('workouts');
@@ -295,9 +405,8 @@ document.addEventListener('change', (e) => {
     return;
   }
   save();
-  renderWorkouts();
-  renderMeals();
-  renderHistory();
+  // change는 포커스가 빠지는 도중에 오기도 해서, 바로 다시 그리면 브라우저가 에러를 낸다. 한 틱 미룬다.
+  setTimeout(refreshTotals, 0);
 });
 
 // ---------- 백업 ----------
@@ -332,4 +441,5 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   navigator.serviceWorker.register('sw.js');
 }
 
+applyTheme();
 render();
