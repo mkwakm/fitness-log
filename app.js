@@ -64,6 +64,20 @@ function partOf(name) {
   return '기타';
 }
 
+// 자동완성에 미리 넣어두는 흔한 운동들. 직접 쓴 이름이 먼저 오고 이게 뒤에 붙는다.
+// 표기가 흔들리면(벤치프레스 / 벤치 프레스) 같은 운동으로 안 묶여서 최고기록·추이가 갈린다.
+const COMMON_EX = [
+  '벤치프레스', '인클라인벤치프레스', '덤벨프레스', '인클라인덤벨프레스', '체스트프레스',
+  '케이블크로스오버', '펙덱플라이', '덤벨플라이', '딥스', '푸시업',
+  '랫풀다운', '풀업', '바벨로우', '덤벨로우', '시티드로우', '티바로우', '페이스풀', '백익스텐션',
+  '스쿼트', '핵스쿼트', '레그프레스', '레그컬', '레그익스텐션', '런지', '힙쓰러스트', '카프레이즈',
+  '데드리프트', '루마니안데드리프트',
+  '오버헤드프레스', '숄더프레스', '아놀드프레스', '사이드레터럴레이즈', '프론트레이즈', '리어델트', '슈러그',
+  '바벨컬', '덤벨컬', '해머컬', '프리처컬', '트라이셉익스텐션', '케이블푸시다운', '킥백',
+  '플랭크', '크런치', '레그레이즈', '러시안트위스트', '앱롤러',
+  '런닝머신', '사이클', '로잉머신', '일립티컬', '스텝퍼', '줄넘기', '버피',
+];
+
 const $ = (sel) => document.querySelector(sel);
 
 // 저장값이 한 번 깨지면 앱이 안 열리고 브라우저 데이터를 지우는 것 말곤 방법이 없다.
@@ -1062,6 +1076,56 @@ function renderStreak() {
     : `이번 주 ${goal - wk}번 더 하면 목표 달성이에요.`;
 }
 
+// 최근 7일과 그 앞 7일을 견줘 한 줄로 정리한다.
+function weekReport(endDate = currentDate) {
+  const sum = (from, to) => {
+    let sets = 0, vol = 0, burn = 0, intake = 0, days = 0, minutes = 0, mealDays = 0;
+    for (let d = from; d <= to; d = shiftDate(d, 1)) {
+      const day = state.days[d];
+      if (!day) continue;
+      const w = day.workouts || [];
+      if (w.length) days += 1;
+      w.forEach((x) => { sets += countedSets(x).length; vol += volumeOf(x); minutes += minutesOf(x); });
+      burn += dayBurn(d);
+      const kcal = dayIntake(day);
+      if (kcal) { intake += kcal; mealDays += 1; }   // 안 적은 날까지 나누면 평균이 엉뚱해진다
+    }
+    return { sets, vol, burn, intake, days, minutes, mealDays };
+  };
+  const now = sum(shiftDate(endDate, -6), endDate);
+  const prev = sum(shiftDate(endDate, -13), shiftDate(endDate, -7));
+  const prs = [];
+  for (let i = 0; i < 7; i++) {
+    const d = shiftDate(endDate, -i);
+    (state.days[d]?.workouts || []).forEach((w) => {
+      const pb = personalBest(w.name);
+      if (pb && pb.date === d && !prs.includes(w.name)) prs.push(w.name);
+    });
+  }
+  return { now, prev, prs };
+}
+function pctText(now, prev) {
+  if (!prev) return now ? ' <span class="up">(새로)</span>' : '';
+  const diff = Math.round((now - prev) / prev * 100);
+  if (!diff) return ' <span class="muted">(지난주와 같음)</span>';
+  return ` <span class="${diff > 0 ? 'up' : 'down'}">(${diff > 0 ? '+' : ''}${diff}%)</span>`;
+}
+
+function renderReport() {
+  const { now, prev, prs } = weekReport();
+  const card = $('#reportCard');
+  if (!now.days && !prev.days) { card.hidden = true; return; }
+  card.hidden = false;
+  $('#reportBody').innerHTML = `
+    <div class="item"><span>운동한 날</span><strong>${now.days}일${pctText(now.days, prev.days)}</strong></div>
+    <div class="item"><span>총 세트</span><strong>${now.sets}세트${pctText(now.sets, prev.sets)}</strong></div>
+    <div class="item"><span>총 볼륨</span><strong>${now.vol.toLocaleString()} kg${pctText(now.vol, prev.vol)}</strong></div>
+    <div class="item"><span>운동 시간</span><strong>${now.minutes}분${pctText(now.minutes, prev.minutes)}</strong></div>
+    <div class="item"><span>소모 칼로리</span><strong>${now.burn.toLocaleString()} kcal${pctText(now.burn, prev.burn)}</strong></div>
+    ${now.mealDays ? `<div class="item"><span>평균 섭취 <span class="muted">(적은 ${now.mealDays}일)</span></span><strong>${Math.round(now.intake / now.mealDays)} kcal${pctText(Math.round(now.intake / now.mealDays), prev.mealDays ? Math.round(prev.intake / prev.mealDays) : 0)}</strong></div>` : ''}
+    ${prs.length ? `<p class="tip">🎉 이번 주 신기록: ${prs.map(esc).join(', ')}</p>` : ''}`;
+}
+
 function renderWeekChart() {
   const data = weekData();
   const max = Math.max(1, ...data.flatMap((d) => [d.intake, d.burn]));
@@ -1118,6 +1182,7 @@ function dayText(d) {
 
 function renderHistory() {
   renderStreak();
+  renderReport();
   renderWeekChart();
   renderBalance();
   renderWeightChart();
@@ -1278,13 +1343,23 @@ function loadRoutine(date) {
 }
 
 function renderSuggestions() {
-  const exNames = new Set();
+  // 내가 쓴 이름을 앞에 두고, 안 써 본 흔한 운동을 뒤에 붙인다.
+  // 이름이 같은지는 metKey 기준으로 보므로 대소문자·앞뒤 공백 차이로 중복되지 않는다.
+  const mine = new Set();
+  const seen = new Set();
+  const exNames = [];
   const foodNames = new Set(Object.keys(FOOD_DB));
   Object.values(state.days).forEach((d) => {
-    d.workouts.forEach((w) => exNames.add(w.name));
+    d.workouts.forEach((w) => mine.add(w.name));
     d.meals.forEach((m) => foodNames.add(m.name));
   });
-  $('#exSuggestions').innerHTML = [...exNames].map((n) => `<option value="${esc(n)}">`).join('');
+  [...mine, ...COMMON_EX].forEach((n) => {
+    const key = metKey(n);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    exNames.push(n);
+  });
+  $('#exSuggestions').innerHTML = exNames.map((n) => `<option value="${esc(n)}">`).join('');
   $('#foodSuggestions').innerHTML = [...foodNames].map((n) => `<option value="${esc(n)}">`).join('');
 }
 

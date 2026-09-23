@@ -429,3 +429,11 @@ html { overflow-x: clip; }
 
 /* 기록 탭에서 그 날 운동 불러오기 */
 .day-copy { display: inline-block; margin-top: 6px; padding: 6px 0; }
+
+/* 주간 리포트 */
+#reportCard[hidden] { display: none; }
+#reportBody .item { font-size: 0.9rem; }
+#reportBody .item strong { font-weight: 700; }
+#reportBody .tip { margin: 10px 0 0; }
+.up { color: var(--accent); font-size: 0.82rem; font-weight: 600; }
+.down { color: var(--muted); font-size: 0.82rem; font-weight: 600; }
