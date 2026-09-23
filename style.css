@@ -420,3 +420,12 @@ html { overflow-x: clip; }
 
 /* 점진적 과부하 제안 */
 .tip { color: var(--accent); font-size: 0.82rem; font-weight: 600; line-height: 1.5; }
+
+/* 부위별 주간 목표 */
+.goal-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
+.goal-cell { font-size: 0.8rem; }
+.goal-cell input { width: 100%; padding: 8px; text-align: center; }
+.bar.full > span { background: var(--chart-3); }
+
+/* 기록 탭에서 그 날 운동 불러오기 */
+.day-copy { display: inline-block; margin-top: 6px; padding: 6px 0; }

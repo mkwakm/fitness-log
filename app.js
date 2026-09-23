@@ -23,6 +23,7 @@ const DEFAULT_PROFILE = {
   weeklyGoal: 3,     // 주 몇 번 운동할지
   waterGoal: 8,      // 하루 물 몇 잔
   routines: {},      // 저장해둔 루틴 { 이름: [{name, reps, sets, minutes}] }
+  partGoals: {},     // 부위별 주간 목표 세트 수 { 가슴: 12, ... } — 안 정하면 비교 안 함
 };
 
 // 운동 이름으로 MET(운동 강도) 추정. 위에서부터 먼저 걸리는 것을 사용하므로 순서가 중요하다.
@@ -351,6 +352,26 @@ function countedSets(w) {
 function doneCount(w) {
   return w.sets.filter((s) => s.done).length;
 }
+// 세트를 완료한 시각(set.doneAt)으로 세트 사이 쉰 시간을 되짚는다.
+// 20분이 넘으면 쉰 게 아니라 자리를 비운 것으로 보고 뺀다.
+const MAX_REST_SEC = 20 * 60;
+function restGaps(w) {
+  const stamps = w.sets.map((s) => Number(s.doneAt) || 0).filter(Boolean).sort((a, b) => a - b);
+  const gaps = [];
+  for (let i = 1; i < stamps.length; i++) {
+    const sec = Math.round((stamps[i] - stamps[i - 1]) / 1000);
+    if (sec > 0 && sec <= MAX_REST_SEC) gaps.push(sec);
+  }
+  return gaps;
+}
+function avgRest(w) {
+  const gaps = restGaps(w);
+  return gaps.length ? Math.round(gaps.reduce((a, b) => a + b, 0) / gaps.length) : 0;
+}
+function mmss(sec) {
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+}
+
 function volumeOf(w) {
   return countedSets(w).reduce((v, s) => v + (Number(s.reps) || 0) * (Number(s.weight) || 0), 0);
 }
@@ -783,6 +804,7 @@ function renderWorkouts() {
     const isNewPr = pr && pr.date === currentDate;   // 보고 있는 날에 세운 기록
     const last = lastRecord(w.name);
     const tip = overloadTip(w.name);
+    const rest = avgRest(w);
     const todayRm = Math.max(0, ...countedSets(w).map((x) => oneRM(Number(x.weight) || 0, Number(x.reps) || 0)));
     return `<div class="card">
     <div class="item"><h3>${esc(w.name)}</h3>
@@ -825,7 +847,7 @@ function renderWorkouts() {
     <div class="item meta">
       <button data-add-set="${w.id}">+ 세트 추가</button>
       <span class="muted">${done ? `${done}/${w.sets.length}세트 완료 · ` : ''}볼륨 ${vol.toLocaleString()} kg${
-        todayRm ? ` · 오늘 1RM ${todayRm}kg` : ''}</span>
+        todayRm ? ` · 오늘 1RM ${todayRm}kg` : ''}${rest ? ` · 휴식 ${mmss(rest)}` : ''}</span>
     </div>
     ${last ? `<div class="item pr">
       <span class="muted">↩ 지난번 ${fmtDate(last.date)}</span>
@@ -992,19 +1014,37 @@ function renderBalance() {
     return { part, n: counts.get(part) || 0, last, rest: last ? daysBetween(last, currentDate) : 999 };
   }).sort((a, b) => b.rest - a.rest || a.n - b.n);
 
+  // 목표는 "주간" 기준이라 7일을 볼 때만 견준다
+  const goals = range === 7 ? (state.profile.partGoals || {}) : {};
   const max = Math.max(1, ...rows.map((r) => r.n));
-  $('#balanceList').innerHTML = rows.map((r) => `
-    <div class="bal ${r.rest >= 999 ? 'never' : ''}">
+  $('#balanceList').innerHTML = rows.map((r) => {
+    const goal = Number(goals[r.part]) || 0;
+    const pct = goal ? Math.min(100, Math.round(r.n / goal * 100)) : Math.round(r.n / max * 100);
+    return `<div class="bal ${r.rest >= 999 ? 'never' : ''}">
       <span class="bal-name">${r.part}</span>
-      <span class="bar"><span style="width:${Math.round(r.n / max * 100)}%"></span></span>
-      <span class="bal-n">${r.n ? r.n + '세트' : '-'}</span>
+      <span class="bar ${goal && r.n >= goal ? 'full' : ''}"><span style="width:${pct}%"></span></span>
+      <span class="bal-n">${goal ? `${r.n}/${goal}` : (r.n ? r.n + '세트' : '-')}</span>
       <span class="bal-ago">${restText(r.last)}</span>
-    </div>`).join('');
+    </div>`;
+  }).join('');
+
+  // 목표를 입력하는 중에 다시 그리면 칸이 통째로 갈려서 입력이 끊긴다.
+  // (여기서 return해 버리면 아래 안내 문구까지 건너뛰므로 이 블록만 건너뛴다)
+  const goalBox = $('#partGoals');
+  if (!goalBox.contains(document.activeElement)) {
+    goalBox.innerHTML = MAIN_PARTS.map((p) => `
+      <label class="goal-cell">${p}
+        <input type="number" inputmode="numeric" min="0" max="60" step="2"
+               value="${state.profile.partGoals?.[p] ?? ''}" placeholder="-" data-part-goal="${p}">
+      </label>`).join('');
+  }
 
   // 오늘 할 것 추천: 주요 부위 중 가장 오래 쉰 둘
   const due = rows.filter((r) => MAIN_PARTS.includes(r.part) && r.rest >= 2).slice(0, 2);
+  const short = Object.keys(goals).filter((p) => (counts.get(p) || 0) < Number(goals[p]));
   $('#balanceHint').innerHTML = due.length
-    ? `💡 <b>오늘은 ${due.map((r) => r.part).join('·')} 차례</b>예요. (가장 오래 쉬었어요) · 최근 ${range}일 ${total}세트`
+    ? `💡 <b>오늘은 ${due.map((r) => r.part).join('·')} 차례</b>예요. (가장 오래 쉬었어요)` +
+      (short.length ? ` · 목표까지 ${short.map((p) => `${p} ${goals[p] - (counts.get(p) || 0)}세트`).join(', ')}` : '')
     : `최근 ${range}일 · 총 ${total}세트`;
 }
 
@@ -1111,6 +1151,8 @@ function renderHistory() {
           <div class="muted">🏋️ ${ex || '운동 없음'}${burn ? ` · 🔥 ${burn} kcal` : ''}</div>
           ${kcal && burn ? `<div class="muted">➖ 순 ${kcal - burn} kcal</div>` : ''}
           ${d.note ? `<div class="muted">📝 ${esc(d.note)}</div>` : ''}
+          ${d.workouts.length && date !== currentDate
+            ? `<button class="link-btn day-copy" data-copy-day="${date}">↩ 이 날 운동 불러오기</button>` : ''}
         </div>`;
       }).join('')}
     </details>`).join('');
@@ -1367,11 +1409,18 @@ $('#todayBtn').addEventListener('click', () => {
 $('#historySearch').addEventListener('input', renderHistory);
 $('#liftPick').addEventListener('change', (e) => { liftPick = e.target.value; renderLiftChart(); });
 document.addEventListener('input', (e) => {
-  if (e.target.id !== 'weeklyGoal') return;
-  const v = Number(e.target.value);
-  state.profile.weeklyGoal = v > 0 ? Math.min(7, v) : 3;
-  saveSoon();
-  $('#streakMsg').textContent = '';
+  if (e.target.id === 'weeklyGoal') {
+    const v = Number(e.target.value);
+    state.profile.weeklyGoal = v > 0 ? Math.min(7, v) : 3;
+    saveSoon();
+    $('#streakMsg').textContent = '';
+  } else if (e.target.dataset.partGoal) {
+    const v = Number(e.target.value);
+    (state.profile.partGoals ??= {});
+    if (v > 0) state.profile.partGoals[e.target.dataset.partGoal] = Math.min(60, v);
+    else delete state.profile.partGoals[e.target.dataset.partGoal];
+    saveSoon();
+  }
 });
 $('#undoBtn').addEventListener('click', undo);
 
@@ -1519,6 +1568,7 @@ document.addEventListener('click', (e) => {
     const set = findWorkout(id)?.sets[i];
     if (!set) return;
     set.done = !set.done;
+    set.doneAt = set.done ? Date.now() : null;   // 세트 사이 쉰 시간을 재는 기준
     if (set.done) startRest();      // 세트를 끝냈으니 휴식 시작
   } else if (ds.step) {
     const [id, i, field, dir] = ds.step.split(':');
@@ -1527,6 +1577,15 @@ document.addEventListener('click', (e) => {
     const unit = field === 'weight' ? (Number(state.profile.weightStep) || 2.5) : 1;
     const next = (Number(set[field]) || 0) + unit * Number(dir);
     set[field] = next > 0 ? Math.round(next * 100) / 100 : (field === 'reps' ? 0 : null);
+  } else if (ds.copyDay) {
+    const src = state.days[ds.copyDay];
+    if (!src?.workouts.length) return;
+    if (!confirm(`${fmtDate(ds.copyDay)} 운동 ${src.workouts.length}종을 ${fmtDate(currentDate)}로 불러올까요?`)) return;
+    src.workouts.forEach((w) => day().workouts.push({
+      id: uid(), name: w.name, minutes: w.minutes,
+      sets: w.sets.map((x) => ({ reps: x.reps, weight: x.weight, done: false })),
+    }));
+    showTab('workouts');
   } else if (ds.loadRoutine) {
     loadRoutineByName(ds.loadRoutine);
     return;                          // loadRoutineByName이 알아서 저장·렌더링한다
