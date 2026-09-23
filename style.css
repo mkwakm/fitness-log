@@ -409,3 +409,11 @@ html { overflow-x: clip; }
   main, .date-pill.pop { transition: none; animation: none; }
   .date-pill.pop { opacity: 1; }
 }
+
+/* 내 루틴 */
+#routineCard[hidden] { display: none; }
+.item.routine { align-items: center; }
+.item.routine .hint { margin-top: 2px; }
+.routine-btns { display: flex; align-items: center; gap: 4px; flex: none; }
+.routine-btns button.primary { padding: 9px 12px; font-size: 0.82rem; white-space: nowrap; }
+#routineCard .wide-btn { margin: 10px 0 0; }

@@ -22,6 +22,7 @@ const DEFAULT_PROFILE = {
   proteinGoal: null, // 하루 목표 단백질 g (안 정했으면 체중 × 1.6 제안)
   weeklyGoal: 3,     // 주 몇 번 운동할지
   waterGoal: 8,      // 하루 물 몇 잔
+  routines: {},      // 저장해둔 루틴 { 이름: [{name, reps, sets, minutes}] }
 };
 
 // 운동 이름으로 MET(운동 강도) 추정. 위에서부터 먼저 걸리는 것을 사용하므로 순서가 중요하다.
@@ -609,6 +610,7 @@ function render() {
   renderHistory();
   renderSuggestions();
   renderRoutineBtn();
+  renderRoutines();
   renderSession();
   renderSync();
   updateExHint();
@@ -1110,6 +1112,79 @@ function renderRoutineBtn() {
   btn.dataset.routine = date;
 }
 
+// ---------- 루틴 ----------
+// 루틴은 "무슨 운동을 몇 세트 몇 회" 까지만 담는다. 중량은 저장하지 않고 불러올 때
+// 그 운동의 최근 기록에서 가져온다. 안 그러면 석 달 전 무게가 그대로 따라온다.
+function routineFrom(workouts) {
+  return workouts.map((w) => ({
+    name: w.name,
+    sets: w.sets.length,
+    reps: Number(w.sets[0]?.reps) || 10,
+    minutes: w.minutes ?? null,
+  }));
+}
+// 오늘 한 부위로 이름을 지어 준다 (예: "가슴·어깨 날")
+function suggestRoutineName(workouts) {
+  const counts = new Map();
+  workouts.forEach((w) => {
+    const p = partOf(w.name);
+    counts.set(p, (counts.get(p) || 0) + w.sets.length);
+  });
+  const top = [...counts].sort((a, b) => b[1] - a[1]).slice(0, 2).map(([p]) => p);
+  return top.length ? `${top.join('·')} 날` : '내 루틴';
+}
+
+function saveRoutine() {
+  const workouts = day().workouts;
+  if (!workouts.length) return;
+  const name = prompt('루틴 이름을 정해 주세요.', suggestRoutineName(workouts));
+  if (!name?.trim()) return;
+  const key = name.trim();
+  if (state.profile.routines?.[key] && !confirm(`'${key}' 루틴이 이미 있어요. 지금 운동으로 바꿀까요?`)) return;
+  (state.profile.routines ??= {})[key] = routineFrom(workouts);
+  save();
+  render();
+  alert(`'${key}' 루틴을 저장했어요. 다음엔 한 번에 불러올 수 있어요.`);
+}
+
+function loadRoutineByName(key) {
+  const items = state.profile.routines?.[key];
+  if (!items || !confirm(`'${key}' 루틴 ${items.length}종을 불러올까요?\n중량은 그 운동의 최근 기록으로 채워요.`)) return;
+  items.forEach((it) => {
+    const last = lastRecord(it.name, shiftDate(currentDate, 1));   // 오늘 것까지 포함해서 최근
+    const weight = last ? (Number(last.workout.sets.at(-1)?.weight) || null) : null;
+    day().workouts.push({
+      id: uid(),
+      name: it.name,
+      minutes: it.minutes,
+      sets: Array.from({ length: Math.max(1, it.sets) }, () => ({ reps: it.reps, weight, done: false })),
+    });
+  });
+  save();
+  render();
+}
+
+function renderRoutines() {
+  const list = Object.entries(state.profile.routines || {});
+  const hasToday = day().workouts.length > 0;
+  $('#routineCard').hidden = !list.length && !hasToday;
+  $('#routineCard').innerHTML = `
+    <h3>📋 내 루틴</h3>
+    ${list.length ? list.map(([key, items]) => `
+      <div class="item routine">
+        <div>
+          <strong>${esc(key)}</strong>
+          <p class="hint">${items.map((i) => esc(i.name)).join(', ')} · ${items.reduce((s, i) => s + i.sets, 0)}세트</p>
+        </div>
+        <span class="routine-btns">
+          <button data-load-routine="${esc(key)}" class="primary">불러오기</button>
+          <button class="del" data-del-routine="${esc(key)}" aria-label="삭제">✕</button>
+        </span>
+      </div>`).join('')
+      : '<p class="hint">자주 하는 운동을 루틴으로 저장해두면 한 번에 불러올 수 있어요.</p>'}
+    ${hasToday ? '<button id="saveRoutineBtn" class="wide-btn">💾 오늘 운동을 루틴으로 저장</button>' : ''}`;
+}
+
 // 지난 운동을 오늘로 복사한다. 완료 체크는 풀고 기록만 가져온다.
 function loadRoutine(date) {
   const src = state.days[date];
@@ -1418,6 +1493,16 @@ document.addEventListener('click', (e) => {
     const unit = field === 'weight' ? (Number(state.profile.weightStep) || 2.5) : 1;
     const next = (Number(set[field]) || 0) + unit * Number(dir);
     set[field] = next > 0 ? Math.round(next * 100) / 100 : (field === 'reps' ? 0 : null);
+  } else if (ds.loadRoutine) {
+    loadRoutineByName(ds.loadRoutine);
+    return;                          // loadRoutineByName이 알아서 저장·렌더링한다
+  } else if (ds.delRoutine) {
+    if (!confirm(`'${ds.delRoutine}' 루틴을 지울까요?`)) return;
+    pushUndo(`루틴 '${ds.delRoutine}' 삭제함`);
+    delete state.profile.routines[ds.delRoutine];
+  } else if (t.id === 'saveRoutineBtn') {
+    saveRoutine();
+    return;
   } else if (ds.routine) {
     loadRoutine(ds.routine);
     return;                          // loadRoutine이 알아서 저장·렌더링한다
