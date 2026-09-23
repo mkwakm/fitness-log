@@ -43,16 +43,19 @@ const MET_TABLE = [
 
 // 운동 이름으로 부위 추정. MET_TABLE과 같은 규칙 — 위에서 먼저 걸리는 줄을 쓰므로 순서가 중요하다.
 const PART_TABLE = [
-  ['하체', /스쿼트|데드리프트|런지|레그프레스|레그컬|레그익스텐션|힙쓰러스트|힙스러스트|카프|하체|둔근/],
-  ['코어', /플랭크|복근|코어|크런치|윗몸|레그레이즈|브릿지/],
   ['유산소', /줄넘기|버피|hiit|인터벌|크로스핏|타바타|달리기|러닝|런닝|조깅|뛰기|트레드밀|수영|자전거|바이크|사이클|스피닝|로잉|일립티컬|스텝퍼|유산소|에어로빅|등산|하이킹|계단|걷기|산책|워킹|복싱|배드민턴|테니스|농구|축구|풋살/],
-  ['등', /풀업|턱걸이|철봉|로우|랫|등운동|시티드로|바벨로/],
-  ['가슴', /벤치|푸시업|팔굽혀펴기|가슴|체스트|플라이|펙덱|딥스|체스트프레스/],
-  ['어깨', /숄더|어깨|레터럴|오버헤드|밀리터리|슈러그/],
-  ['팔', /컬|삼두|이두|트라이셉|바이셉|킥백/],
-  ['전신', /요가|필라테스|스트레칭|폼롤러|케틀벨|마운틴클라이머|점핑잭|trx/],
+  ['코어', /플랭크|복근|코어|크런치|윗몸|레그레이즈|브릿지|트위스트|앱롤러|할로우|사이드밴드/],
+  ['하체', /스쿼트|데드리프트|런지|레그프레스|레그컬|레그익스텐션|힙쓰러스트|힙스러스트|카프|하체|둔근|스플릿|점프/],
+  // 팔을 가슴·어깨보다 먼저 본다. "케이블푸시다운"이 케이블(가슴)로 먼저 걸리면 안 된다.
+  ['팔', /컬|삼두|이두|트라이셉|바이셉|킥백|푸시다운|딥스머신|암컬|프리처/],
+  ['어깨', /숄더|어깨|레터럴|오버헤드|밀리터리|슈러그|아놀드|프론트레이즈|리어델트|후면삼각|측면삼각/],
+  ['등', /풀업|턱걸이|철봉|로우|랫|등운동|시티드로|바벨로|백익스텐션|페이스풀|풀다운|친업|굿모닝/],
+  ['가슴', /벤치|푸시업|팔굽혀펴기|가슴|체스트|플라이|펙덱|딥스|크로스오버|풀오버|덤벨프레스|머신프레스|인클라인|디클라인/],
+  ['전신', /요가|필라테스|스트레칭|폼롤러|케틀벨|마운틴클라이머|점핑잭|trx|스내치|클린/],
 ];
 const PART_ORDER = ['가슴', '등', '하체', '어깨', '팔', '코어', '유산소', '전신', '기타'];
+// 계획을 세울 때 "빠진 곳"을 보려면 안 한 부위도 보여야 한다
+const MAIN_PARTS = ['가슴', '등', '하체', '어깨', '팔', '코어'];
 function partOf(name) {
   const n = metKey(name);
   for (const [part, re] of PART_TABLE) if (re.test(n)) return part;
@@ -444,6 +447,22 @@ function weeklyCount(date = currentDate) {
   for (let i = 0; i < 7; i++) if (didWorkout(shiftDate(start, i))) n += 1;
   return n;
 }
+// 그 부위를 마지막으로 한 날 (보고 있는 날 이전까지)
+function lastPartDay(part, before = currentDate) {
+  for (const date of Object.keys(state.days).filter((d) => d <= before).sort().reverse()) {
+    if (state.days[date].workouts.some((w) => partOf(w.name) === part)) return date;
+  }
+  return null;
+}
+function daysBetween(a, b) {
+  return Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000);
+}
+function restText(date) {
+  if (!date) return '안 함';
+  const n = daysBetween(date, currentDate);
+  return n === 0 ? '오늘' : n === 1 ? '어제' : `${n}일 전`;
+}
+
 // 최근 N일 부위별 세트 수
 function partBalance(days = range, endDate = currentDate) {
   const tally = new Map(PART_ORDER.map((p) => [p, 0]));
@@ -926,22 +945,35 @@ function renderLiftChart() {
 }
 
 function renderBalance() {
-  const parts = partBalance();
-  const total = parts.reduce((s, [, n]) => s + n, 0);
+  const counts = new Map(partBalance());
+  const total = [...counts.values()].reduce((s, n) => s + n, 0);
   const card = $('#balanceCard');
-  if (!total) { card.hidden = true; return; }
+  if (!total && !Object.keys(state.days).some((d) => state.days[d].workouts.length)) {
+    card.hidden = true;
+    return;
+  }
   card.hidden = false;
-  const max = parts[0][1];
-  // 부위는 순위가 아니라 크기를 비교하는 것이라 한 가지 색의 길이로만 나타낸다
-  $('#balanceList').innerHTML = parts.map(([part, n]) => `
-    <div class="bal">
-      <span class="bal-name">${part}</span>
-      <span class="bar"><span style="width:${Math.round(n / max * 100)}%"></span></span>
-      <span class="bal-n">${n}세트</span>
+
+  // 안 한 부위도 보여야 뭐가 빠졌는지 안다. 오래 쉰 순으로 세워서 바로 "오늘 뭐 하지"가 보이게.
+  const names = [...new Set([...MAIN_PARTS, ...counts.keys()])];
+  const rows = names.map((part) => {
+    const last = lastPartDay(part);
+    return { part, n: counts.get(part) || 0, last, rest: last ? daysBetween(last, currentDate) : 999 };
+  }).sort((a, b) => b.rest - a.rest || a.n - b.n);
+
+  const max = Math.max(1, ...rows.map((r) => r.n));
+  $('#balanceList').innerHTML = rows.map((r) => `
+    <div class="bal ${r.rest >= 999 ? 'never' : ''}">
+      <span class="bal-name">${r.part}</span>
+      <span class="bar"><span style="width:${Math.round(r.n / max * 100)}%"></span></span>
+      <span class="bal-n">${r.n ? r.n + '세트' : '-'}</span>
+      <span class="bal-ago">${restText(r.last)}</span>
     </div>`).join('');
-  const missing = ['가슴', '등', '하체'].filter((p) => !parts.some(([q]) => q === p));
-  $('#balanceHint').textContent = missing.length
-    ? `최근 ${range}일 동안 ${missing.join('·')} 운동이 없어요.`
+
+  // 오늘 할 것 추천: 주요 부위 중 가장 오래 쉰 둘
+  const due = rows.filter((r) => MAIN_PARTS.includes(r.part) && r.rest >= 2).slice(0, 2);
+  $('#balanceHint').innerHTML = due.length
+    ? `💡 <b>오늘은 ${due.map((r) => r.part).join('·')} 차례</b>예요. (가장 오래 쉬었어요) · 최근 ${range}일 ${total}세트`
     : `최근 ${range}일 · 총 ${total}세트`;
 }
 

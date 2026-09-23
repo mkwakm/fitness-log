@@ -345,9 +345,12 @@ h3 .hint { display: inline; font-weight: 400; }
 
 /* 부위별 밸런스 — 순위가 아니라 크기 비교라 한 가지 색의 길이로만 나타낸다 */
 #balanceCard[hidden] { display: none; }
-.bal { display: grid; grid-template-columns: 44px 1fr 48px; align-items: center; gap: 8px; margin-bottom: 7px; }
+.bal { display: grid; grid-template-columns: 40px 1fr 44px 46px; align-items: center; gap: 6px; margin-bottom: 7px; }
 .bal-name { font-size: 0.85rem; }
-.bal-n { font-size: 0.8rem; color: var(--muted); text-align: right; }
+.bal-n { font-size: 0.78rem; color: var(--muted); text-align: right; }
+.bal-ago { font-size: 0.78rem; color: var(--muted); text-align: right; }
+.bal.never .bal-name, .bal.never .bal-ago { color: var(--danger); }
+#balanceHint b { color: var(--accent); }
 .bal .bar { height: 10px; }
 
 /* 연속 기록 타일 안의 입력칸 */
