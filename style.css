@@ -417,3 +417,6 @@ html { overflow-x: clip; }
 .routine-btns { display: flex; align-items: center; gap: 4px; flex: none; }
 .routine-btns button.primary { padding: 9px 12px; font-size: 0.82rem; white-space: nowrap; }
 #routineCard .wide-btn { margin: 10px 0 0; }
+
+/* 점진적 과부하 제안 */
+.tip { color: var(--accent); font-size: 0.82rem; font-weight: 600; line-height: 1.5; }

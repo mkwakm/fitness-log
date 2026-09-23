@@ -388,6 +388,33 @@ function personalBest(name) {
   return best;
 }
 
+// ---------- 점진적 과부하 제안 ----------
+// 지난번에 목표 횟수를 다 채웠으면 다음엔 조금 올리라고 알려준다.
+// "다 채웠다"는 완료 체크한 세트가 2개 이상이고, 그 세트들의 횟수가 모두 첫 세트 이상인 경우.
+function overloadTip(name, before = currentDate) {
+  const last = lastRecord(name, before);
+  if (!last) return null;
+  const sets = countedSets(last.workout);
+  if (sets.length < 2) return null;
+  const target = Number(sets[0].reps) || 0;
+  if (!target) return null;
+  const allDone = sets.every((s) => (Number(s.reps) || 0) >= target);
+  if (!allDone) return null;
+
+  const weight = Number(sets[0].weight) || 0;
+  if (weight > 0) {
+    const step = Number(state.profile.weightStep) || 2.5;
+    return { kind: 'weight', from: weight, to: Math.round((weight + step) * 100) / 100, reps: target, date: last.date };
+  }
+  // 맨몸 운동은 무게 대신 횟수를 올린다
+  return { kind: 'reps', from: target, to: target + 2, date: last.date };
+}
+function overloadText(tip) {
+  return tip.kind === 'weight'
+    ? `💪 지난번 ${tip.from}kg × ${tip.reps}회를 다 채웠어요. 오늘은 ${tip.to}kg 어때요?`
+    : `💪 지난번 ${tip.from}회를 다 채웠어요. 오늘은 ${tip.to}회 어때요?`;
+}
+
 // 보고 있는 날보다 이전에 같은 운동을 한 가장 최근 기록
 function lastRecord(name, before = currentDate) {
   const key = metKey(name);
@@ -755,6 +782,7 @@ function renderWorkouts() {
       : `🏆 최고 ${pr.reps}회`;
     const isNewPr = pr && pr.date === currentDate;   // 보고 있는 날에 세운 기록
     const last = lastRecord(w.name);
+    const tip = overloadTip(w.name);
     const todayRm = Math.max(0, ...countedSets(w).map((x) => oneRM(Number(x.weight) || 0, Number(x.reps) || 0)));
     return `<div class="card">
     <div class="item"><h3>${esc(w.name)}</h3>
@@ -803,6 +831,7 @@ function renderWorkouts() {
       <span class="muted">↩ 지난번 ${fmtDate(last.date)}</span>
       <span class="muted">${setsText(last.workout)}</span>
     </div>` : ''}
+    ${tip ? `<div class="item pr"><span class="tip">${overloadText(tip)}</span></div>` : ''}
     ${prText ? `<div class="item pr">
       <span>${prText}</span>
       <span class="${isNewPr ? 'new-pr' : 'muted'}">${isNewPr ? '🎉 신기록!' : pr.date}</span>
@@ -1097,9 +1126,14 @@ function renderHistory() {
 function updateExHint() {
   const name = $('#exName').value.trim();
   const last = name ? lastRecord(name) : null;
-  $('#exHint').textContent = last
-    ? `↩ 지난번 ${fmtDate(last.date)}: ${setsText(last.workout)}`
+  const tip = name ? overloadTip(name) : null;
+  $('#exHint').innerHTML = last
+    ? `↩ 지난번 ${fmtDate(last.date)}: ${esc(setsText(last.workout))}` +
+      (tip ? `<br><span class="tip">${overloadText(tip)}</span>` : '')
     : (name ? '처음 하는 운동이에요.' : '');
+  // 올릴 중량을 폼에 미리 채워 준다 (직접 적은 값은 건드리지 않는다)
+  if (tip?.kind === 'weight' && !$('#exWeight').value) $('#exWeight').value = tip.to;
+  if (tip?.kind === 'reps' && last) $('#exReps').value = tip.to;
 }
 
 function renderRoutineBtn() {
