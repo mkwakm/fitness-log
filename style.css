@@ -437,3 +437,20 @@ html { overflow-x: clip; }
 #reportBody .tip { margin: 10px 0 0; }
 .up { color: var(--accent); font-size: 0.82rem; font-weight: 600; }
 .down { color: var(--muted); font-size: 0.82rem; font-weight: 600; }
+
+/* 식단 사진 */
+.photo-pick { gap: 8px; }
+#photoName { font-size: 0.85rem; color: var(--accent); font-weight: 600; }
+.photo-wrap { flex: none; }
+.photo-wrap img {
+  width: 44px; height: 44px; object-fit: cover; border-radius: 8px;
+  background: var(--card-2); display: block; cursor: zoom-in;
+}
+.photo-wrap.missing img { opacity: 0.3; cursor: default; }
+.item .grow { flex: 1; min-width: 0; }
+.photo-view {
+  position: fixed; inset: 0; z-index: 20; background: rgba(0, 0, 0, 0.9);
+  display: flex; align-items: center; justify-content: center; padding: 16px; cursor: zoom-out;
+}
+.photo-view[hidden] { display: none; }
+.photo-view img { max-width: 100%; max-height: 100%; border-radius: 12px; }

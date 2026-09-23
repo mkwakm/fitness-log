@@ -157,6 +157,7 @@ function save() {
 let state = load();
 let currentDate = todayStr();
 let kcalTouched = false;  // 칼로리를 직접 고쳤으면 자동 계산으로 덮어쓰지 않는다
+let pendingPhoto = null;  // 식단 폼에서 고른 사진 id (아직 기록에 안 붙은 상태)
 let favCache = [];        // 자주 먹는 음식 칩이 가리키는 목록
 let range = 7;            // 통계 기간 (일)
 let liftPick = '';        // 중량 추이로 보고 있는 운동
@@ -300,6 +301,9 @@ function updateMealHint() {
 function resetMealForm() {
   $('#foodName').value = $('#foodAmount').value = $('#foodKcal').value = $('#foodProtein').value = '';
   $('#mealHint').textContent = '';
+  $('#photoName').textContent = '';
+  $('#mealPhoto').value = '';
+  pendingPhoto = null;
   kcalTouched = false;
 }
 
@@ -555,8 +559,15 @@ function proteinGoal() {
 // 지우기 직전 상태를 통째로 들고 있다가 되돌린다. 개인용 기록이라 크기가 작아 이 방식이 가장 단순하다.
 let undoSnapshot = null;
 let undoTimer = null;
+// 사진은 되돌리기로 살릴 수 없으니 바로 지우지 않고, 되돌릴 수 없게 된 뒤에 지운다.
+let photosToDrop = [];
+function dropPhotosNow() {
+  photosToDrop.forEach((id) => deletePhoto(id));
+  photosToDrop = [];
+}
 
 function pushUndo(label) {
+  dropPhotosNow();              // 앞 기록은 이제 되돌릴 수 없으니 그 사진은 정리
   undoSnapshot = JSON.stringify(state);
   $('#undoText').textContent = label;
   $('#undoBar').hidden = false;
@@ -567,9 +578,11 @@ function hideUndo() {
   clearTimeout(undoTimer);
   $('#undoBar').hidden = true;
   undoSnapshot = null;
+  dropPhotosNow();              // 되돌릴 기회가 끝났으니 사진도 정리
 }
 function undo() {
   if (!undoSnapshot) return;
+  photosToDrop = [];            // 되살리므로 사진은 그대로 둔다
   state = JSON.parse(undoSnapshot);
   save();
   hideUndo();
@@ -722,10 +735,13 @@ function renderMeals() {
     const subP = Math.round(list.reduce((s, m) => s + (Number(m.protein) || 0), 0));
     return `<div class="card"><h3>${type} <span class="muted">${sub ? sub + ' kcal' : ''}${subP ? ` · 단백질 ${subP}g` : ''}</span></h3>
       ${list.map((m) => `<div class="item">
-        <div>${esc(m.name)} <span class="muted">${esc(m.amount)}${m.kcal ? ' · ' + m.kcal + ' kcal' : ''}${m.protein ? ' · 단백질 ' + m.protein + 'g' : ''}</span></div>
+        ${m.photo ? `<span class="photo-wrap"><img data-photo="${esc(m.photo)}" alt="" loading="lazy"></span>` : ''}
+        <div class="grow">${esc(m.name)} <span class="muted">${esc(m.amount)}${m.kcal ? ' · ' + m.kcal + ' kcal' : ''}${m.protein ? ' · 단백질 ' + m.protein + 'g' : ''}</span></div>
         <button class="del" data-del-meal="${m.id}" aria-label="삭제">✕</button>
       </div>`).join('')}</div>`;
   }).join('');
+
+  fillPhotos($('#mealList'));   // 사진은 IndexedDB에 있어서 그린 뒤에 채운다
 }
 
 // 많이 먹은 순서대로. 같은 음식은 가장 최근에 적은 양·칼로리를 쓴다.
@@ -1573,6 +1589,22 @@ $('#sessionBtn').addEventListener('click', toggleSession);
 $('#restStop').addEventListener('click', stopRest);
 $('#restPlus').addEventListener('click', () => { restEndAt += 30000; drawRest(); });
 
+$('#mealPhoto').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  $('#photoName').textContent = '넣는 중…';
+  try {
+    if (pendingPhoto) await deletePhoto(pendingPhoto);   // 다시 고르면 앞 사진은 버린다
+    pendingPhoto = await savePhoto(file);
+    $('#photoName').textContent = '✓ 첨부됨';
+  } catch (err) {
+    pendingPhoto = null;
+    $('#photoName').textContent = '';
+    alert(`사진을 넣지 못했어요. ${err.message}`);
+  }
+});
+
 $('#foodName').addEventListener('input', updateMealHint);
 $('#foodAmount').addEventListener('input', updateMealHint);
 $('#foodKcal').addEventListener('input', () => { kcalTouched = true; updateMealHint(); });
@@ -1599,6 +1631,7 @@ $('#mealForm').addEventListener('submit', (e) => {
     amount: $('#foodAmount').value.trim(),
     kcal: $('#foodKcal').value ? Number($('#foodKcal').value) : null,
     protein: $('#foodProtein').value ? Number($('#foodProtein').value) : null,
+    photo: pendingPhoto,
   });
   save();
   resetMealForm();
@@ -1622,6 +1655,16 @@ $('#workoutForm').addEventListener('submit', (e) => {
   render();
 });
 
+// 사진을 누르면 크게 본다
+document.addEventListener('click', (e) => {
+  const img = e.target.closest('img[data-photo]');
+  if (!img?.src) return;
+  const box = $('#photoView');
+  $('#photoViewImg').src = img.src;
+  box.hidden = false;
+});
+$('#photoView').addEventListener('click', () => { $('#photoView').hidden = true; });
+
 document.addEventListener('click', (e) => {
   const t = e.target.closest('button, .history-day');
   if (!t) return;
@@ -1632,6 +1675,7 @@ document.addEventListener('click', (e) => {
     pushUndo(`'${meal?.name ?? '기록'}' 삭제함`);
     day().meals = day().meals.filter((m) => m.id !== ds.delMeal);
     markDeleted(ds.delMeal);
+    if (meal?.photo) photosToDrop.push(meal.photo);   // 되돌리기 시간이 지나면 지운다
   } else if (ds.delWorkout) {
     const w = findWorkout(ds.delWorkout);
     if (!w || !confirm('이 운동을 삭제할까요?')) return;

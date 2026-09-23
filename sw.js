@@ -1,6 +1,6 @@
 // 오프라인에서도 앱이 열리도록 파일을 캐시합니다. 파일을 바꾸면 CACHE 버전을 올리세요.
-const CACHE = 'fitness-log-v25';
-const FILES = ['./', 'index.html', 'style.css', 'app.js', 'manifest.json', 'food-db.js', 'sync.js',
+const CACHE = 'fitness-log-v26';
+const FILES = ['./', 'index.html', 'style.css', 'app.js', 'manifest.json', 'food-db.js', 'sync.js', 'photos.js',
   'icon.svg', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png'];
 
 self.addEventListener('install', (e) => {
