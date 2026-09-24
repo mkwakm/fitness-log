@@ -152,6 +152,7 @@ function save() {
     }
   }
   scheduleAutoSave();        // 파일 자동 저장 (sync.js)
+  syncAfterEdit();           // 잠잠해지면 Gist에도 올린다 (sync.js)
 }
 
 let state = load();
@@ -590,6 +591,31 @@ function undo() {
   render();
 }
 
+// ---------- 화면 꺼짐 방지 ----------
+// 운동하는 동안 폰이 꺼지면 세트마다 다시 켜야 한다. 세션이 도는 동안만 붙잡는다.
+// 화면을 가리면 브라우저가 알아서 풀어버리므로 돌아올 때 다시 잡아야 한다.
+let wakeLock = null;
+
+async function keepScreenOn(on) {
+  if (!('wakeLock' in navigator)) return;
+  try {
+    if (on) {
+      if (wakeLock) return;
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; renderSession(); });
+    } else if (wakeLock) {
+      await wakeLock.release();
+      wakeLock = null;
+    }
+  } catch {
+    wakeLock = null;             // 배터리 절약 모드 등에서는 거절당한다
+  }
+  renderSession();
+}
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && sessionOn()) keepScreenOn(true);
+});
+
 // ---------- 운동 세션 (전체 시간) ----------
 // 시작을 누르면 그 날에 시작 시각을 적어두고, 끝내면 분으로 바꿔 저장한다.
 let sessionTicker = null;
@@ -603,8 +629,10 @@ function toggleSession() {
     const mins = Math.max(1, Math.round((Date.now() - d.sessionStart) / 60000));
     d.sessionMin = (Number(d.sessionMin) || 0) + mins;
     d.sessionStart = null;
+    keepScreenOn(false);
   } else {
     d.sessionStart = Date.now();
+    keepScreenOn(true);
   }
   save();
   renderSession();
@@ -620,12 +648,13 @@ function renderSession() {
   $('#sessionBtn').textContent = running ? '⏹ 운동 끝내기' : '▶️ 운동 시작';
   $('#sessionBtn').classList.toggle('primary', !running);
   $('#sessionBtn').classList.toggle('running', running);
-  $('#sessionText').textContent = running
-    ? `진행 중 · ${total}분`
+  $('#sessionText').innerHTML = running
+    ? `진행 중 · ${total}분${wakeLock ? ' · <span class="tip">🔆 화면 안 꺼짐</span>' : ''}`
     : (total ? `오늘 ${total}분 운동` : '눌러서 시간을 재요');
 
   clearInterval(sessionTicker);
   if (running) sessionTicker = setInterval(renderSession, 20000);
+  else if (wakeLock && !sessionOn()) keepScreenOn(false);
 }
 
 // ---------- 휴식 타이머 ----------

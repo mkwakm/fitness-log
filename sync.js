@@ -8,6 +8,9 @@
 const SYNC_KEY = 'fitness-log-sync';
 const GIST_FILE = 'fitness-log.json';
 const AUTO_SAVE_DELAY = 2000;
+const AUTO_SYNC_MS = 5 * 60 * 1000;   // 앱을 열어둔 동안 이 간격으로 한 번씩 맞춘다
+const AFTER_EDIT_MS = 45 * 1000;      // 기록을 고친 뒤 이만큼 잠잠하면 올린다
+const RETURN_GAP_MS = 2 * 60 * 1000;  // 앱으로 돌아왔을 때 마지막 동기화가 이보다 오래됐으면 맞춘다
 
 let sync = { token: '', gistId: '', lastGist: 0, lastFile: 0 };
 let fileHandle = null;
@@ -143,19 +146,52 @@ async function gistPull() {
 }
 
 // 내려받아 합치고 → 다시 올린다. 양쪽 기기가 각각 눌러도 결국 같아진다.
-async function gistSync() {
-  if (!sync.token) return;
-  setSyncBusy(true);
+// quiet: 자동으로 도는 경우. 바뀐 게 없으면 아무 말도 안 하고, 입력 중이면 미룬다.
+let syncing = false;
+async function gistSync({ quiet = false } = {}) {
+  if (!sync.token || syncing) return;
+  // 뭔가 치고 있는 중에 화면을 갈아엎으면 입력이 끊긴다
+  if (quiet && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '')) return;
+  syncing = true;
+  if (!quiet) setSyncBusy(true);
   try {
     const changed = await gistPull();
     await gistPush();
-    afterMerge(changed, 'GitHub');
+    if (quiet && !changed) {
+      renderSync();              // 마지막 동기화 시각만 갱신
+    } else {
+      afterMerge(changed, 'GitHub');
+    }
   } catch (err) {
-    toastSync(`⚠️ ${err.message}`);
+    if (!quiet) toastSync(`⚠️ ${err.message}`);
   } finally {
-    setSyncBusy(false);
+    syncing = false;
+    if (!quiet) setSyncBusy(false);
   }
 }
+
+// ---------- 자동 동기화 ----------
+let autoSyncTimer = null;
+let afterEditTimer = null;
+
+function startAutoSync() {
+  clearInterval(autoSyncTimer);
+  if (!sync.token) return;
+  autoSyncTimer = setInterval(() => {
+    if (!document.hidden) gistSync({ quiet: true });
+  }, AUTO_SYNC_MS);
+}
+// 기록을 고치면 잠잠해진 뒤 한 번 올린다 (app.js의 save()가 부른다)
+function syncAfterEdit() {
+  if (!sync.token) return;
+  clearTimeout(afterEditTimer);
+  afterEditTimer = setTimeout(() => gistSync({ quiet: true }), AFTER_EDIT_MS);
+}
+// 앱으로 돌아왔을 때, 다른 기기에서 적었을 수 있으니 한 번 맞춘다
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden || !sync.token) return;
+  if (Date.now() - (sync.lastGist || 0) > RETURN_GAP_MS) gistSync({ quiet: true });
+});
 
 async function connectGist() {
   const token = prompt(
@@ -180,12 +216,15 @@ async function connectGist() {
     }
   }
   gistSync();
+  startAutoSync();
 }
 
 function disconnectGist() {
   if (!confirm('이 기기에서 GitHub 연결을 끊을까요?\n(Gist에 올라간 기록은 그대로 남습니다)')) return;
   sync = { ...sync, token: '', gistId: '', lastGist: 0 };
   saveSync();
+  clearInterval(autoSyncTimer);
+  clearTimeout(afterEditTimer);
   toastSync('연결을 해제했어요.');
 }
 
@@ -384,7 +423,9 @@ function renderSync() {
         <div>
           <p class="hint">휴대폰까지 자동으로 맞출 수 있는 유일한 방법이지만, GitHub 개인 토큰을 이 기기 브라우저에 저장해야 해요.
             (<code>gist</code> 권한만 준 토큰을 쓰고, 공용 PC에서는 쓰지 마세요. 토큰은 백업 파일에 들어가지 않아요.)<br>
-            ${sync.token ? `마지막 동기화: ${fmtAgo(sync.lastGist)}` : '연결 안 됨'}</p>
+            ${sync.token
+              ? `마지막 동기화: ${fmtAgo(sync.lastGist)} · 열어둔 동안 5분마다, 기록을 고치면 잠시 뒤 자동으로 맞춰요`
+              : '연결 안 됨'}</p>
         </div>
         <div class="sync-btns">
           ${sync.token
@@ -427,5 +468,8 @@ async function initSync() {
     } catch { /* 핸들이 없거나 IndexedDB를 못 쓰는 경우 */ }
   }
   renderSync();
-  if (sync.token) gistSync();     // 열 때 한 번 맞춰 둔다
+  if (sync.token) {
+    gistSync();                   // 열 때 한 번 맞춰 둔다
+    startAutoSync();
+  }
 }
