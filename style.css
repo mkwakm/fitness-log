@@ -14,6 +14,7 @@
   --chart-2: #d95926;   /* 소모 */
   --chart-3: #3987e5;   /* 체중 */
   --chart-4: #d55181;   /* 운동 중량 */
+  --chart-5: #c98500;   /* 부위별 볼륨 */
 }
 :root[data-theme="light"] {
   --bg: #f4f6f5;
@@ -30,6 +31,7 @@
   --chart-2: #eb6834;
   --chart-3: #2a78d6;
   --chart-4: #e87ba4;
+  --chart-5: #eda100;
 }
 
 * { box-sizing: border-box; }
@@ -466,3 +468,14 @@ html { overflow-x: clip; }
 .plan-row + .plan-row { border-top: 1px solid var(--line); }
 .plan-row.hit > span:first-child { color: var(--muted); text-decoration: line-through; }
 #planCard > .link-btn { margin-top: 8px; }
+
+/* 부위별 볼륨 추이 */
+#volCard[hidden] { display: none; }
+.chart .v-bar { fill: var(--chart-5); }
+
+/* 운동별 메모 */
+.ex-note {
+  width: 100%; margin-top: 8px; padding: 9px 10px;
+  font-size: 16px; background: var(--card-2);
+}
+.ex-note::placeholder { font-size: 0.85rem; }

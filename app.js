@@ -162,6 +162,7 @@ let pendingPhoto = null;  // 식단 폼에서 고른 사진 id (아직 기록에
 let favCache = [];        // 자주 먹는 음식 칩이 가리키는 목록
 let range = 7;            // 통계 기간 (일)
 let liftPick = '';        // 중량 추이로 보고 있는 운동
+let volPart = '';         // 볼륨 추이로 보고 있는 부위
 
 function todayStr(d = new Date()) {
   const off = d.getTimezoneOffset() * 60000;
@@ -887,6 +888,8 @@ function renderWorkouts() {
       </div>
       <span class="burn-chip">🔥 ${burnOf(w, weight)} kcal${isEstimated(w) ? ' (추정)' : ''}</span>
     </div>
+    <input class="ex-note" type="text" placeholder="메모 (그립, 자세, 컨디션…)"
+           value="${esc(w.note ?? '')}" data-ex-note="${w.id}">
     <div class="set-table">
       <div class="set-row head"><span>세트</span><span>중량(kg)</span><span>횟수</span><span></span></div>
       ${w.sets.map((s, i) => `<div class="set-row ${s.done ? 'done' : ''}">
@@ -912,7 +915,7 @@ function renderWorkouts() {
     ${last ? `<div class="item pr">
       <span class="muted">↩ 지난번 ${fmtDate(last.date)}</span>
       <span class="muted">${setsText(last.workout)}</span>
-    </div>` : ''}
+    </div>${last.workout.note ? `<div class="item pr"><span class="muted">📝 ${esc(last.workout.note)}</span></div>` : ''}` : ''}
     ${tip ? `<div class="item pr"><span class="tip">${overloadText(tip)}</span></div>` : ''}
     ${prText ? `<div class="item pr">
       <span>${prText}</span>
@@ -1172,6 +1175,85 @@ function renderReport() {
     ${prs.length ? `<p class="tip">🎉 이번 주 신기록: ${prs.map(esc).join(', ')}</p>` : ''}`;
 }
 
+// 기간을 날짜/주 단위로 쪼개 그 부위의 볼륨을 더한다.
+// 7일이면 하루씩, 그보다 길면 한 주씩 묶어야 막대가 너무 잘아지지 않는다.
+// 묶음은 보고 있는 날에서 거꾸로 센다. 앞에서부터 세면 기간이 step으로 딱 나뉘지 않을 때
+// 오늘이 들어 있는 마지막 며칠이 빠져서, 방금 한 운동이 그래프에 안 나온다.
+function partVolumeBuckets(part, days = range, endDate = currentDate) {
+  const step = days <= 7 ? 1 : 7;
+  const out = [];
+  for (let i = 0; i < days; i += step) {
+    const to = shiftDate(endDate, -i);
+    const from = shiftDate(endDate, -Math.min(i + step - 1, days - 1));
+    let vol = 0;
+    for (let d = from; d <= to; d = shiftDate(d, 1)) {
+      (state.days[d]?.workouts || []).forEach((w) => {
+        if (partOf(w.name) === part) vol += volumeOf(w);
+      });
+    }
+    out.unshift({ date: to, from, value: Math.round(vol) });
+  }
+  return out;
+}
+
+function renderVolumeChart() {
+  const card = $('#volCard');
+  // 볼륨이 잡히는 부위만 (맨몸·유산소는 볼륨이 0이라 그릴 게 없다)
+  const parts = PART_ORDER.filter((p) => partVolumeBuckets(p, 90).some((b) => b.value > 0));
+  if (!parts.length) { card.hidden = true; return; }
+  card.hidden = false;
+  if (!parts.includes(volPart)) volPart = parts[0];
+  $('#volPick').innerHTML = parts.map((p) =>
+    `<option value="${p}"${p === volPart ? ' selected' : ''}>${p}</option>`).join('');
+
+  const buckets = partVolumeBuckets(volPart);
+  const total = buckets.reduce((s, b) => s + b.value, 0);
+  if (!total) {
+    $('#volChart').innerHTML = `<p class="muted">이 기간에 ${volPart} 볼륨 기록이 없어요.</p>`;
+    return;
+  }
+  const step = range <= 7 ? '하루' : '한 주';
+  $('#volChart').innerHTML =
+    `<p class="muted">${step}씩 · 최근 ${range}일 합계 ${total.toLocaleString()} kg</p>` +
+    barChart(buckets, { unit: 'kg', cls: 'v' });
+}
+
+// 축 눈금용 짧은 수. 1500을 "2k"로 적으면 절반 눈금이 최댓값과 같아 보이므로 소수 한 자리를 남긴다.
+function shortNum(v) {
+  if (v < 1000) return String(v);
+  const k = v / 1000;
+  return (k < 10 ? k.toFixed(1).replace(/\.0$/, '') : Math.round(k)) + 'k';
+}
+
+// 값 하나짜리 막대그래프 (부위별 볼륨용). 색이 하나라 범례 없이 제목으로 구분한다.
+function barChart(points, { unit, cls }) {
+  const W = 340, H = 150, L = 42, R = 8, T = 12, B = 22;
+  const plotW = W - L - R, plotH = H - T - B;
+  const top = Math.max(1, ...points.map((p) => p.value));
+  const step = plotW / points.length;
+  const barW = Math.max(2, Math.min(28, step * 0.62));
+  const y = (v) => T + plotH - (v / top) * plotH;
+  const labelEvery = Math.ceil(points.length / 6);
+
+  const grid = [0, 0.5, 1].map((f) => {
+    const gy = T + plotH - f * plotH;
+    const v = Math.round(top * f);
+    return `<line x1="${L}" y1="${gy}" x2="${W - R}" y2="${gy}" class="grid"/>
+            <text x="${L - 6}" y="${gy + 4}" class="axis" text-anchor="end">${shortNum(v)}</text>`;
+  }).join('');
+
+  const bars = points.map((p, i) => {
+    const cx = L + step * i + step / 2;
+    const h = T + plotH - y(p.value);
+    const when = p.from && p.from !== p.date ? `${fmtDate(p.from)}~${fmtDate(p.date)}` : fmtDate(p.date);
+    return `<g><title>${when} · ${p.value.toLocaleString()}${unit}</title>
+      ${p.value ? `<path d="${barPath(cx - barW / 2, y(p.value), barW, h)}" class="${cls}-bar"/>` : ''}</g>
+      ${i % labelEvery === 0 ? `<text x="${cx.toFixed(1)}" y="${H - 6}" class="axis" text-anchor="middle">${fmtDate(p.date)}</text>` : ''}`;
+  }).join('');
+
+  return `<svg viewBox="0 0 ${W} ${H}" class="chart" role="img">${grid}${bars}</svg>`;
+}
+
 function renderWeekChart() {
   const data = weekData();
   const max = Math.max(1, ...data.flatMap((d) => [d.intake, d.burn]));
@@ -1222,7 +1304,7 @@ const monthOpen = new Map();
 
 // 하루에 들어있는 모든 글자 (검색용)
 function dayText(d) {
-  return [...d.workouts.map((w) => w.name), ...d.meals.map((m) => m.name), d.note ?? '']
+  return [...d.workouts.flatMap((w) => [w.name, w.note ?? '']), ...d.meals.map((m) => m.name), d.note ?? '']
     .join(' ').toLowerCase();
 }
 
@@ -1233,6 +1315,7 @@ function renderHistory() {
   renderBalance();
   renderWeightChart();
   renderLiftChart();
+  renderVolumeChart();
   const q = $('#historySearch').value.trim().toLowerCase();
   const dates = Object.keys(state.days)
     .filter((d) => !isEmptyDay(state.days[d]))
@@ -1282,6 +1365,7 @@ function updateExHint() {
   const tip = name ? overloadTip(name) : null;
   $('#exHint').innerHTML = last
     ? `↩ 지난번 ${fmtDate(last.date)}: ${esc(setsText(last.workout))}` +
+      (last.workout.note ? `<br>📝 ${esc(last.workout.note)}` : '') +
       (tip ? `<br><span class="tip">${overloadText(tip)}</span>` : '')
     : (name ? '처음 하는 운동이에요.' : '');
   // 올릴 중량을 폼에 미리 채워 준다 (직접 적은 값은 건드리지 않는다)
@@ -1585,6 +1669,7 @@ $('#todayBtn').addEventListener('click', () => {
 });
 $('#historySearch').addEventListener('input', renderHistory);
 $('#liftPick').addEventListener('change', (e) => { liftPick = e.target.value; renderLiftChart(); });
+$('#volPick').addEventListener('change', (e) => { volPart = e.target.value; renderVolumeChart(); });
 document.addEventListener('input', (e) => {
   if (e.target.id === 'weeklyGoal') {
     const v = Number(e.target.value);
@@ -1884,7 +1969,11 @@ document.addEventListener('click', (e) => {
 
 document.addEventListener('change', (e) => {
   const ds = e.target.dataset;
-  if (ds.minutes) {
+  if (ds.exNote) {
+    const w = findWorkout(ds.exNote);
+    if (!w) return;
+    w.note = e.target.value.trim() || null;
+  } else if (ds.minutes) {
     const w = findWorkout(ds.minutes);
     if (!w) return;
     const v = Number(e.target.value);
