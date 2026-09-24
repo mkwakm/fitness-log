@@ -1836,13 +1836,46 @@ document.addEventListener('change', (e) => {
 });
 
 // ---------- 백업 ----------
-$('#exportBtn').addEventListener('click', () => {
-  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+function downloadJson(obj, name) {
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `fitness-log-${todayStr()}.json`;
+  a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 10000);   // 바로 해제하면 브라우저가 받다 말 수 있다
+}
+
+$('#exportBtn').addEventListener('click', () => downloadJson(state, `fitness-log-${todayStr()}.json`));
+
+// 사진까지 한 파일로. 사진은 기기에만 있어서 이걸로만 다른 기기에 옮길 수 있다.
+$('#exportPhotoBtn').addEventListener('click', async (e) => {
+  const btn = e.target;
+  btn.disabled = true;
+  btn.textContent = '사진 모으는 중…';
+  try {
+    const photos = await collectPhotos();
+    const n = Object.keys(photos).length;
+    if (!n && !confirm('옮길 사진이 없어요. 그래도 내보낼까요?')) return;
+    downloadJson({ ...state, photos }, `fitness-log-사진포함-${todayStr()}.json`);
+    if (n) alert(`사진 ${n}장을 함께 담았어요.`);
+  } catch (err) {
+    alert(`사진을 담지 못했어요. ${err.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '📷 사진까지 내보내기';
+  }
+});
+
+$('#prunePhotoBtn').addEventListener('click', async (e) => {
+  const btn = e.target;
+  btn.disabled = true;
+  try {
+    const n = await prunePhotos();
+    alert(n ? `쓰지 않는 사진 ${n}장을 정리했어요.` : '정리할 사진이 없어요.');
+  } catch {
+    alert('사진을 정리하지 못했어요.');
+  }
+  btn.disabled = false;
 });
 
 $('#importFile').addEventListener('change', async (e) => {
@@ -1862,7 +1895,12 @@ $('#importFile').addEventListener('change', async (e) => {
     seedStamps();
     applyTheme();
     render();
-    alert(changed ? `${changed}일치를 합쳤어요.` : '가져온 파일에 새로운 내용이 없어요.');
+    const pics = await restorePhotos(data.photos);   // 사진이 들어있는 백업이면 같이 복원
+    if (pics) render();
+    alert([
+      changed ? `${changed}일치를 합쳤어요.` : '가져온 파일에 새로운 내용이 없어요.',
+      pics ? `사진 ${pics}장도 가져왔어요.` : '',
+    ].filter(Boolean).join('\n'));
   } catch {
     alert('올바른 백업 파일이 아니에요.');
   }

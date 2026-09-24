@@ -82,3 +82,68 @@ async function fillPhotos(root = document) {
     } catch { /* 이 기기에 없는 사진 (동기화로 넘어온 기록) */ }
   }
 }
+
+// ---------- 백업에 사진 담기 ----------
+// 기록(JSON)에는 사진 id만 있어서 다른 기기로 옮기면 사진이 빠진다.
+// 내보낼 때만 사진을 base64로 같이 싸서 한 파일로 만든다. (동기화 파일에는 넣지 않는다 —
+// 매번 올리기엔 너무 무겁고, Gist·클라우드 파일이 금방 커진다)
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(blob);
+  });
+}
+async function dataUrlToBlob(url) {
+  return (await fetch(url)).blob();
+}
+
+// 지금 기록에서 쓰는 사진만 모은다 (지웠다 남은 것까지 싸지 않게)
+function usedPhotoIds() {
+  const ids = new Set();
+  Object.values(state.days).forEach((d) => (d.meals || []).forEach((m) => {
+    if (m.photo) ids.add(m.photo);
+  }));
+  return [...ids];
+}
+
+async function collectPhotos() {
+  const out = {};
+  for (const id of usedPhotoIds()) {
+    try {
+      const blob = await photoTx('readonly', (st) => st.get(id));
+      if (blob) out[id] = await blobToDataUrl(blob);
+    } catch { /* 이 기기에 없는 사진은 건너뛴다 */ }
+  }
+  return out;
+}
+
+// 가져온 백업에 사진이 있으면 이 기기에 넣는다. 이미 있으면 그대로 둔다.
+async function restorePhotos(photos) {
+  if (!photos || typeof photos !== 'object') return 0;
+  let n = 0;
+  for (const [id, url] of Object.entries(photos)) {
+    if (typeof url !== 'string' || !url.startsWith('data:image/')) continue;
+    try {
+      if (await photoTx('readonly', (st) => st.get(id))) continue;
+      const blob = await dataUrlToBlob(url);          // 콜백 안에서는 await를 못 쓴다
+      await photoTx('readwrite', (st) => st.put(blob, id));
+      n += 1;
+    } catch { /* 공간이 없거나 형식이 이상하면 그 사진만 건너뛴다 */ }
+  }
+  return n;
+}
+
+// 안 쓰는 사진 치우기 (지운 기록의 사진이 남아 공간을 먹는다)
+async function prunePhotos() {
+  const used = new Set(usedPhotoIds());
+  let removed = 0;
+  const all = await photoTx('readonly', (st) => st.getAllKeys());
+  for (const id of all || []) {
+    if (used.has(id)) continue;
+    await deletePhoto(id);
+    removed += 1;
+  }
+  return removed;
+}

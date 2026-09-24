@@ -7,7 +7,7 @@
 - 빌드 도구 없음: 순수 HTML/CSS/JS. `index.html`을 브라우저로 열면 바로 동작.
 - `app.js` — 모든 로직. 데이터는 localStorage 키 `fitness-log-v1`에 저장 (구조는 파일 상단 주석 참고).
 - `food-db.js` — 음식 표(`FOOD_DB`: 100g당 `kcal100`·`protein` + 단위별 무게, `DEFAULT_UNITS`). 음식을 추가하려면 여기만 고치면 된다.
-- `photos.js` — 식단 사진. **IndexedDB**에 따로 저장한다(localStorage는 5MB라 몇 장이면 꽉 찬다). 기록에는 id만 남으므로 **사진은 동기화·백업에 포함되지 않는다**.
+- `photos.js` — 식단 사진. **IndexedDB**에 따로 저장한다(localStorage는 5MB라 몇 장이면 꽉 찬다). 기록에는 id만 남으므로 **평소 동기화에는 사진이 안 들어간다**. 옮기려면 "사진까지 내보내기"(`collectPhotos` → base64로 한 파일) → 다른 기기에서 가져오기(`restorePhotos`). 안 쓰는 사진은 `prunePhotos()`로 치운다.
 - `sync.js` — 기기 간 동기화(GitHub Gist / 파일 자동 저장)와 병합 로직. `app.js`보다 먼저 읽히고, 시작은 `app.js` 끝의 `initSync()`가 한다.
 - `sw.js` — 오프라인 캐시. 파일을 수정하면 `CACHE` 버전 문자열을 올릴 것.
 - `manifest.json`, `icon.svg` — 홈 화면 설치용.
@@ -89,5 +89,4 @@
 - 아이콘을 바꾸면 SVG만 말고 `icon-192/512/maskable-512.png`도 같이 갱신할 것 (PNG가 없으면 안드로이드 설치 배너가 안 뜬다).
 
 ## 아이디어 (다음 할 일 후보)
-- 사진도 같이 옮기는 백업 (지금 사진은 기기에만 남는다)
 - 루틴에 순서·목표 세트까지 담아 "오늘의 계획"으로 띄우기
