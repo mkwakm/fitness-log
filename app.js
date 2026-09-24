@@ -714,6 +714,7 @@ function render() {
   renderHistory();
   renderSuggestions();
   renderRoutineBtn();
+  renderPlan();
   renderRoutines();
   renderSession();
   renderSync();
@@ -1336,6 +1337,7 @@ function saveRoutine() {
 function loadRoutineByName(key) {
   const items = state.profile.routines?.[key];
   if (!items || !confirm(`'${key}' 루틴 ${items.length}종을 불러올까요?\n중량은 그 운동의 최근 기록으로 채워요.`)) return;
+  day().plan = key;                                    // 불러온 루틴이 곧 오늘의 계획
   items.forEach((it) => {
     const last = lastRecord(it.name, shiftDate(currentDate, 1));   // 오늘 것까지 포함해서 최근
     const weight = last ? (Number(last.workout.sets.at(-1)?.weight) || null) : null;
@@ -1348,6 +1350,61 @@ function loadRoutineByName(key) {
   });
   save();
   render();
+}
+
+// ---------- 오늘의 계획 ----------
+// 루틴을 "오늘 할 것"으로 걸어두면, 기록하면서 뭘 했고 뭐가 남았는지 보인다.
+// 루틴 이름만 날짜에 적어두고(day.plan), 남은 것은 그때그때 기록과 견줘서 계산한다.
+function planItems(date = currentDate) {
+  const d = state.days[date];
+  const items = state.profile.routines?.[d?.plan];
+  if (!items) return null;
+  const doneNames = new Set((d.workouts || []).map((w) => metKey(w.name)));
+  return items.map((it) => {
+    const w = (d.workouts || []).find((x) => metKey(x.name) === metKey(it.name));
+    return {
+      name: it.name,
+      target: it.sets,
+      done: w ? doneCount(w) : 0,
+      added: !!w,
+      hit: w ? doneCount(w) >= it.sets : false,
+      inList: doneNames.has(metKey(it.name)),
+    };
+  });
+}
+
+function renderPlan() {
+  const card = $('#planCard');
+  const items = planItems();
+  const routines = Object.keys(state.profile.routines || {});
+  if (!items) {
+    // 아직 안 골랐으면 고를 수 있게만 해 둔다
+    card.hidden = !routines.length || day().workouts.length > 0;
+    if (!card.hidden) {
+      card.innerHTML = `<h3>🗒 오늘의 계획</h3>
+        <p class="hint">루틴을 걸어두면 뭘 했고 뭐가 남았는지 보여드려요.</p>
+        <div class="chips">${routines.map((r) => `<button class="chip" data-set-plan="${esc(r)}">${esc(r)}</button>`).join('')}</div>`;
+    }
+    return;
+  }
+  card.hidden = false;
+  const doneCnt = items.filter((i) => i.hit).length;
+  card.innerHTML = `
+    <div class="card-head">
+      <h3>🗒 ${esc(day().plan)}</h3>
+      <span class="muted">${doneCnt}/${items.length} 완료</span>
+    </div>
+    <div class="bar ${doneCnt >= items.length ? 'full' : ''}">
+      <span style="width:${Math.round(doneCnt / items.length * 100)}%"></span>
+    </div>
+    <div class="plan-list">
+      ${items.map((i) => `<div class="plan-row ${i.hit ? 'hit' : ''}">
+        <span>${i.hit ? '✅' : i.added ? '▶' : '⬜'} ${esc(i.name)}</span>
+        <span class="muted">${i.done}/${i.target}세트${
+          !i.added ? ` <button class="link-btn" data-plan-add="${esc(i.name)}:${i.target}">+ 추가</button>` : ''}</span>
+      </div>`).join('')}
+    </div>
+    <button class="link-btn" data-clear-plan="1">계획 내리기</button>`;
 }
 
 function renderRoutines() {
@@ -1734,6 +1791,20 @@ document.addEventListener('click', (e) => {
       sets: w.sets.map((x) => ({ reps: x.reps, weight: x.weight, done: false })),
     }));
     showTab('workouts');
+  } else if (ds.setPlan) {
+    day().plan = ds.setPlan;
+  } else if (ds.clearPlan) {
+    day().plan = null;
+  } else if (ds.planAdd) {
+    const [name, sets] = ds.planAdd.split(':');
+    const last = lastRecord(name, shiftDate(currentDate, 1));
+    const tip = overloadTip(name);
+    const weight = tip?.kind === 'weight' ? tip.to : (last ? Number(last.workout.sets.at(-1)?.weight) || null : null);
+    const reps = state.profile.routines?.[day().plan]?.find((i) => metKey(i.name) === metKey(name))?.reps || 10;
+    day().workouts.push({
+      id: uid(), name, minutes: null,
+      sets: Array.from({ length: Math.max(1, Number(sets) || 1) }, () => ({ reps, weight, done: false })),
+    });
   } else if (ds.loadRoutine) {
     loadRoutineByName(ds.loadRoutine);
     return;                          // loadRoutineByName이 알아서 저장·렌더링한다

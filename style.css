@@ -454,3 +454,15 @@ html { overflow-x: clip; }
 }
 .photo-view[hidden] { display: none; }
 .photo-view img { max-width: 100%; max-height: 100%; border-radius: 12px; }
+
+/* 오늘의 계획 */
+#planCard[hidden] { display: none; }
+#planCard .bar { margin: 4px 0 10px; }
+.plan-list { display: grid; gap: 2px; }
+.plan-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 8px 0; font-size: 0.9rem;
+}
+.plan-row + .plan-row { border-top: 1px solid var(--line); }
+.plan-row.hit > span:first-child { color: var(--muted); text-decoration: line-through; }
+#planCard > .link-btn { margin-top: 8px; }
