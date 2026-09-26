@@ -193,6 +193,7 @@
           <select id="liftPick"></select>
         </div>
         <div id="liftChart"></div>
+        <button class="link-btn" id="liftDetail">이 운동 자세히 보기 ›</button>
       </div>
       <input id="historySearch" placeholder="🔍 운동·음식·메모 검색" autocomplete="off">
       <div id="historyList"></div>
@@ -215,6 +216,15 @@
   </main>
 
   <div id="photoView" class="photo-view" hidden><img id="photoViewImg" alt=""></div>
+
+  <!-- 운동 상세. main 밖에 둬야 좌우 스와이프(날짜 이동)에 말려들지 않는다 -->
+  <div id="exSheet" class="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="exSheetTitle">
+    <div class="sheet-head">
+      <h2 id="exSheetTitle"></h2>
+      <button class="del" id="exSheetClose" aria-label="닫기">✕</button>
+    </div>
+    <div class="sheet-body" id="exSheetBody"></div>
+  </div>
 
   <!-- 아래 고정 바들. 같이 떠도 겹치지 않게 한 곳에 모아 세로로 쌓는다 -->
   <div class="dock">

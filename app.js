@@ -164,6 +164,8 @@ let favCache = [];        // 자주 먹는 음식 칩이 가리키는 목록
 let range = 7;            // 통계 기간 (일)
 let liftPick = '';        // 중량 추이로 보고 있는 운동
 let volPart = '';         // 볼륨 추이로 보고 있는 부위
+let exSheetName = null;   // 상세를 열어 둔 운동 이름 (안 열었으면 null)
+let sheetPushed = false;  // 상세를 열면서 history에 한 칸 넣었는지 (휴대폰 뒤로가기로 닫으려고)
 
 function todayStr(d = new Date()) {
   const off = d.getTimezoneOffset() * 60000;
@@ -723,6 +725,7 @@ function render() {
   updateExHint();
   const note = $('#dayNote');
   if (document.activeElement !== note) note.value = day().note ?? '';
+  if (exSheetName) renderExSheet();   // 열어 둔 상세도 같이 갱신 (안 하면 방금 적은 세트가 안 보인다)
 }
 
 function renderMeals() {
@@ -869,7 +872,7 @@ function renderWorkouts() {
     const rest = avgRest(w);
     const todayRm = Math.max(0, ...countedSets(w).map((x) => oneRM(Number(x.weight) || 0, Number(x.reps) || 0)));
     return `<div class="card">
-    <div class="item"><h3>${esc(w.name)}</h3>
+    <div class="item"><h3><button class="ex-title" data-ex-detail="${esc(w.name)}">${esc(w.name)} <span aria-hidden="true">›</span></button></h3>
       <span class="order">
         ${idx > 0 ? `<button data-move="${w.id}:-1" aria-label="위로" title="위로">↑</button>` : ''}
         ${idx < workouts.length - 1 ? `<button data-move="${w.id}:1" aria-label="아래로" title="아래로">↓</button>` : ''}
@@ -964,7 +967,7 @@ function barPath(x, y, w, h, r = 4) {
 }
 
 // 값이 있는 점만 잇는 꺾은선. 계열이 하나뿐이라 제목이 곧 범례 역할을 한다.
-function lineChart(points, { unit, cls, fmt = (v) => v }) {
+function lineChart(points, { unit, cls, fmt }) {
   if (points.length < 1) return '';
   const W = 340, H = 150, L = 38, R = 8, T = 12, B = 22;
   const plotW = W - L - R, plotH = H - T - B;
@@ -973,13 +976,15 @@ function lineChart(points, { unit, cls, fmt = (v) => v }) {
   if (hi === lo) { lo -= 1; hi += 1; }
   const pad = (hi - lo) * 0.15;
   lo -= pad; hi += pad;
+  // 눈금은 읽을 수 있는 수로. 안 다듬으면 여백 15% 때문에 "94.95" 같은 값이 축에 박힌다.
+  const tick = fmt ?? ((v) => (hi - lo >= 10 ? Math.round(v) : Math.round(v * 10) / 10));
   const x = (i) => points.length === 1 ? L + plotW / 2 : L + (i / (points.length - 1)) * plotW;
   const y = (v) => T + plotH - ((v - lo) / (hi - lo)) * plotH;
 
   const grid = [0, 0.5, 1].map((f) => {
     const gy = T + plotH - f * plotH;
     return `<line x1="${L}" y1="${gy}" x2="${W - R}" y2="${gy}" class="grid"/>
-            <text x="${L - 6}" y="${gy + 4}" class="axis" text-anchor="end">${fmt(lo + (hi - lo) * f)}</text>`;
+            <text x="${L - 6}" y="${gy + 4}" class="axis" text-anchor="end">${tick(lo + (hi - lo) * f)}</text>`;
   }).join('');
 
   const path = points.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(p.value).toFixed(1)}`).join(' ');
@@ -1059,6 +1064,94 @@ function renderLiftChart() {
   $('#liftChart').innerHTML =
     `<p class="muted">${points.length}회 · ${diff > 0 ? '+' : ''}${diff} kg</p>` +
     lineChart(points, { unit: 'kg', cls: 'l' });
+}
+
+// ---------- 운동 상세 ----------
+// 한 운동의 모든 기록을 최근 날짜부터. 같은 날 같은 운동을 두 번 적었으면 둘 다 남긴다.
+function exerciseLog(name) {
+  const key = metKey(name);
+  const out = [];
+  for (const date of Object.keys(state.days).sort().reverse()) {
+    for (const w of state.days[date].workouts) {
+      if (metKey(w.name) === key) out.push({ date, w });
+    }
+  }
+  return out;
+}
+
+const SHEET_ROWS = 30;   // 기록이 쌓여도 한 번에 다 그리면 무겁다
+
+function openExSheet(name) {
+  if (!String(name ?? '').trim()) return;
+  exSheetName = name;
+  // 휴대폰 뒤로가기로 닫히게 한 칸 넣어 둔다 (없으면 앱에서 나가 버린다)
+  if (!sheetPushed) {
+    try { history.pushState({ exSheet: 1 }, ''); sheetPushed = true; } catch { /* file://에서 막히면 그냥 버튼으로 닫는다 */ }
+  }
+  document.body.classList.add('sheet-open');
+  renderExSheet();
+}
+
+function closeExSheet(fromPop = false) {
+  if (!exSheetName) return;
+  exSheetName = null;
+  $('#exSheet').hidden = true;
+  document.body.classList.remove('sheet-open');
+  if (sheetPushed && !fromPop) history.back();   // 뒤로가기로 닫힌 게 아니면 넣어 둔 칸을 되돌린다
+  sheetPushed = false;
+}
+
+function renderExSheet() {
+  const name = exSheetName;
+  const log = exerciseLog(name);
+  $('#exSheet').hidden = false;
+  $('#exSheetTitle').textContent = name;
+  if (!log.length) {
+    $('#exSheetBody').innerHTML = '<p class="muted">아직 이 운동 기록이 없어요.</p>';
+    return;
+  }
+
+  const sets = log.reduce((n, x) => n + countedSets(x.w).length, 0);
+  const vol = log.reduce((v, x) => v + volumeOf(x.w), 0);
+  // 맨몸 운동은 볼륨이 늘 0이라 타일이 비어 보인다. 그럴 땐 총 횟수를 보여준다.
+  const reps = log.reduce((n, x) => n + countedSets(x.w).reduce((r, t) => r + (Number(t.reps) || 0), 0), 0);
+  const pr = personalBest(name);
+  const dates = [...new Set(log.map((x) => x.date))];
+  const first = dates[dates.length - 1];
+  const points = liftHistory(name);
+  const notes = log.filter((x) => x.w.note);
+
+  const prText = !pr ? ''
+    : pr.rm ? `🏆 최고 <b>${pr.weight} kg × ${pr.reps}회</b> <span class="muted">(1RM ${pr.rm}kg)</span>`
+    : `🏆 최고 <b>${pr.reps}회</b>`;
+
+  const rows = log.slice(0, SHEET_ROWS).map(({ date, w }) => `
+    <div class="log-row">
+      <button class="link-btn" data-goto="${date}">${fmtDate(date)}</button>
+      <span>${esc(setsText(w))}</span>
+      <span class="muted">${volumeOf(w) ? volumeOf(w).toLocaleString() + ' kg' : `${countedSets(w).length}세트`}</span>
+    </div>`).join('');
+
+  $('#exSheetBody').innerHTML = `
+    <p class="muted">${partOf(name)} · MET ${metOf(name)} · ${dates.length}번 함
+      · 처음 ${fmtDate(first)} · 마지막 ${restText(dates[0])}</p>
+    <div class="tiles">
+      <div class="tile"><span class="muted">총 세트</span><strong>${sets}</strong></div>
+      ${vol ? `<div class="tile"><span class="muted">총 볼륨</span><strong>${Math.round(vol).toLocaleString()}<small> kg</small></strong></div>
+      <div class="tile"><span class="muted">최고 1RM</span><strong>${pr?.rm || '-'}<small>${pr?.rm ? ' kg' : ''}</small></strong></div>`
+      : `<div class="tile"><span class="muted">총 횟수</span><strong>${reps.toLocaleString()}<small> 회</small></strong></div>
+      <div class="tile"><span class="muted">최고</span><strong>${pr?.reps || '-'}<small>${pr?.reps ? ' 회' : ''}</small></strong></div>`}
+    </div>
+    ${prText ? `<p class="pr-line">${prText} <span class="muted">${fmtDate(pr.date)}</span></p>` : ''}
+    <h4>1RM 추이 <span class="muted">(전체 기간)</span></h4>
+    ${points.length >= 2
+      ? lineChart(points, { unit: 'kg', cls: 'l' })
+      : `<p class="muted">${points.length ? '기록이 하나뿐이라 아직 선이 안 그려져요.' : '중량 기록이 없어요. (맨몸 운동은 그려지지 않아요)'}</p>`}
+    ${notes.length ? `<h4>📝 메모</h4>${notes.slice(0, SHEET_ROWS).map(({ date, w }) => `
+      <div class="log-row"><button class="link-btn" data-goto="${date}">${fmtDate(date)}</button>
+        <span>${esc(w.note)}</span></div>`).join('')}` : ''}
+    <h4>기록 ${log.length > SHEET_ROWS ? `<span class="muted">(최근 ${SHEET_ROWS}개)</span>` : ''}</h4>
+    ${rows}`;
 }
 
 function renderBalance() {
@@ -1892,6 +1985,13 @@ document.addEventListener('click', (e) => {
 });
 $('#photoView').addEventListener('click', () => { $('#photoView').hidden = true; });
 
+$('#exSheetClose').addEventListener('click', () => closeExSheet());
+$('#liftDetail').addEventListener('click', () => openExSheet(liftPick));
+window.addEventListener('popstate', () => closeExSheet(true));
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { closeExSheet(); $('#photoView').hidden = true; }
+});
+
 document.addEventListener('click', (e) => {
   const t = e.target.closest('button, .history-day');
   if (!t) return;
@@ -2018,7 +2118,11 @@ document.addEventListener('click', (e) => {
     save();
     renderVolumeChart();
     return;
+  } else if (ds.exDetail) {
+    openExSheet(ds.exDetail);
+    return;                        // 보기만 하는 거라 저장할 것도, 다시 그릴 것도 없다
   } else if (ds.goto) {
+    closeExSheet();                // 상세에서 날짜를 눌렀으면 상세는 닫고 그 날로 간다
     currentDate = ds.goto;
     showTab('workouts');
   } else {
