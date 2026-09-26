@@ -24,6 +24,7 @@ const DEFAULT_PROFILE = {
   waterGoal: 8,      // 하루 물 몇 잔
   routines: {},      // 저장해둔 루틴 { 이름: [{name, reps, sets, minutes}] }
   partGoals: {},     // 부위별 주간 목표 세트 수 { 가슴: 12, ... } — 안 정하면 비교 안 함
+  volGoals: {},      // 부위별 주간 목표 볼륨(kg) { 가슴: 6000, ... } — 안 정하면 비교 안 함
 };
 
 // 운동 이름으로 MET(운동 강도) 추정. 위에서부터 먼저 걸리는 것을 사용하므로 순서가 중요하다.
@@ -1191,9 +1192,23 @@ function partVolumeBuckets(part, days = range, endDate = currentDate) {
         if (partOf(w.name) === part) vol += volumeOf(w);
       });
     }
-    out.unshift({ date: to, from, value: Math.round(vol) });
+    out.unshift({ date: to, from, days: Math.min(i + step, days) - i, value: Math.round(vol) });
   }
   return out;
+}
+
+// 부위별 주간 볼륨 목표 (kg). 안 정하면 0이라 비교하지 않는다.
+function volGoal(part) {
+  const g = state.profile.volGoals;
+  return g && Object.hasOwn(g, part) ? Number(g[part]) || 0 : 0;
+}
+
+// 목표를 정할 때 참고할 최근 4주 평균. 100kg 단위로 다듬어야 고르기 편하다.
+function avgWeekVolume(part) {
+  const weeks = partVolumeBuckets(part, 28).filter((b) => b.days === 7);
+  if (!weeks.length) return 0;
+  const avg = weeks.reduce((s, b) => s + b.value, 0) / weeks.length;
+  return Math.round(avg / 100) * 100;
 }
 
 function renderVolumeChart() {
@@ -1205,17 +1220,47 @@ function renderVolumeChart() {
   if (!parts.includes(volPart)) volPart = parts[0];
   $('#volPick').innerHTML = parts.map((p) =>
     `<option value="${p}"${p === volPart ? ' selected' : ''}>${p}</option>`).join('');
+  renderVolGoalBox();
 
   const buckets = partVolumeBuckets(volPart);
   const total = buckets.reduce((s, b) => s + b.value, 0);
+  const goal = volGoal(volPart);
   if (!total) {
     $('#volChart').innerHTML = `<p class="muted">이 기간에 ${volPart} 볼륨 기록이 없어요.</p>`;
     return;
   }
-  const step = range <= 7 ? '하루' : '한 주';
+  const stepName = range <= 7 ? '하루' : '한 주';
+  // 목표는 "주간" 기준이다. 7일을 볼 때는 막대가 하루씩이라 선을 그으면 안 되고(하루 목표가 아니다),
+  // 합계가 곧 이번 주 볼륨이라 글로 견준다. 30·90일은 막대가 한 주씩이라 선이 그대로 맞는다.
+  const weekly = range > 7;
+  let goalText = '';
+  if (goal && weekly) {
+    const full = buckets.filter((b) => b.days === 7);
+    const hit = full.filter((b) => b.value >= goal).length;
+    goalText = ` · 주간 목표 ${goal.toLocaleString()} kg (${full.length}주 중 ${hit}주 달성)`;
+  } else if (goal) {
+    const left = goal - total;
+    goalText = ` · 주간 목표 ${goal.toLocaleString()} kg (${Math.round(total / goal * 100)}%` +
+      (left > 0 ? `, ${left.toLocaleString()} kg 남음)` : ', 달성 🎉)');
+  }
   $('#volChart').innerHTML =
-    `<p class="muted">${step}씩 · 최근 ${range}일 합계 ${total.toLocaleString()} kg</p>` +
-    barChart(buckets, { unit: 'kg', cls: 'v' });
+    `<p class="muted">${stepName}씩 · 최근 ${range}일 합계 ${total.toLocaleString()} kg${goalText}</p>` +
+    barChart(buckets, { unit: 'kg', cls: 'v', goal: weekly ? goal : 0 });
+}
+
+// 목표 칸은 그래프와 따로 그린다. 같이 그리면 숫자를 치는 동안 칸이 갈려서 입력이 끊긴다.
+function renderVolGoalBox() {
+  const box = $('#volGoalBox');
+  // 숫자를 치는 동안에만 건드리지 않는다. 버튼에 포커스가 있다고 건너뛰면
+  // "평균으로"를 눌러도 칸에 값이 안 들어간 것처럼 보인다.
+  if (box.querySelector('input') === document.activeElement) return;
+  const avg = avgWeekVolume(volPart);
+  box.innerHTML = `
+    <label class="goal-cell">${volPart} 주간 목표
+      <input type="number" inputmode="numeric" min="0" max="200000" step="100"
+             value="${volGoal(volPart) || ''}" placeholder="${avg || '-'}" data-vol-goal="${volPart}">
+    </label><span class="unit">kg</span>
+    ${avg ? `<button class="link-btn" data-vol-goal-avg="${avg}">최근 4주 평균(${avg.toLocaleString()})으로</button>` : ''}`;
 }
 
 // 축 눈금용 짧은 수. 1500을 "2k"로 적으면 절반 눈금이 최댓값과 같아 보이므로 소수 한 자리를 남긴다.
@@ -1226,10 +1271,11 @@ function shortNum(v) {
 }
 
 // 값 하나짜리 막대그래프 (부위별 볼륨용). 색이 하나라 범례 없이 제목으로 구분한다.
-function barChart(points, { unit, cls }) {
+function barChart(points, { unit, cls, goal = 0 }) {
   const W = 340, H = 150, L = 42, R = 8, T = 12, B = 22;
   const plotW = W - L - R, plotH = H - T - B;
-  const top = Math.max(1, ...points.map((p) => p.value));
+  // 목표선도 축 안에 들어와야 보인다. 목표를 아직 한참 못 넘겼어도 선이 잘리면 안 된다.
+  const top = Math.max(1, goal, ...points.map((p) => p.value));
   const step = plotW / points.length;
   const barW = Math.max(2, Math.min(28, step * 0.62));
   const y = (v) => T + plotH - (v / top) * plotH;
@@ -1251,7 +1297,10 @@ function barChart(points, { unit, cls }) {
       ${i % labelEvery === 0 ? `<text x="${cx.toFixed(1)}" y="${H - 6}" class="axis" text-anchor="middle">${fmtDate(p.date)}</text>` : ''}`;
   }).join('');
 
-  return `<svg viewBox="0 0 ${W} ${H}" class="chart" role="img">${grid}${bars}</svg>`;
+  const goalLine = goal ? `<line x1="${L}" y1="${y(goal).toFixed(1)}" x2="${W - R}" y2="${y(goal).toFixed(1)}" class="goal-line"/>
+    <text x="${W - R}" y="${(y(goal) - 4).toFixed(1)}" class="axis" text-anchor="end">목표</text>` : '';
+
+  return `<svg viewBox="0 0 ${W} ${H}" class="chart" role="img">${grid}${goalLine}${bars}</svg>`;
 }
 
 function renderWeekChart() {
@@ -1682,6 +1731,13 @@ document.addEventListener('input', (e) => {
     if (v > 0) state.profile.partGoals[e.target.dataset.partGoal] = Math.min(60, v);
     else delete state.profile.partGoals[e.target.dataset.partGoal];
     saveSoon();
+  } else if (e.target.dataset.volGoal) {
+    const v = Number(e.target.value);
+    (state.profile.volGoals ??= {});
+    if (v > 0) state.profile.volGoals[e.target.dataset.volGoal] = Math.min(200000, Math.round(v));
+    else delete state.profile.volGoals[e.target.dataset.volGoal];
+    saveSoon();
+    renderVolumeChart();   // 목표 칸은 포커스가 있어서 다시 안 그려지고, 그래프만 갱신된다
   }
 });
 $('#undoBtn').addEventListener('click', undo);
@@ -1957,6 +2013,11 @@ document.addEventListener('click', (e) => {
     }
   } else if (ds.resetMet) {
     setCustomMet(ds.resetMet, 0);
+  } else if (ds.volGoalAvg) {
+    (state.profile.volGoals ??= {})[volPart] = Number(ds.volGoalAvg);
+    save();
+    renderVolumeChart();
+    return;
   } else if (ds.goto) {
     currentDate = ds.goto;
     showTab('workouts');

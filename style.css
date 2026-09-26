@@ -472,6 +472,14 @@ html { overflow-x: clip; }
 /* 부위별 볼륨 추이 */
 #volCard[hidden] { display: none; }
 .chart .v-bar { fill: var(--chart-5); }
+/* 목표선은 데이터가 아니라 주석이라 계열 색을 쓰지 않는다 */
+.chart .goal-line { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.goal-row { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.goal-row .goal-cell { flex: 0 0 auto; }
+.goal-row .goal-cell input { width: 110px; }
+.goal-row .unit { color: var(--muted); font-size: 0.85rem; padding-bottom: 10px; }
+/* 가끔 누르는 버튼이지만 휴대폰에서 누를 거라 높이는 40px 이상 */
+.goal-row .link-btn { display: inline-flex; align-items: center; min-height: 40px; padding: 0 4px; }
 
 /* 운동별 메모 */
 .ex-note {
