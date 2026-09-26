@@ -39,7 +39,7 @@ const MET_TABLE = [
   [/등산|하이킹|계단/, 6.5],
   [/스쿼트|데드리프트|런지|레그프레스|레그컬|레그익스텐션|힙쓰러스트|힙스러스트|하체/, 6.0],
   [/벤치|프레스|풀업|턱걸이|철봉|로우|랫|딥스|푸시업|팔굽혀펴기|컬|숄더|어깨|가슴|등운동|케이블|플라이|펙덱|레터럴|카프|trx/, 5.0],
-  [/플랭크|복근|코어|크런치|윗몸|레그레이즈|브릿지/, 3.8],
+  [/플랭크|복근|코어|크런치|윗몸|레그레이즈|브릿지|트위스트|앱롤러|롤아웃|데드버그|브이업|v업/, 3.8],
   [/걷기|산책|워킹/, 3.5],
   [/요가|필라테스|스트레칭|폼롤러/, 3.0],
 ];
@@ -395,8 +395,14 @@ function mmss(sec) {
   return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
 }
 
+// 음수는 0으로 본다. 화면에서는 못 넣게 막지만, 다른 기기에서 망가진 값이 넘어오면
+// 볼륨이 음수가 되어 합계·그래프가 통째로 어긋난다.
 function volumeOf(w) {
-  return countedSets(w).reduce((v, s) => v + (Number(s.reps) || 0) * (Number(s.weight) || 0), 0);
+  return countedSets(w).reduce((v, s) => v + nonNeg(s.reps) * nonNeg(s.weight), 0);
+}
+function nonNeg(v) {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : 0;
 }
 // 1회 최대 중량 추정 (Epley). 100kg×1(=100)보다 90kg×8(=114)이 더 센 기록인데,
 // 최고 중량만 보면 그걸 구분하지 못해서 세트끼리 비교할 땐 이 값을 쓴다.
@@ -549,10 +555,10 @@ function partBalance(days = range, endDate = currentDate) {
 }
 
 function dayIntake(d) {
-  return d.meals.reduce((s, m) => s + (Number(m.kcal) || 0), 0);
+  return d.meals.reduce((s, m) => s + nonNeg(m.kcal), 0);
 }
 function dayProtein(d) {
-  return Math.round(d.meals.reduce((s, m) => s + (Number(m.protein) || 0), 0));
+  return Math.round(d.meals.reduce((s, m) => s + nonNeg(m.protein), 0));
 }
 // 목표를 안 정했으면 체중 1kg당 1.6g을 기준으로 제안한다 (근력 운동 시 흔히 쓰는 값)
 function proteinGoal() {
@@ -1473,32 +1479,43 @@ function renderHistory() {
   const months = {};
   dates.forEach((date) => (months[date.slice(0, 7)] ??= []).push(date));
 
-  $('#historyList').innerHTML = Object.entries(months).map(([month, list], i) => `
-    <details class="month" data-month="${month}" ${q || (monthOpen.has(month) ? monthOpen.get(month) : i === 0) ? 'open' : ''}>
+  // 접힌 달은 속을 비워 둔다. 펼칠 때 채운다 — 3년치면 1100장이라, 다 그려 두면
+  // 보이지도 않는 카드로 DOM이 무거워진다.
+  $('#historyList').innerHTML = Object.entries(months).map(([month, list], i) => {
+    const open = !!(q || (monthOpen.has(month) ? monthOpen.get(month) : i === 0));
+    return `<details class="month" data-month="${month}" ${open ? 'open' : ''}>
       <summary>${month.replace('-', '년 ')}월 <span class="muted">${list.length}일</span></summary>
-      ${list.map((date) => {
-        const d = state.days[date];
-        const kcal = dayIntake(d);
-        const burn = dayBurn(date);
-        const ex = d.workouts.map((w) => `${esc(w.name)} ${w.sets.length}×${w.sets[0]?.reps ?? 0}`).join(', ');
-        return `<div class="card history-day" data-goto="${date}">
-          <h3>${date}</h3>
-          <div class="muted">🍚 ${d.meals.length}개${kcal ? ` · ${kcal} kcal` : ''}</div>
-          <div class="muted">🏋️ ${ex || '운동 없음'}${burn ? ` · 🔥 ${burn} kcal` : ''}</div>
-          ${kcal && burn ? `<div class="muted">➖ 순 ${kcal - burn} kcal</div>` : ''}
-          ${d.note ? `<div class="muted">📝 ${esc(d.note)}</div>` : ''}
-          ${d.workouts.length && date !== currentDate
-            ? `<button class="link-btn day-copy" data-copy-day="${date}">↩ 이 날 운동 불러오기</button>` : ''}
-        </div>`;
-      }).join('')}
-    </details>`).join('');
+      ${open ? monthDaysHtml(list) : ''}
+    </details>`;
+  }).join('');
 
-  // 검색 중에는 전부 펼쳐 보여주는 것이므로 그 상태를 기억하지 않는다
-  if (!q) {
-    $('#historyList').querySelectorAll('details.month').forEach((el) => {
-      el.addEventListener('toggle', () => monthOpen.set(el.dataset.month, el.open));
+  $('#historyList').querySelectorAll('details.month').forEach((el) => {
+    el.addEventListener('toggle', () => {
+      // 검색 중에는 전부 펼쳐 보여주는 것이므로 그 상태를 기억하지 않는다
+      if (!q) monthOpen.set(el.dataset.month, el.open);
+      if (el.open && el.children.length === 1) {      // summary만 있으면 아직 안 채운 달
+        el.insertAdjacentHTML('beforeend', monthDaysHtml(months[el.dataset.month]));
+      }
     });
-  }
+  });
+}
+
+function monthDaysHtml(list) {
+  return list.map((date) => {
+    const d = state.days[date];
+    const kcal = dayIntake(d);
+    const burn = dayBurn(date);
+    const ex = d.workouts.map((w) => `${esc(w.name)} ${w.sets.length}×${w.sets[0]?.reps ?? 0}`).join(', ');
+    return `<div class="card history-day" data-goto="${date}">
+      <h3>${date}</h3>
+      <div class="muted">🍚 ${d.meals.length}개${kcal ? ` · ${kcal} kcal` : ''}</div>
+      <div class="muted">🏋️ ${ex || '운동 없음'}${burn ? ` · 🔥 ${burn} kcal` : ''}</div>
+      ${kcal && burn ? `<div class="muted">➖ 순 ${kcal - burn} kcal</div>` : ''}
+      ${d.note ? `<div class="muted">📝 ${esc(d.note)}</div>` : ''}
+      ${d.workouts.length && date !== currentDate
+        ? `<button class="link-btn day-copy" data-copy-day="${date}">↩ 이 날 운동 불러오기</button>` : ''}
+    </div>`;
+  }).join('');
 }
 
 function updateExHint() {
@@ -1949,8 +1966,8 @@ $('#mealForm').addEventListener('submit', (e) => {
     type: $('#mealType').value,
     name: $('#foodName').value.trim(),
     amount: $('#foodAmount').value.trim(),
-    kcal: $('#foodKcal').value ? Number($('#foodKcal').value) : null,
-    protein: $('#foodProtein').value ? Number($('#foodProtein').value) : null,
+    kcal: $('#foodKcal').value ? nonNeg($('#foodKcal').value) : null,
+    protein: $('#foodProtein').value ? nonNeg($('#foodProtein').value) : null,
     photo: pendingPhoto,
   });
   save();
@@ -1961,8 +1978,8 @@ $('#mealForm').addEventListener('submit', (e) => {
 $('#workoutForm').addEventListener('submit', (e) => {
   e.preventDefault();
   const n = Math.max(1, Number($('#exSets').value) || 1);
-  const reps = Number($('#exReps').value) || 0;
-  const weight = $('#exWeight').value ? Number($('#exWeight').value) : null;
+  const reps = nonNeg($('#exReps').value);
+  const weight = $('#exWeight').value ? nonNeg($('#exWeight').value) : null;
   const minutes = Number($('#exMinutes').value) > 0 ? Number($('#exMinutes').value) : null;
   day().workouts.push({
     id: uid(),
@@ -2151,7 +2168,8 @@ document.addEventListener('change', (e) => {
     const set = findWorkout(id)?.sets[i];
     if (!set) return;
     const v = e.target.value;
-    set[field] = v === '' ? null : Number(v);
+    // number 입력의 min은 폼을 제출할 때만 걸린다. 직접 "-50"을 쳐 넣을 수 있어서 여기서 막는다.
+    set[field] = v === '' ? null : Math.max(0, Number(v) || 0);
   } else {
     return;
   }

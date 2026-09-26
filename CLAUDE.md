@@ -80,6 +80,8 @@
 - 애니메이션은 `prefers-reduced-motion`을 존중할 것(`reduceMotion()`).
 
 ## 조심할 것 (실제로 났던 문제)
+- **기록 탭의 접힌 달은 속을 비워 둔다**(`monthDaysHtml`). 3년치면 1100장이라 접힌 달까지 다 그리면 안 보이는 카드로 DOM이 무거워진다. `toggle`에서 `children.length === 1`(summary만 있음)일 때 채운다.
+- **화면에서 막아도 데이터는 들어온다.** `<input type=number min=0>`은 폼을 제출할 때만 검사하므로 세트 칸에 `-50`을 쳐 넣을 수 있고, 망가진 동기화 파일로도 음수가 들어온다. 집계(`volumeOf`·`dayIntake`·`dayProtein`)는 `nonNeg()`로 음수를 0으로 본다.
 - **입력 중에는 `save()` 대신 `saveSoon()`**. 글자마다 전체를 직렬화하면 기록이 쌓일수록 느려진다. 화면은 즉시 갱신하고 저장만 미루며, `visibilitychange`·`pagehide`에서 `flushSave()`로 반드시 반영한다.
 - **휴식 타이머는 벽시계(`restEndAt`) 기준.** 1초씩 빼면 화면이 꺼졌을 때 브라우저가 타이머를 늦춰 실제보다 느려진다.
 - **`<input type=file>`은 값을 먼저 비운다.** 끝에서 비우면 중간에 취소로 빠져나갈 때 안 비워져서 같은 파일을 다시 못 고른다.

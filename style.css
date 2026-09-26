@@ -88,8 +88,9 @@ input, select, textarea { font-size: 16px; }
 input::placeholder { color: var(--muted); opacity: 0.8; }
 button { cursor: pointer; }
 button.primary { background: var(--accent); border-color: var(--accent); color: #0d1412; font-weight: 700; }
-.icon-btn { width: 40px; font-size: 1.3rem; padding: 6px; }
-.del { border: none; background: none; color: var(--muted); font-size: 1.1rem; padding: 4px 8px; }
+/* 휴대폰에서 자주 누르는 것들은 높이 40px 이상 (엄지로 눌러야 한다) */
+.icon-btn { width: 40px; min-height: 40px; font-size: 1.3rem; padding: 6px; }
+.del { border: none; background: none; color: var(--muted); font-size: 1.1rem; padding: 4px 10px; min-height: 40px; }
 .del:hover { color: var(--danger); }
 
 .summary {
@@ -203,8 +204,9 @@ label.inline input.custom { border-color: var(--accent); color: var(--accent); f
 .card.fav[hidden] { display: none; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip {
+  display: inline-flex; align-items: center; gap: 4px; min-height: 40px;
   background: var(--card-2); border: 1px solid var(--line); border-radius: 999px;
-  padding: 7px 12px; font-size: 0.85rem;
+  padding: 7px 14px; font-size: 0.85rem;
 }
 .chip:hover { border-color: var(--accent); color: var(--accent); }
 .chip .muted { font-size: 0.75rem; }
@@ -267,10 +269,10 @@ h3 .hint { display: inline; font-weight: 400; }
 /* 카드 제목줄 · 기간 토글 */
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
 .card-head h3 { margin: 0; }
-.card-head select { padding: 8px 10px; font-size: 16px; max-width: 58%; }
+.card-head select { min-height: 40px; padding: 8px 10px; font-size: 16px; max-width: 58%; }
 .seg { display: flex; gap: 0; }
 .seg button {
-  padding: 6px 10px; font-size: 0.8rem; border-radius: 0; color: var(--muted);
+  min-height: 40px; padding: 6px 13px; font-size: 0.82rem; border-radius: 0; color: var(--muted);
   border-left-width: 0;
 }
 .seg button:first-child { border-radius: 8px 0 0 8px; border-left-width: 1px; }
@@ -294,7 +296,7 @@ h3 .hint { display: inline; font-weight: 400; }
 .sync-row > div:first-child { flex: 1; min-width: 0; }
 .sync-row .hint { margin-top: 3px; }
 .sync-btns { display: grid; gap: 6px; flex: none; }
-.sync-btns button { padding: 8px 12px; font-size: 0.8rem; white-space: nowrap; }
+.sync-btns button { min-height: 40px; padding: 8px 12px; font-size: 0.8rem; white-space: nowrap; }
 .sync-btns button:disabled { opacity: 0.6; cursor: default; }
 .sync-msg {
   background: var(--accent-soft); border-radius: 10px; padding: 8px 12px;
@@ -357,7 +359,7 @@ h3 .hint { display: inline; font-weight: 400; }
 
 /* 연속 기록 타일 안의 입력칸 */
 #streakTiles input {
-  width: 100%; padding: 2px 6px; font-size: 1.15rem; font-weight: 700;
+  width: 100%; min-height: 40px; padding: 2px 6px; font-size: 1.15rem; font-weight: 700;
   background: transparent; border: none; border-bottom: 1px solid var(--line); border-radius: 0;
 }
 
@@ -426,7 +428,7 @@ html { overflow-x: clip; }
 /* 부위별 주간 목표 */
 .goal-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
 .goal-cell { font-size: 0.8rem; }
-.goal-cell input { width: 100%; padding: 8px; text-align: center; }
+.goal-cell input { width: 100%; min-height: 40px; padding: 8px; text-align: center; }
 .bar.full > span { background: var(--chart-3); }
 
 /* 기록 탭에서 그 날 운동 불러오기 */
@@ -486,7 +488,7 @@ body.sheet-open { overflow: hidden; }
 }
 .log-row > span:nth-child(2) { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .log-row .link-btn { flex: 0 0 auto; min-height: 40px; padding: 0; }
-#liftDetail { margin-top: 6px; }
+#liftDetail { display: inline-flex; align-items: center; min-height: 40px; margin-top: 2px; }
 
 /* 오늘의 계획 */
 #planCard[hidden] { display: none; }
