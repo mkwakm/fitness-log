@@ -102,3 +102,12 @@ git clone https://github.com/mkwakm/fitness-log.git
 📱 휴대폰 연결 테스트 완료
 
 ☁️ 클라우드 세션 테스트 완료
+
+## 🧪 테스트
+앱이 제대로 도는지 브라우저로 직접 눌러보며 확인하는 자동 테스트가 `tests/`에 있습니다 (15개 파일, 340여 항목).
+```
+cd tests && npm install   # 처음 한 번
+node run.mjs              # 전부 (1분쯤)
+node run.mjs sync         # 이름에 sync가 들어간 것만
+```
+크롬이 깔려 있으면 됩니다. 앱 자체는 여전히 빌드 없이 `index.html`만 열면 돌아갑니다.

@@ -88,11 +88,19 @@
 - **사용자 입력이 키가 되는 집계는 `Map`을 쓸 것.** 일반 객체면 "constructor" 같은 이름이 프로토타입을 건드린다. 객체에서 값을 꺼낼 때도 `Object.hasOwn`으로 확인할 것(안 하면 "1toString" 같은 입력이 NaN이 된다).
 - **다시 그려도 유지돼야 하는 펼침 상태는 따로 기억할 것** (`monthOpen`, `advOpen`). `render()`가 HTML을 통째로 갈아끼우기 때문에 그냥 두면 도로 접힌다.
 
+## 테스트 (`tests/`)
+- 앱은 빌드 도구 없이 돌고, **테스트만** `tests/` 안에서 브라우저 조종 라이브러리(playwright-core)를 쓴다. 저장소 루트에 package.json을 두지 말 것(앱이 빌드가 필요한 것처럼 보인다).
+- 처음 한 번: `cd tests && npm install`. 돌리기: `node tests/run.mjs` (전체, 1분쯤) / `node tests/run.mjs sync` (이름 일부로 골라서) / `VERBOSE=1`이면 통과 항목도 출력.
+- 브라우저: 클라우드 세션은 `/opt/pw-browsers`의 크로미움, PC는 설치된 크롬(없으면 엣지)을 쓴다. 다른 걸 쓰려면 `CHROME_PATH`.
+- **기능을 고치거나 더하면 해당 `*.test.mjs`에 판정(`t.ok`/`t.eq`)을 더하고, 커밋 전에 전체를 돌릴 것.** 값만 출력하고 눈으로 보는 테스트는 만들지 말 것 — 다음 세션이 판단할 수 없다.
+- 파일마다 `export default async function (t)`. `t.open()`은 새 컨텍스트(빈 localStorage)라 기기 두 대는 두 번 열면 된다. 서비스워커 테스트는 `serve()`로 띄우고, 새 버전 배포는 `overrides`로 흉내 낸다(저장소 파일을 건드리지 않는다).
+- 외부 API는 가짜로 돌린다: Gist는 `page.route`, 파일 저장은 `showSaveFilePicker`·IndexedDB 흉내, Wake Lock·공유는 `navigator`에 심는다.
+
 ## 작업 규칙
 - 답변과 UI 문구는 한국어.
 - 그래프 색은 `--chart-1`(섭취) `--chart-2`(소모) `--chart-3`(체중) `--chart-4`(운동 중량) `--chart-5`(부위별 볼륨) 변수만 쓴다. dataviz 기준으로 5색 함께 검증한 값이므로(다크·라이트 모두 통과) 바꾸려면 `validate_palette.js`로 다시 검증할 것. 한 그래프에 축은 하나만 두고, 두 번째 y축을 만들지 말 것 (단위가 다르면 그래프를 나눈다).
 - 화면은 어두운 톤이 기본. 색은 `style.css`의 `:root` 변수로만 쓰고, 밝은 테마 값은 `:root[data-theme="light"]`에 둘 것. 테마는 `state.profile.theme`에 저장.
-- 작업 시작 전 `git pull`, 작업 후 커밋하고 `git push` 해서 다른 PC와 동기화.
+- 작업 시작 전 `git pull`, 작업 후 `node tests/run.mjs` → 커밋 → `git push` 해서 다른 PC와 동기화.
 
 ## 배포
 - GitHub Pages로 서비스한다: https://mkwakm.github.io/fitness-log/

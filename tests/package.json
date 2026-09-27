@@ -1,0 +1,12 @@
+{
+  "name": "fitness-log-tests",
+  "private": true,
+  "type": "module",
+  "description": "앱 동작 검증. 앱 자체는 빌드 도구 없이 돌고, 이 폴더만 테스트용 브라우저 조종 라이브러리를 쓴다.",
+  "scripts": {
+    "test": "node run.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.55.0"
+  }
+}
