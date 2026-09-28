@@ -520,3 +520,58 @@ body.sheet-open { overflow: hidden; }
   font-size: 16px; background: var(--card-2);
 }
 .ex-note::placeholder { font-size: 0.85rem; }
+
+/* 집중 모드: 운동하는 동안 세트 하나만 크게 */
+.focus-entry {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  width: 100%; min-height: 52px; margin-bottom: 12px; padding: 12px 16px;
+  background: var(--accent); border-color: var(--accent); color: #0d1412;
+  font-size: 1rem; font-weight: 700; border-radius: 12px;
+}
+.focus-entry[hidden] { display: none; }
+.focus-entry span { font-size: 0.8rem; font-weight: 600; opacity: 0.8; }
+.sheet.focus { z-index: 29; }          /* 운동 상세(30)를 위에 겹쳐 열 수 있게 */
+.sheet.focus .sheet-head h2 { flex: 1; }
+.focus-track { height: 4px; background: var(--line); }
+.focus-track span { display: block; height: 100%; background: var(--accent); transition: width 0.3s; }
+.focus-body { display: flex; flex-direction: column; gap: 14px; padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
+.focus-ex {
+  align-self: flex-start; min-height: 44px; padding: 0; border: 0; background: none;
+  color: var(--text); font-size: 1.35rem; font-weight: 800; text-align: left;
+}
+.focus-ex span { color: var(--muted); font-weight: 400; margin-left: 4px; }
+.focus-sets { display: flex; align-items: center; justify-content: space-between; margin-top: -8px; }
+.focus-set { font-size: 1.05rem; font-weight: 700; }
+.focus-dots { display: flex; gap: 6px; }
+.focus-dots i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--line); }
+.focus-dots i.on { background: var(--accent); border-color: var(--accent); }
+.focus-dots i.cur { border-color: var(--text); }
+.focus-label { display: block; color: var(--muted); font-size: 0.85rem; margin-bottom: 6px; }
+.focus-stepper { display: grid; grid-template-columns: 64px 1fr 64px; gap: 10px; align-items: stretch; }
+.focus-stepper > button { min-height: 64px; font-size: 1.8rem; border-radius: 14px; }
+.focus-num {
+  display: flex; align-items: baseline; justify-content: center; gap: 6px;
+  background: var(--card-2); border: 1px solid var(--line); border-radius: 14px; min-width: 0;
+}
+.focus-num input {
+  width: 100%; min-width: 0; padding: 8px 0; border: 0; background: none; text-align: right;
+  font-size: 2.4rem; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--text);
+}
+.focus-num input::placeholder { font-size: 1.4rem; font-weight: 600; }
+/* 옆에 ± 버튼이 있으니 브라우저 기본 위아래 화살표는 숨긴다 */
+.focus-num input { -moz-appearance: textfield; appearance: textfield; }
+.focus-num input::-webkit-outer-spin-button, .focus-num input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.focus-num span { flex: 0 0 auto; padding-right: 14px; color: var(--muted); font-size: 1rem; }
+.focus-hint { margin: 0; text-align: center; }
+.focus-main { width: 100%; min-height: 64px; font-size: 1.25rem; font-weight: 800; border-radius: 16px; }
+.focus-nav { display: flex; gap: 8px; }
+.focus-nav button { flex: 1; min-height: 48px; font-size: 0.95rem; }
+.focus-nav button:disabled { opacity: 0.35; }
+.focus-addex { align-self: center; min-height: 40px; }
+.focus-restbox { display: flex; flex-direction: column; align-items: stretch; gap: 16px; padding-top: 8vh; text-align: center; }
+.focus-rest { font-size: 5rem; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
+.focus-next { margin: 8px 0 0; font-size: 1.05rem; line-height: 1.6; }
+.focus-finish { display: flex; flex-direction: column; gap: 14px; text-align: center; padding-top: 4vh; }
+.focus-finish h3 { margin: 0; font-size: 1.4rem; }
+.focus-big { margin: 0; font-size: 3.2rem; }
+.focus-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; text-align: left; }

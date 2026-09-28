@@ -165,7 +165,8 @@ let range = 7;            // 통계 기간 (일)
 let liftPick = '';        // 중량 추이로 보고 있는 운동
 let volPart = '';         // 볼륨 추이로 보고 있는 부위
 let exSheetName = null;   // 상세를 열어 둔 운동 이름 (안 열었으면 null)
-let sheetPushed = false;  // 상세를 열면서 history에 한 칸 넣었는지 (휴대폰 뒤로가기로 닫으려고)
+let focusOn = false;      // 집중 모드가 열려 있는지
+let focusAt = null;       // 집중 모드에서 보고 있는 세트 { id, i } — null이면 다음에 할 세트
 
 function todayStr(d = new Date()) {
   const off = d.getTimezoneOffset() * 60000;
@@ -648,6 +649,13 @@ function toggleSession() {
   renderSession();
   renderWorkouts();
 }
+function renderFocusBtn() {
+  const btn = $('#focusBtn');
+  const q = focusQueue();
+  btn.hidden = !q.length;
+  const left = q.filter((x) => !x.s.done).length;
+  btn.innerHTML = left ? `🎯 집중 모드로 운동하기 <span>남은 ${left}세트</span>` : '🎯 집중 모드 <span>오늘 세트를 다 했어요</span>';
+}
 function renderSession() {
   const d = state.days[currentDate];
   const done = Number(d?.sessionMin) || 0;
@@ -656,7 +664,8 @@ function renderSession() {
   const total = done + live;
 
   $('#sessionBtn').textContent = running ? '⏹ 운동 끝내기' : '▶️ 운동 시작';
-  $('#sessionBtn').classList.toggle('primary', !running);
+  // 운동이 있으면 집중 모드 버튼이 주인공이다 (그걸 누르면 시간도 같이 잰다). 초록 버튼 둘이 겹치지 않게.
+  $('#sessionBtn').classList.toggle('primary', !running && !day().workouts.length);
   $('#sessionBtn').classList.toggle('running', running);
   $('#sessionText').innerHTML = running
     ? `진행 중 · ${total}분${wakeLock ? ' · <span class="tip">🔆 화면 안 꺼짐</span>' : ''}`
@@ -676,6 +685,7 @@ function restLeft() {
 }
 function startRest(sec = Number(state.profile.restSec) || 90) {
   restEndAt = Date.now() + sec * 1000;
+  saveUi();
   $('#restBar').hidden = false;
   drawRest();
   clearInterval(restTimer);
@@ -689,10 +699,14 @@ function stopRest() {
   restTimer = null;
   restEndAt = 0;
   $('#restBar').hidden = true;
+  saveUi();
+  renderFocus();                  // 쉬는 화면에서 다음 세트 화면으로
 }
 function drawRest() {
   const left = restLeft();
   $('#restTime').textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+  const big = document.getElementById('focusRestTime');
+  if (big) big.textContent = mmss(left);
   $('#restBar').classList.toggle('almost', left <= 10);
 }
 // 화면을 다시 켰을 때 남은 시간을 바로 맞춰 보여준다
@@ -731,6 +745,8 @@ function render() {
   updateExHint();
   const note = $('#dayNote');
   if (document.activeElement !== note) note.value = day().note ?? '';
+  renderFocusBtn();
+  if (focusOn) renderFocus();
   if (exSheetName) renderExSheet();   // 열어 둔 상세도 같이 갱신 (안 하면 방금 적은 세트가 안 보인다)
 }
 
@@ -1087,14 +1103,38 @@ function exerciseLog(name) {
 
 const SHEET_ROWS = 30;   // 기록이 쌓여도 한 번에 다 그리면 무겁다
 
+// ---------- 전체 화면 창 (운동 상세·집중 모드) ----------
+// 휴대폰 뒤로가기로 닫히게, 열 때마다 history에 한 칸씩 넣는다(안 넣으면 뒤로가기에 앱이 꺼진다).
+// 집중 모드 위에 상세를 겹쳐 열 수 있어서, 뒤로가기는 맨 위 창부터 닫는다.
+const layers = [];        // 열린 순서대로 'focus', 'ex'
+let pushed = 0;           // history에 넣은 칸 수
+let ownBacks = 0;         // ✕로 닫으며 우리가 부른 history.back() — 이때 오는 popstate는 무시한다
+function layerOpened(name) {
+  if (layers.includes(name)) return;
+  layers.push(name);
+  try { history.pushState({ layer: name }, ''); pushed += 1; } catch { /* file:// 등에서 막히면 버튼으로만 닫는다 */ }
+  document.body.classList.add('sheet-open');
+}
+function layerClosed(name, fromPop) {
+  const at = layers.indexOf(name);
+  if (at < 0) return;
+  layers.splice(at, 1);
+  if (!layers.length) document.body.classList.remove('sheet-open');
+  if (fromPop) { pushed = Math.max(0, pushed - 1); return; }
+  // ✕·ESC로 닫았으면 넣어 둔 칸을 도로 뺀다. 안 빼면 닫은 뒤 뒤로가기가 한 번 먹통이 된다.
+  if (pushed > 0) { pushed -= 1; ownBacks += 1; history.back(); }
+}
+window.addEventListener('popstate', () => {
+  if (ownBacks > 0) { ownBacks -= 1; return; }
+  const top = layers.at(-1);
+  if (top === 'ex') closeExSheet(true);
+  else if (top === 'focus') closeFocus(true);
+});
+
 function openExSheet(name) {
   if (!String(name ?? '').trim()) return;
   exSheetName = name;
-  // 휴대폰 뒤로가기로 닫히게 한 칸 넣어 둔다 (없으면 앱에서 나가 버린다)
-  if (!sheetPushed) {
-    try { history.pushState({ exSheet: 1 }, ''); sheetPushed = true; } catch { /* file://에서 막히면 그냥 버튼으로 닫는다 */ }
-  }
-  document.body.classList.add('sheet-open');
+  layerOpened('ex');
   renderExSheet();
 }
 
@@ -1102,9 +1142,217 @@ function closeExSheet(fromPop = false) {
   if (!exSheetName) return;
   exSheetName = null;
   $('#exSheet').hidden = true;
-  document.body.classList.remove('sheet-open');
-  if (sheetPushed && !fromPop) history.back();   // 뒤로가기로 닫힌 게 아니면 넣어 둔 칸을 되돌린다
-  sheetPushed = false;
+  layerClosed('ex', fromPop);
+}
+
+// ---------- 집중 모드 ----------
+// 운동하는 동안은 카드 목록에서 세트 줄을 찾아 누르는 게 일이다. 지금 할 세트 하나만 크게 띄우고,
+// 완료 → 휴식 → 다음 세트로 저절로 넘어가게 한다. 기록은 카드 화면과 같은 데이터를 쓴다.
+function focusQueue(d = day()) {
+  return d.workouts.flatMap((w) => w.sets.map((s, i) => ({ w, i, s })));
+}
+function focusCurrent() {
+  const q = focusQueue();
+  if (focusAt) {
+    const idx = q.findIndex((x) => x.w.id === focusAt.id && x.i === focusAt.i);
+    if (idx >= 0) return { ...q[idx], idx, q };
+  }
+  const idx = q.findIndex((x) => !x.s.done);
+  return idx < 0 ? { q, idx: -1 } : { ...q[idx], idx, q };
+}
+// 지금 세트 다음에 남은 세트 (끝까지 갔으면 앞에서 건너뛴 것)
+function nextPending(q, from) {
+  for (let k = 1; k <= q.length; k++) {
+    const x = q[(from + k) % q.length];
+    if (!x.s.done) return x;
+  }
+  return null;
+}
+
+function openFocus({ resume = false } = {}) {
+  focusOn = true;
+  focusAt = null;
+  // 집중 모드를 켰다는 건 지금 운동한다는 뜻 — 오늘이면 운동 시간도 같이 잰다(화면 꺼짐 방지도 따라온다)
+  if (!resume && currentDate === todayStr() && !sessionOn() && day().workouts.length) toggleSession();
+  $('#focusSheet').hidden = false;
+  layerOpened('focus');
+  saveUi();
+  renderFocus();
+}
+function closeFocus(fromPop = false) {
+  if (!focusOn) return;
+  focusOn = false;
+  focusAt = null;
+  $('#focusSheet').hidden = true;
+  layerClosed('focus', fromPop);
+  saveUi();
+  render();
+}
+
+function renderFocus() {
+  if (!focusOn) return;
+  const cur = focusCurrent();
+  const all = cur.q.length;
+  const doneN = cur.q.filter((x) => x.s.done).length;
+  $('#focusProgress').textContent = all ? `${doneN} / ${all}세트` : '';
+  $('#focusBar').style.width = all ? `${Math.round(doneN / all * 100)}%` : '0';
+  const body = $('#focusBody');
+  // 무게를 치는 중에 다시 그리면 입력이 끊긴다 (자동 동기화 등이 render를 부를 수 있다)
+  if (document.activeElement?.matches?.('#focusBody input')) return;
+  if (!all) {
+    body.innerHTML = `<div class="focus-finish"><p class="muted">오늘 운동이 아직 없어요.</p>
+      <button class="focus-main primary" data-focus-addex>+ 운동 추가하러 가기</button></div>`;
+  } else if (!cur.w) {
+    body.innerHTML = focusFinishHtml();
+  } else if (restEndAt > 0 && !cur.s.done) {
+    body.innerHTML = focusRestHtml(cur);
+  } else {
+    body.innerHTML = focusSetHtml(cur);
+  }
+}
+
+function focusSetHtml({ w, i, s, idx, q }) {
+  const last = lastRecord(w.name);
+  const tip = i === 0 && !s.done ? overloadTip(w.name) : null;   // 첫 세트에만 (세트마다 띄우면 잔소리)
+  const field = (key, label, unit, attrs) => `
+    <div class="focus-field">
+      <span class="focus-label">${label}</span>
+      <div class="focus-stepper">
+        <button data-focus-step="${key}:-1" aria-label="${label} 줄이기">−</button>
+        <label class="focus-num"><input type="number" ${attrs} value="${s[key] ?? ''}" data-focus-edit="${key}" aria-label="${label}"><span>${unit}</span></label>
+        <button data-focus-step="${key}:1" aria-label="${label} 늘리기">+</button>
+      </div>
+    </div>`;
+  return `
+    <button class="focus-ex" data-ex-detail="${esc(w.name)}">${esc(w.name)} <span aria-hidden="true">›</span></button>
+    <div class="focus-sets">
+      <span class="focus-set">${i + 1}세트 <span class="muted">/ ${w.sets.length}</span></span>
+      <span class="focus-dots">${w.sets.map((x, k) => `<i class="${x.done ? 'on' : ''} ${k === i ? 'cur' : ''}"></i>`).join('')}</span>
+    </div>
+    ${field('weight', '중량', 'kg', 'inputmode="decimal" min="0" step="0.5" placeholder="맨몸"')}
+    ${field('reps', '횟수', '회', 'inputmode="numeric" min="0" step="1"')}
+    ${last ? `<p class="hint focus-hint">↩ 지난번 ${fmtDate(last.date)}: ${esc(setsText(last.workout))}${
+      last.workout.note ? `<br>📝 ${esc(last.workout.note)}` : ''}</p>` : ''}
+    ${tip ? `<p class="tip focus-hint">${overloadText(tip)}</p>` : ''}
+    <button class="focus-main ${s.done ? '' : 'primary'}" data-focus-done>${s.done ? '↺ 완료 취소' : '✓ 세트 완료'}</button>
+    <div class="focus-nav">
+      <button data-focus-move="-1" ${idx === 0 ? 'disabled' : ''}>‹ 이전</button>
+      <button data-focus-add>+ 세트</button>
+      <button data-focus-move="1">${idx < q.length - 1 ? '다음 ›' : q.some((x) => !x.s.done) ? '남은 세트 ›' : '마무리 ›'}</button>
+    </div>
+    <button class="link-btn focus-addex" data-focus-addex>다른 운동 추가하기</button>`;
+}
+
+function focusRestHtml({ w, i, s }) {
+  return `
+    <div class="focus-restbox">
+      <span class="focus-label">휴식</span>
+      <div class="focus-rest" id="focusRestTime">${mmss(restLeft())}</div>
+      <div class="focus-nav">
+        <button data-focus-rest="30">+30초</button>
+        <button class="primary" data-focus-rest="skip">바로 시작</button>
+      </div>
+      <p class="focus-next">다음 · <b>${esc(w.name)}</b> ${i + 1}세트<br>
+        <span class="muted">${Number(s.weight) > 0 ? `${s.weight}kg × ` : ''}${s.reps ?? 0}회</span></p>
+    </div>`;
+}
+
+function focusFinishHtml() {
+  const d = day();
+  const sets = d.workouts.reduce((n, w) => n + countedSets(w).length, 0);
+  const vol = Math.round(d.workouts.reduce((v, w) => v + volumeOf(w), 0));
+  const session = (Number(d.sessionMin) || 0) + (sessionOn() ? Math.floor((Date.now() - d.sessionStart) / 60000) : 0);
+  // 시간을 안 쟀으면(지난 기록 정리 등) 세트로 추정한 시간을 쓴다 — "0분"이라고 적으면 틀린 말이 된다
+  const mins = session || Math.round(d.workouts.reduce((m, w) => m + minutesOf(w), 0));
+  // 처음 해 본 운동은 비교할 기록이 없으니 신기록으로 치지 않는다
+  const prs = [...new Set(d.workouts.map((w) => w.name))]
+    .filter((n) => personalBest(n)?.date === currentDate && lastRecord(n));
+  return `
+    <div class="focus-finish">
+      <p class="focus-big" aria-hidden="true">🎉</p>
+      <h3>오늘 운동 끝!</h3>
+      <div class="focus-tiles">
+        <div class="tile"><span class="muted">세트</span><strong>${sets}</strong></div>
+        <div class="tile"><span class="muted">볼륨</span><strong>${vol.toLocaleString()}<small> kg</small></strong></div>
+        <div class="tile"><span class="muted">시간</span><strong>${mins}<small> 분</small></strong></div>
+        <div class="tile"><span class="muted">소모</span><strong>${dayBurn(currentDate)}<small> kcal</small></strong></div>
+      </div>
+      ${prs.length ? `<p class="tip">🏆 신기록: ${prs.map(esc).join(', ')}</p>` : ''}
+      <button class="focus-main primary" data-focus-finish>${sessionOn() ? '⏹ 운동 끝내기' : '닫기'}</button>
+      <div class="focus-nav">
+        <button data-focus-move="-1">‹ 세트 다시 보기</button>
+        <button data-focus-addex>+ 운동 추가</button>
+      </div>
+    </div>`;
+}
+
+function focusComplete() {
+  const cur = focusCurrent();
+  if (!cur.w) return;
+  cur.s.done = !cur.s.done;
+  cur.s.doneAt = cur.s.done ? Date.now() : null;
+  if (cur.s.done) {
+    const nx = nextPending(cur.q, cur.idx);
+    focusAt = nx ? { id: nx.w.id, i: nx.i } : null;
+    if (nx) startRest();          // 마지막 세트 뒤엔 쉴 이유가 없다
+    else stopRest();
+  }
+  save();
+  render();
+}
+function focusMove(dir) {
+  const cur = focusCurrent();
+  const q = cur.q;
+  if (!q.length) return;
+  const from = cur.idx < 0 ? q.length : cur.idx;   // 다 끝난 화면에서 "이전"이면 마지막 세트
+  const to = Math.max(0, from + dir);
+  // 맨 끝에서 "다음"이면 남은 세트(없으면 마무리 화면)로 — 막다른 길을 만들지 않는다
+  focusAt = to > q.length - 1 ? null : { id: q[to].w.id, i: q[to].i };
+  stopRest();
+  renderFocus();
+}
+// 한 세트를 올리면 보통 남은 세트도 같이 올린다. 뒤에 남은 같은 운동 세트가 같은 값이었으면 따라 바꾼다.
+function setFocusValue(field, val) {
+  const cur = focusCurrent();
+  if (!cur.w) return;
+  const old = cur.s[field];
+  cur.s[field] = val;
+  cur.w.sets.slice(cur.i + 1).forEach((x) => { if (!x.done && x[field] === old) x[field] = val; });
+  focusAt = { id: cur.w.id, i: cur.i };
+  save();
+}
+function focusStep(field, dir) {
+  const cur = focusCurrent();
+  if (!cur.w) return;
+  const unit = field === 'weight' ? (Number(state.profile.weightStep) || 2.5) : 1;
+  const next = (Number(cur.s[field]) || 0) + unit * dir;
+  setFocusValue(field, next > 0 ? Math.round(next * 100) / 100 : (field === 'reps' ? 0 : null));
+  render();
+}
+function focusAddSet() {
+  const cur = focusCurrent();
+  const w = cur.w ?? day().workouts.at(-1);
+  if (!w) return;
+  const lastSet = w.sets.at(-1) ?? { weight: null, reps: 10 };
+  w.sets.push({ weight: lastSet.weight, reps: lastSet.reps, done: false });
+  focusAt = { id: w.id, i: w.sets.length - 1 };
+  stopRest();
+  save();
+  render();
+}
+
+// 이 기기의 화면 상태. 휴대폰은 다른 앱을 쓰다 오면 탭을 새로 여는 일이 잦아서,
+// 휴식 타이머와 집중 모드를 되살릴 수 있게 따로 적어 둔다. (기록이 아니라서 동기화·백업엔 안 들어간다)
+const UI_KEY = 'fitness-log-ui';
+function saveUi() {
+  try { localStorage.setItem(UI_KEY, JSON.stringify({ focus: focusOn ? currentDate : null, restEndAt })); } catch { /* 저장 공간이 막혀도 앱은 돈다 */ }
+}
+function restoreUi() {
+  let ui = {};
+  try { ui = JSON.parse(localStorage.getItem(UI_KEY)) || {}; } catch { /* 깨졌으면 없는 셈 친다 */ }
+  const left = Math.ceil((Number(ui.restEndAt) - Date.now()) / 1000);
+  if (left > 0) startRest(left);
+  if (ui.focus && ui.focus === currentDate && day().workouts.length) openFocus({ resume: true });
 }
 
 function renderExSheet() {
@@ -1924,7 +2172,7 @@ $('#restSec').addEventListener('input', (e) => {
 });
 $('#sessionBtn').addEventListener('click', toggleSession);
 $('#restStop').addEventListener('click', stopRest);
-$('#restPlus').addEventListener('click', () => { restEndAt += 30000; drawRest(); });
+$('#restPlus').addEventListener('click', () => { restEndAt += 30000; saveUi(); drawRest(); });
 
 $('#mealPhoto').addEventListener('change', async (e) => {
   const file = e.target.files[0];
@@ -2003,10 +2251,34 @@ document.addEventListener('click', (e) => {
 $('#photoView').addEventListener('click', () => { $('#photoView').hidden = true; });
 
 $('#exSheetClose').addEventListener('click', () => closeExSheet());
+$('#focusClose').addEventListener('click', () => closeFocus());
+$('#focusBtn').addEventListener('click', () => openFocus());
+$('#focusSheet').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  const ds = b.dataset;
+  if (ds.focusStep) { const [field, dir] = ds.focusStep.split(':'); focusStep(field, Number(dir)); }
+  else if ('focusDone' in ds) focusComplete();
+  else if (ds.focusMove) focusMove(Number(ds.focusMove));
+  else if ('focusAdd' in ds) focusAddSet();
+  else if (ds.focusRest === 'skip') stopRest();
+  else if (ds.focusRest) { restEndAt += Number(ds.focusRest) * 1000; saveUi(); drawRest(); }
+  else if ('focusFinish' in ds) { if (sessionOn()) toggleSession(); closeFocus(); }
+  else if ('focusAddex' in ds) { closeFocus(); showTab('workouts'); $('#exName').focus(); }
+});
+$('#focusSheet').addEventListener('change', (e) => {
+  const field = e.target.dataset.focusEdit;
+  if (!field) return;
+  const v = e.target.value;
+  setFocusValue(field, v === '' ? (field === 'reps' ? 0 : null) : nonNeg(v));
+  setTimeout(render, 0);          // change는 포커스가 빠지는 도중에 오기도 해서 한 틱 미룬다
+});
 $('#liftDetail').addEventListener('click', () => openExSheet(liftPick));
-window.addEventListener('popstate', () => closeExSheet(true));
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') { closeExSheet(); $('#photoView').hidden = true; }
+  if (e.key !== 'Escape') return;
+  if (!$('#photoView').hidden) $('#photoView').hidden = true;
+  else if (layers.at(-1) === 'ex') closeExSheet();
+  else if (layers.at(-1) === 'focus') closeFocus();
 });
 
 document.addEventListener('click', (e) => {
@@ -2278,4 +2550,5 @@ applyTheme();
 seedStamps();
 $('#mealType').value = defaultMealType();
 render();
+restoreUi();
 initSync();

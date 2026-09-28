@@ -30,10 +30,19 @@ export default async function (t) {
     // ── 새 버전 배포 흉내: 파일을 바꾸고 캐시 버전을 올리면 ──
     srv.overrides.set('style.css', readFileSync(join(ROOT, 'style.css'), 'utf8') + '\n.__probe{}\n');
     srv.overrides.set('sw.js', readFileSync(join(ROOT, 'sw.js'), 'utf8').replace(version, 'fitness-log-test-next'));
+    // 브라우저가 sw.js를 다시 받아 새 버전을 깔고 옛 캐시를 지울 때까지 기다린다 (고정 시간 대기는 들쭉날쭉하다)
     await page.reload();
-    await wait(page, 1500);
+    await page.evaluate(async () => {
+      const reg = await navigator.serviceWorker.getRegistration();
+      await reg.update();
+      for (let k = 0; k < 50; k++) {
+        const keys = await caches.keys();
+        if (keys.length === 1 && keys[0] === 'fitness-log-test-next') break;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    });
     await page.reload();
-    await wait(page, 1200);
+    await page.waitForSelector('#mealList', { state: 'attached' });
     const after = await page.evaluate(async () => ({ keys: await caches.keys(),
       probe: [...document.styleSheets].some((s) => { try { return [...s.cssRules].some((r) => r.selectorText === '.__probe'); } catch { return false; } }) }));
     t.ok(after.probe, '다시 열면 새 파일이 적용됨');

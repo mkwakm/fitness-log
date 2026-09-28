@@ -84,6 +84,7 @@
         </div>
         <button id="sessionBtn" class="primary">▶️ 운동 시작</button>
       </div>
+      <button id="focusBtn" class="focus-entry" hidden></button>
 
       <!-- 소모 칼로리 창 -->
       <div class="card burn">
@@ -216,6 +217,17 @@
   </main>
 
   <div id="photoView" class="photo-view" hidden><img id="photoViewImg" alt=""></div>
+
+  <!-- 운동 중 집중 모드: 지금 할 세트 하나만 크게. 상세처럼 main 밖에 둔다 -->
+  <div id="focusSheet" class="sheet focus" hidden role="dialog" aria-modal="true" aria-labelledby="focusTitle">
+    <div class="sheet-head">
+      <h2 id="focusTitle">🎯 집중 모드</h2>
+      <span class="muted" id="focusProgress"></span>
+      <button class="del" id="focusClose" aria-label="닫기">✕</button>
+    </div>
+    <div class="focus-track"><span id="focusBar"></span></div>
+    <div class="sheet-body focus-body" id="focusBody"></div>
+  </div>
 
   <!-- 운동 상세. main 밖에 둬야 좌우 스와이프(날짜 이동)에 말려들지 않는다 -->
   <div id="exSheet" class="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="exSheetTitle">
