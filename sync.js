@@ -355,6 +355,7 @@ const canShare = () => typeof navigator !== 'undefined'
 async function shareBackup() {
   try {
     await navigator.share({ files: [backupFile()], title: '식단·운동 기록' });
+    markBackup();                  // 공유 창에서 어딘가에 저장했으면 그게 사본이다
   } catch { /* 사용자가 취소했거나 공유할 앱이 없는 경우 */ }
 }
 

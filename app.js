@@ -746,6 +746,7 @@ function render() {
   const note = $('#dayNote');
   if (document.activeElement !== note) note.value = day().note ?? '';
   renderFocusBtn();
+  renderSafety();
   if (focusOn) renderFocus();
   if (exSheetName) renderExSheet();   // 열어 둔 상세도 같이 갱신 (안 하면 방금 적은 세트가 안 보인다)
 }
@@ -1344,15 +1345,130 @@ function focusAddSet() {
 // 이 기기의 화면 상태. 휴대폰은 다른 앱을 쓰다 오면 탭을 새로 여는 일이 잦아서,
 // 휴식 타이머와 집중 모드를 되살릴 수 있게 따로 적어 둔다. (기록이 아니라서 동기화·백업엔 안 들어간다)
 const UI_KEY = 'fitness-log-ui';
-function saveUi() {
-  try { localStorage.setItem(UI_KEY, JSON.stringify({ focus: focusOn ? currentDate : null, restEndAt })); } catch { /* 저장 공간이 막혀도 앱은 돈다 */ }
+function readUi() {
+  try { return JSON.parse(localStorage.getItem(UI_KEY)) || {}; } catch { return {}; }   // 깨졌으면 없는 셈 친다
+}
+function saveUi(extra = {}) {
+  try {
+    localStorage.setItem(UI_KEY, JSON.stringify({ ...readUi(), focus: focusOn ? currentDate : null, restEndAt, ...extra }));
+  } catch { /* 저장 공간이 막혀도 앱은 돈다 */ }
 }
 function restoreUi() {
-  let ui = {};
-  try { ui = JSON.parse(localStorage.getItem(UI_KEY)) || {}; } catch { /* 깨졌으면 없는 셈 친다 */ }
+  const ui = readUi();
   const left = Math.ceil((Number(ui.restEndAt) - Date.now()) / 1000);
   if (left > 0) startRest(left);
   if (ui.focus && ui.focus === currentDate && day().workouts.length) openFocus({ resume: true });
+}
+
+// ---------- 기록 보호 ----------
+// 기록은 이 기기 브라우저 안에만 있다. 그런데
+//  · 아이폰 사파리는 7일 동안 안 연 사이트의 저장 공간을 지운다 (홈 화면에 추가한 앱은 예외).
+//  · 아이폰 홈 화면 앱은 사파리와 저장 공간을 따로 쓴다 — 사파리에서 쓰다 설치하면 빈 화면으로 시작한다.
+//  · 어느 브라우저든 기기 공간이 모자라면 지울 수 있다 (persist를 받아 두면 예외).
+// 그래서 ① "지우지 마"를 요청하고 ② 아이폰이면 옮기는 순서까지 안내하고 ③ 사본이 오래되면 알린다.
+const BACKUP_DAYS = 14;              // 다른 곳에 사본이 이만큼 없으면 알린다
+const DAY_MS = 86400000;
+let storagePersisted = null;         // true/false, 지원 안 하면 null
+let persistTried = false;
+
+function isStandalone() {
+  return navigator.standalone === true || !!window.matchMedia?.('(display-mode: standalone)').matches;
+}
+function isIOS() {
+  const ua = navigator.userAgent;
+  return /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);   // 아이패드는 맥인 척한다
+}
+function recordedDays() {
+  return Object.keys(state.days).filter((d) => !isEmptyDay(state.days[d])).length;
+}
+// 이 기기 밖에 있는 가장 최근 사본 (파일 자동 저장·Gist·내보내기·공유)
+function lastCopyAt() {
+  return Math.max(Number(sync?.lastGist) || 0, Number(sync?.lastFile) || 0, Number(readUi().lastExport) || 0);
+}
+function markBackup() {
+  saveUi({ lastExport: Date.now() });
+  renderSafety();
+}
+function snoozeSafety(kind, days) {
+  saveUi({ snooze: { ...(readUi().snooze || {}), [kind]: Date.now() + days * DAY_MS } });
+  renderSafety();
+}
+
+async function protectStorage({ ask = false } = {}) {
+  const sm = navigator.storage;
+  if (!sm?.persisted) { storagePersisted = null; renderSafety(); return; }
+  try {
+    storagePersisted = await sm.persisted();
+    // 크롬·사파리는 조용히 판단하지만 파이어폭스는 권한 창을 띄운다 — 거기선 버튼을 눌렀을 때만 묻는다
+    const quiet = !/Firefox\//.test(navigator.userAgent);
+    if (!storagePersisted && sm.persist && (ask || (quiet && recordedDays()))) storagePersisted = await sm.persist();
+  } catch { storagePersisted = null; }
+  renderSafety();
+}
+
+// 한 번에 알림 하나만. 기록을 잃을 위험이 큰 것부터.
+function safetyNotice() {
+  const ui = readUi();
+  const snoozed = (k) => Number(ui.snooze?.[k]) > Date.now();
+  const days = recordedDays();
+  if (isIOS() && !isStandalone() && !snoozed('ios')) return { kind: 'ios', days };
+  if (isIOS() && isStandalone() && !days && !snoozed('import')) return { kind: 'import' };
+  const last = lastCopyAt();
+  if (days >= 7 && Date.now() - last > BACKUP_DAYS * DAY_MS && !snoozed('backup')) return { kind: 'backup', last };
+  if (storagePersisted === false && installPrompt && !isStandalone() && !snoozed('install')) return { kind: 'install' };
+  return null;
+}
+
+function renderSafety() {
+  if (!persistTried && recordedDays()) { persistTried = true; protectStorage(); }   // 기록이 처음 생기면 한 번 요청
+  const n = safetyNotice();
+  const box = $('#safetyBanner');
+  box.hidden = !n;
+  box.classList.toggle('info', n?.kind === 'import' || n?.kind === 'install');   // 위험 경고만 빨간 테두리
+  if (n?.kind === 'ios') {
+    box.innerHTML = n.days
+      ? `<p><b>📱 홈 화면에 추가해야 기록이 안전해요.</b> 사파리는 7일 동안 안 연 사이트의 기록을 지울 수 있어요.</p>
+         <ol>
+           <li><b>기록 파일 저장</b> — 홈 화면 앱은 사파리와 기록을 따로 써서 빈 화면으로 시작해요</li>
+           <li>공유 버튼 <b>⬆︎</b> → <b>홈 화면에 추가</b></li>
+           <li>홈 화면 앱을 열면 뜨는 <b>파일 가져오기</b>로 저장한 파일 고르기</li>
+         </ol>
+         <div class="safety-btns"><button class="primary" data-safety="save">① 기록 파일 저장</button><button data-safety-snooze="ios:3">나중에</button></div>`
+      : `<p><b>📱 기록을 시작하기 전에 홈 화면에 추가하세요.</b> 아이폰 사파리는 7일 동안 안 연 사이트의 기록을 지울 수 있는데, 홈 화면 앱은 예외예요.
+         아래 공유 버튼 <b>⬆︎</b> → <b>홈 화면에 추가</b> → 홈 화면 아이콘으로 여세요.</p>
+         <div class="safety-btns"><button data-safety-snooze="ios:3">나중에</button></div>`;
+  } else if (n?.kind === 'import') {
+    box.innerHTML = `<p><b>👋 사파리에서 쓰던 기록이 있나요?</b> 홈 화면 앱은 사파리와 기록을 따로 써요. 사파리에서 저장해 둔 파일을 가져오면 이어서 쓸 수 있어요.</p>
+      <div class="safety-btns"><button class="primary" data-safety="import">파일 가져오기</button><button data-safety-snooze="import:30">새로 시작할게요</button></div>`;
+  } else if (n?.kind === 'backup') {
+    box.innerHTML = `<p><b>💾 다른 곳에 사본을 둔 지 ${n.last ? `${Math.floor((Date.now() - n.last) / DAY_MS)}일 됐어요` : '한 번도 없어요'}.</b>
+      기록은 이 기기 안에만 있어서, 폰을 잃어버리거나 브라우저 데이터를 지우면 같이 사라져요.</p>
+      <div class="safety-btns"><button class="primary" data-safety="save">지금 백업</button><button data-safety-snooze="backup:3">나중에</button></div>`;
+  } else if (n?.kind === 'install') {
+    box.innerHTML = `<p><b>📲 앱으로 설치하면 기록이 더 안전하게 보관돼요.</b> 지금은 기기 공간이 모자라면 브라우저가 지울 수 있어요.</p>
+      <div class="safety-btns"><button class="primary" data-safety="install">설치</button><button data-safety-snooze="install:14">나중에</button></div>`;
+  }
+  renderSafetyStatus();
+}
+
+// 백업 카드 안의 현재 상태
+function renderSafetyStatus() {
+  const last = lastCopyAt();
+  const where = !last ? '' : last === Number(sync?.lastFile) ? ' (파일 자동 저장)' : last === Number(sync?.lastGist) ? ' (Gist)' : ' (내보내기)';
+  const stale = Date.now() - last > BACKUP_DAYS * DAY_MS;
+  $('#safetyStatus').innerHTML = `
+    <li class="${storagePersisted ? 'ok' : 'warn'}">${storagePersisted ? '✅ 이 기기: 브라우저가 지우지 않게 보호됨'
+      : storagePersisted === false ? `⚠️ 이 기기: 공간이 모자라면 브라우저가 지울 수 있어요 <button class="link-btn" data-safety="persist">보호 요청</button>`
+      : '❔ 이 브라우저는 보호 요청을 지원하지 않아요'}</li>
+    <li class="${isStandalone() || !isIOS() ? 'ok' : 'warn'}">${isStandalone() ? '📱 홈 화면 앱으로 열었어요'
+      : isIOS() ? '⚠️ 사파리로 열었어요 — 7일 동안 안 열면 지워질 수 있어요 (홈 화면에 추가 권장)' : '🌐 브라우저로 열었어요'}</li>
+    <li class="${stale ? 'warn' : 'ok'}">💾 마지막 사본: ${last ? `${fmtAgo(last)}${where}` : '아직 없음'}</li>`;
+}
+
+// 백업: 휴대폰은 공유 창(파일 앱·드라이브·카톡 등에 저장), 아니면 내려받기
+async function saveBackupNow() {
+  if (typeof canShare === 'function' && canShare()) await shareBackup();
+  else { downloadJson(state, `fitness-log-${todayStr()}.json`); markBackup(); }
 }
 
 function renderExSheet() {
@@ -2252,6 +2368,16 @@ $('#photoView').addEventListener('click', () => { $('#photoView').hidden = true;
 
 $('#exSheetClose').addEventListener('click', () => closeExSheet());
 $('#focusClose').addEventListener('click', () => closeFocus());
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-safety], [data-safety-snooze]');
+  if (!b) return;
+  const act = b.dataset.safety;
+  if (b.dataset.safetySnooze) { const [kind, days] = b.dataset.safetySnooze.split(':'); snoozeSafety(kind, Number(days)); }
+  else if (act === 'save') saveBackupNow();
+  else if (act === 'import') { const f = $('#importFile'); f.value = ''; f.click(); }
+  else if (act === 'persist') protectStorage({ ask: true });
+  else if (act === 'install') $('#installBtn').click();
+});
 $('#focusBtn').addEventListener('click', () => openFocus());
 $('#focusSheet').addEventListener('click', (e) => {
   const b = e.target.closest('button');
@@ -2460,7 +2586,7 @@ function downloadJson(obj, name) {
   setTimeout(() => URL.revokeObjectURL(a.href), 10000);   // 바로 해제하면 브라우저가 받다 말 수 있다
 }
 
-$('#exportBtn').addEventListener('click', () => downloadJson(state, `fitness-log-${todayStr()}.json`));
+$('#exportBtn').addEventListener('click', () => { downloadJson(state, `fitness-log-${todayStr()}.json`); markBackup(); });
 
 // 사진까지 한 파일로. 사진은 기기에만 있어서 이걸로만 다른 기기에 옮길 수 있다.
 $('#exportPhotoBtn').addEventListener('click', async (e) => {
@@ -2472,6 +2598,7 @@ $('#exportPhotoBtn').addEventListener('click', async (e) => {
     const n = Object.keys(photos).length;
     if (!n && !confirm('옮길 사진이 없어요. 그래도 내보낼까요?')) return;
     downloadJson({ ...state, photos }, `fitness-log-사진포함-${todayStr()}.json`);
+    markBackup();
     if (n) alert(`사진 ${n}장을 함께 담았어요.`);
   } catch (err) {
     alert(`사진을 담지 못했어요. ${err.message}`);
@@ -2531,6 +2658,7 @@ window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
   installPrompt = e;
   $('#installBtn').hidden = false;
+  renderSafety();
 });
 $('#installBtn').addEventListener('click', async () => {
   if (!installPrompt) return;
@@ -2539,7 +2667,7 @@ $('#installBtn').addEventListener('click', async () => {
   installPrompt = null;
   $('#installBtn').hidden = true;
 });
-window.addEventListener('appinstalled', () => { $('#installBtn').hidden = true; });
+window.addEventListener('appinstalled', () => { $('#installBtn').hidden = true; installPrompt = null; renderSafety(); });
 
 // 미뤄둔 저장은 탭을 벗어나거나 닫기 전에 반드시 반영한다
 document.addEventListener('visibilitychange', () => { if (document.hidden) flushSave(); });
@@ -2551,4 +2679,5 @@ seedStamps();
 $('#mealType').value = defaultMealType();
 render();
 restoreUi();
+protectStorage();
 initSync();
