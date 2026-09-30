@@ -13,15 +13,15 @@ export default async function (t) {
     await page.fill(`[data-ps="${i}:reps"]`, String(r));
   };
 
-  // ── 폼에서 세트마다 다르게 ──
-  t.ok(await page.locator('#perSetBox').isHidden(), '처음엔 "모든 세트 같게"');
+  // ── 기본은 세트별 표 ──
+  t.ok(await page.locator('#perSetBox').isVisible(), '처음부터 세트별 표가 보임 (기본)');
+  t.eq(await rows(), [['', '10'], ['', '10'], ['', '10']], '빈 표 3세트 (횟수 10)');
+  t.ok(await page.locator('#exWeight').isHidden(), '한 칸짜리 중량 칸은 숨김');
+  t.eq(await text(page, '#perSetToggle'), '모든 세트 같게', '"모든 세트 같게"는 표 아래 보조 링크');
+  const order = await page.evaluate(() => $('#perSetBox').compareDocumentPosition($('#perSetToggle')) & Node.DOCUMENT_POSITION_FOLLOWING);
+  t.ok(order, '링크가 표 아래에 있음');
   await page.fill('#exName', '벤치프레스');
-  await page.fill('#exSets', '3');
-  await page.fill('#exWeight', '60');
-  await page.fill('#exReps', '12');
-  await page.click('#perSetToggle');
-  t.eq(await rows(), [['60', '12'], ['60', '12'], ['60', '12']], '켜면 세트 수만큼 칸, 위에 적은 값으로 채움');
-  t.ok(await page.locator('#exWeight').isHidden(), '표를 쓰는 동안 공통 중량 칸은 숨김');
+  await fillRow(0, 60, 12);
   await fillRow(1, 70, 10);
   await fillRow(2, 80, 8);
   await page.fill('#exSets', '4');
@@ -32,19 +32,31 @@ export default async function (t) {
   t.eq((await rows()).length, 3, '줄이면 뒤에서부터 뺌');
   await page.click('#workoutForm button[type=submit]');
   t.eq(await sets(), [[60, 12], [70, 10], [80, 8]], '세트마다 다른 무게·횟수로 저장');
-  t.ok(await page.locator('#perSetBox').isHidden(), '추가하고 나면 표는 접힘');
+  t.ok(await page.locator('#perSetBox').isVisible(), '추가하고 나도 다음 운동은 다시 세트별 표');
+  t.eq(await rows(), [['', '10'], ['', '10'], ['', '10']], '표는 빈 3세트로 돌아감');
   const cardRows = await page.locator('#workoutList .card').last().locator('[data-edit$=":weight"]').evaluateAll((els) => els.map((e) => e.value));
   t.eq(cardRows, ['60', '70', '80'], '카드에도 세트마다 다른 무게');
 
-  // ── 끄면 다시 모든 세트 같게 ──
+  // ── 보조: 모든 세트 같게 ──
   await page.fill('#exName', '스쿼트');
+  await fillRow(0, 100, 5);
   await page.click('#perSetToggle');
-  await page.click('#perSetToggle');
-  await page.fill('#exWeight', '100');
-  await page.fill('#exReps', '5');
+  t.ok(await page.locator('#perSetBox').isHidden() && await page.locator('#exWeight').isVisible(), '누르면 한 칸짜리 중량·횟수로');
+  t.eq([await page.inputValue('#exWeight'), await page.inputValue('#exReps')], ['100', '5'], '표의 1세트 값을 옮겨 옴');
+  t.eq(await text(page, '#perSetToggle'), '세트마다 다르게 적기', '다시 표로 돌아가는 링크');
   await page.fill('#exSets', '2');
   await page.click('#workoutForm button[type=submit]');
-  t.eq(await sets(), [[100, 5], [100, 5]], '다시 끄면 모든 세트 같게');
+  t.eq(await sets(), [[100, 5], [100, 5]], '모든 세트 같게 저장');
+  t.ok(await page.locator('#perSetBox').isVisible(), '추가하고 나면 다시 기본(세트별 표)');
+  await page.fill('#exName', '레그프레스');
+  await page.click('#perSetToggle');
+  await page.fill('#exWeight', '140');
+  await page.fill('#exReps', '12');
+  await page.click('#perSetToggle');
+  t.eq(await rows(), [['140', '12'], ['140', '12'], ['140', '12']], '한 칸에 적던 값은 표로 돌아와도 따라옴');
+  await page.reload();                 // 폼을 새로 (직접 만진 표는 운동을 추가하기 전까지 그대로 두므로)
+  await page.waitForSelector('#mealList', { state: 'attached' });
+  await tab(page, 'workouts');
 
   // ── 다음번엔 지난번 모양대로 자동 채움 ──
   await page.evaluate(() => {
@@ -58,7 +70,7 @@ export default async function (t) {
   await wait(page, 80);
   t.eq(await rows(), [['60', '12'], ['70', '10'], ['80', '8']], '지난번이 피라미드면 그 모양 그대로 표를 채움');
   t.eq(await page.inputValue('#exSets'), '3', '세트 수도 지난번대로');
-  t.ok((await text(page, '#exHint')).includes('세트마다 다르게 채웠어요'), '그렇게 채웠다고 알려줌');
+  t.ok((await text(page, '#exHint')).includes('지난번 세트대로 채웠어요'), '그렇게 채웠다고 알려줌');
   t.ok(!(await text(page, '#exHint')).includes('💪'), '횟수가 줄어든 피라미드는 "다 채웠다"로 보지 않음 (무게를 멋대로 안 올림)');
   await fillRow(0, 65, 12);
   await page.fill('#exName', '벤치프레스 ');
@@ -118,7 +130,6 @@ export default async function (t) {
     await page.setViewportSize({ width: w, height: 800 });
     await page.fill('#exName', '');
     await page.fill('#exName', '데드리프트');
-    await page.click('#perSetToggle');
     const r = await page.evaluate(() => ({
       over: document.documentElement.scrollWidth - innerWidth,
       small: [...document.querySelectorAll('#perSetBox input, #perSetToggle')].filter((x) => x.getBoundingClientRect().height < 40).length,
@@ -127,7 +138,6 @@ export default async function (t) {
     t.ok(r.over <= 0, `${w}px 가로 스크롤 없음`);
     t.eq(r.small, 0, `${w}px 세트별 칸·버튼 40px 이상`);
     t.ok(r.font >= 16, `${w}px 입력칸 16px 이상 (아이폰 확대 방지)`);
-    await page.click('#perSetToggle');
   }
   t.noErrors(page);
 }

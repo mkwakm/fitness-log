@@ -595,9 +595,14 @@ body.sheet-open { overflow: hidden; }
 .safety .link-btn { font-size: 0.85rem; }
 
 /* 운동 폼: 세트마다 다르게 */
-.perset-toggle { display: inline-flex; align-items: center; min-height: 40px; margin: 2px 0 0; }
-#workoutForm.per-set-on .row > label:nth-child(2),
-#workoutForm.per-set-on .row > label:nth-child(3) { display: none; }   /* 표를 쓰는 동안 공통 중량·횟수는 숨긴다 */
+/* "모든 세트 같게"는 보조라 표 아래 오른쪽에 작게 */
+.perset-toggle {
+  display: flex; align-items: center; justify-content: flex-end; min-height: 40px;
+  margin: -4px 0 4px auto; font-size: 0.82rem; color: var(--muted);
+}
+/* 기본은 세트별 표라 한 칸짜리 중량·횟수는 숨기고, "모든 세트 같게"일 때만 보인다 */
+#workoutForm:not(.uniform) .row > label:nth-child(2),
+#workoutForm:not(.uniform) .row > label:nth-child(3) { display: none; }
 .perset { display: grid; gap: 6px; margin: 4px 0 10px; }
 .perset[hidden] { display: none; }
 .perset-row { display: grid; grid-template-columns: 52px 1fr 1fr; gap: 8px; align-items: center; }

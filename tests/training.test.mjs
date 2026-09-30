@@ -45,16 +45,19 @@ export default async function (t) {
   await page.fill('#weightStep', '2.5');
   await page.dispatchEvent('#weightStep', 'input');
   await tip([[60, 10], [60, 10], [60, 10]]);
-  await page.fill('#exWeight', '');
+  const rowW = () => page.locator('[data-ps$=":weight"]').evaluateAll((els) => els.map((e) => e.value));
   await page.fill('#exName', '벤치프레스');
   await wait(page, 80);
-  t.eq(await page.inputValue('#exWeight'), '62.5', '폼 중량칸이 비어 있으면 제안값을 미리 채움');
+  t.eq(await rowW(), ['62.5', '62.5', '62.5'], '다 채웠으면 폼의 세트별 표에 +2.5kg을 미리 채움');
   t.ok((await text(page, '#exHint')).includes('지난번'), '폼에 지난 기록이 뜸');
-  await page.fill('#exName', '');
-  await page.fill('#exWeight', '50');
-  await page.fill('#exName', '벤치프레스');
+  await page.fill('[data-ps="0:weight"]', '50');
+  await page.fill('#exName', '벤치프레스 ');
   await wait(page, 80);
-  t.eq(await page.inputValue('#exWeight'), '50', '직접 적은 중량은 안 건드림');
+  t.eq((await rowW())[0], '50', '직접 적은 중량은 안 건드림');
+  await page.click('#perSetToggle');
+  t.eq(await page.inputValue('#exWeight'), '50', '"모든 세트 같게"로 바꾸면 표의 1세트 값이 한 칸으로');
+  await page.click('#perSetToggle');
+  await page.fill('#exName', '');
 
   // ── 세트 사이 휴식 ──
   const gaps = await page.evaluate(() => {

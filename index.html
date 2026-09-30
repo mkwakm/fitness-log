@@ -123,9 +123,9 @@
           <label>횟수<input id="exReps" type="number" inputmode="numeric" min="0" value="10" required></label>
           <label>시간(분)<input id="exMinutes" type="number" inputmode="numeric" min="0" step="1" placeholder="선택"></label>
         </div>
-        <!-- 세트마다 무게·횟수를 다르게 (피라미드 등). 켜면 위의 중량·횟수 대신 이 표를 쓴다 -->
-        <button type="button" class="link-btn perset-toggle" id="perSetToggle">세트마다 다르게 ▾</button>
-        <div id="perSetBox" class="perset" hidden></div>
+        <!-- 세트별 무게·횟수 표가 기본. "모든 세트 같게"를 누르면 위의 중량·횟수 한 칸씩으로 바뀐다 -->
+        <div id="perSetBox" class="perset"></div>
+        <button type="button" class="link-btn perset-toggle" id="perSetToggle">모든 세트 같게</button>
         <p class="hint" id="exHint"></p>
         <button type="submit" class="primary">운동 추가</button>
       </form>

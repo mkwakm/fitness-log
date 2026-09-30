@@ -1943,15 +1943,19 @@ function monthDaysHtml(list) {
   }).join('');
 }
 
-// 폼의 세트별 표. null이면 "모든 세트 같게"(위의 중량·횟수 칸을 쓴다)
-let perSet = null;
+// 폼은 세트별 표가 기본이다(세트마다 무게를 바꾸는 사람이 많다). "모든 세트 같게"(formUniform)는
+// 표 아래 작은 링크로 켜는 보조 방식이고, 켜면 예전처럼 중량·횟수 한 칸씩을 쓴다.
+let perSet = defaultPerSet();
+let formUniform = false;
 let perSetTouched = false;     // 표를 직접 만졌으면 운동 이름을 바꿔도 덮어쓰지 않는다
+function defaultPerSet(n = 3, weight = null, reps = 10) {
+  return Array.from({ length: Math.max(1, Math.min(20, n)) }, () => ({ weight, reps }));
+}
 function renderPerSet() {
-  const on = !!perSet;
-  $('#workoutForm').classList.toggle('per-set-on', on);
-  $('#perSetToggle').textContent = on ? '모든 세트 같게 ▴' : '세트마다 다르게 ▾';
-  $('#perSetBox').hidden = !on;
-  if (!on) return;
+  $('#workoutForm').classList.toggle('uniform', formUniform);
+  $('#perSetToggle').textContent = formUniform ? '세트마다 다르게 적기' : '모든 세트 같게';
+  $('#perSetBox').hidden = formUniform;
+  if (formUniform) return;
   if ($('#perSetBox').contains(document.activeElement)) return;   // 치는 중엔 다시 그리지 않는다
   $('#perSetBox').innerHTML = perSet.map((s, i) => `
     <div class="perset-row">
@@ -1962,17 +1966,15 @@ function renderPerSet() {
 }
 // 세트 수가 바뀌면 표도 늘리고 줄인다 (늘릴 땐 마지막 세트를 따라)
 function resizePerSet() {
-  if (!perSet) return;
+  if (formUniform) return;
   const n = Math.max(1, Math.min(20, Number($('#exSets').value) || 1));
   while (perSet.length < n) perSet.push({ ...perSet.at(-1) });
   perSet.length = n;
   renderPerSet();
 }
 function perSetFromCommon() {
-  const n = Math.max(1, Math.min(20, Number($('#exSets').value) || 1));
   const weight = $('#exWeight').value ? nonNeg($('#exWeight').value) : null;
-  const reps = nonNeg($('#exReps').value);
-  return Array.from({ length: n }, () => ({ weight, reps }));
+  return defaultPerSet(Number($('#exSets').value) || 1, weight, nonNeg($('#exReps').value));
 }
 
 function updateExHint() {
@@ -1984,20 +1986,20 @@ function updateExHint() {
       (last.workout.note ? `<br>📝 ${esc(last.workout.note)}` : '') +
       (tip ? `<br><span class="tip">${overloadText(tip)}</span>` : '')
     : (name ? '처음 하는 운동이에요.' : '');
-  // 지난번에 세트마다 무게·횟수가 달랐으면 그 모양대로 표를 채운다 (직접 만진 표는 그대로)
-  if (!perSetTouched) {
-    if (last && setsVary(last.workout.sets)) {
-      perSet = setsLikeLast(name, 0, null, { progress: true }).map(({ weight, reps }) => ({ weight, reps }));
-      $('#exSets').value = perSet.length;
-      $('#exHint').insertAdjacentHTML('beforeend', '<br>📋 지난번처럼 세트마다 다르게 채웠어요.');
-    } else {
-      perSet = null;
-    }
+  // 지난번 세트 모양대로 표를 채운다 (다 채웠으면 한 단위씩 올려서). 직접 만진 표는 그대로.
+  if (!perSetTouched && !formUniform) {
+    perSet = last
+      ? setsLikeLast(name, 0, null, { progress: true }).map(({ weight, reps }) => ({ weight, reps }))
+      : defaultPerSet(Number($('#exSets').value) || 3);
+    $('#exSets').value = perSet.length;
+    if (last) $('#exHint').insertAdjacentHTML('beforeend', '<br>📋 지난번 세트대로 채웠어요.');
     renderPerSet();
   }
-  // 올릴 중량을 폼에 미리 채워 준다 (직접 적은 값은 건드리지 않는다)
-  if (tip?.kind === 'weight' && !$('#exWeight').value) $('#exWeight').value = tip.to;
-  if (tip?.kind === 'reps' && last) $('#exReps').value = tip.to;
+  // "모든 세트 같게"일 땐 올릴 중량을 한 칸에 미리 채워 준다 (직접 적은 값은 건드리지 않는다)
+  if (formUniform) {
+    if (tip?.kind === 'weight' && !$('#exWeight').value) $('#exWeight').value = tip.to;
+    if (tip?.kind === 'reps' && last) $('#exReps').value = tip.to;
+  }
 }
 
 function renderRoutineBtn() {
@@ -2390,10 +2392,15 @@ $('#bodyWeight').addEventListener('input', (e) => {
 
 $('#exName').addEventListener('input', updateExHint);
 $('#perSetToggle').addEventListener('click', () => {
-  perSet = perSet ? null : perSetFromCommon();
+  if (formUniform) {
+    perSet = perSetFromCommon();                      // 한 칸에 적던 값으로 표를 채운다
+  } else {
+    $('#exWeight').value = perSet[0]?.weight ?? '';   // 표의 1세트 값을 한 칸으로
+    $('#exReps').value = perSet[0]?.reps ?? 10;
+  }
+  formUniform = !formUniform;
   perSetTouched = true;
   renderPerSet();
-  if (perSet) $('#perSetBox input').focus();
 });
 $('#exSets').addEventListener('input', resizePerSet);
 $('#perSetBox').addEventListener('input', (e) => {
@@ -2478,14 +2485,17 @@ $('#workoutForm').addEventListener('submit', (e) => {
     id: uid(),
     name: $('#exName').value.trim(),
     minutes,
-    sets: perSet
-      ? perSet.map((x) => ({ weight: Number(x.weight) > 0 ? nonNeg(x.weight) : null, reps: nonNeg(x.reps), done: false }))
-      : Array.from({ length: n }, () => ({ reps, weight, done: false })),
+    sets: formUniform
+      ? Array.from({ length: n }, () => ({ reps, weight, done: false }))
+      : perSet.map((x) => ({ weight: Number(x.weight) > 0 ? nonNeg(x.weight) : null, reps: nonNeg(x.reps), done: false })),
   });
   save();
   $('#exName').value = $('#exMinutes').value = '';
-  perSet = null;
+  // 다음 운동은 다시 기본(세트별 표)으로
+  formUniform = false;
   perSetTouched = false;
+  perSet = defaultPerSet();
+  $('#exSets').value = 3;
   render();
 });
 

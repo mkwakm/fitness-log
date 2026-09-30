@@ -1,5 +1,5 @@
 // 기록하는 기본 흐름: 식단 칼로리, 세트 기록표, 완료 세트 집계, 소모 칼로리, 체중·물·세션, 되돌리기, 새로고침
-import { tab, text, wait } from './lib.mjs';
+import { tab, text, wait, addWorkout } from './lib.mjs';
 
 export default async function (t) {
   const page = await t.open();
@@ -33,12 +33,7 @@ export default async function (t) {
   await tab(page, 'workouts');
   await page.fill('#bodyWeight', '75');
   await page.dispatchEvent('#bodyWeight', 'input');
-  await page.fill('#exName', '벤치프레스');
-  await page.fill('#exSets', '3');
-  await page.fill('#exWeight', '60');
-  await page.fill('#exReps', '10');
-  await page.click('#workoutForm button[type=submit]');
-  await wait(page, 150);
+  await addWorkout(page, '벤치프레스', { sets: 3, weight: 60, reps: 10 });
   t.eq(await page.locator('#workoutList .set-row:not(.head)').count(), 3, '세트 3줄');
 
   const row2 = page.locator('#workoutList .set-row:not(.head)').nth(1);

@@ -81,6 +81,19 @@ export const tab = async (page, name) => { await page.click(`[data-tab="${name}"
 export const text = async (page, sel) => ((await page.textContent(sel)) ?? '').replace(/\s+/g, ' ').trim();
 export const wait = (page, ms) => page.waitForTimeout(ms);
 
+// 운동 폼으로 운동 하나 추가 (기본인 세트별 표를 쓴다). weight가 null이면 맨몸.
+export async function addWorkout(page, name, { sets = 3, weight = null, reps = 10 } = {}) {
+  await page.fill('#exName', name);
+  await page.fill('#exSets', String(sets));
+  await page.dispatchEvent('#exSets', 'input');
+  for (let i = 0; i < sets; i++) {
+    await page.fill(`[data-ps="${i}:weight"]`, weight == null ? '' : String(weight));
+    await page.fill(`[data-ps="${i}:reps"]`, String(reps));
+  }
+  await page.click('#workoutForm button[type=submit]');
+  await page.waitForTimeout(100);
+}
+
 // 서비스워커는 file://에서 안 돈다. 저장소 폴더를 그대로 내주는 작은 서버.
 // overrides로 특정 파일 내용을 바꿔 "새 버전 배포"를 흉내 낼 수 있다(저장소 파일은 건드리지 않는다).
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json',
