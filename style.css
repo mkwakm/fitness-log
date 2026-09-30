@@ -595,11 +595,13 @@ body.sheet-open { overflow: hidden; }
 .safety .link-btn { font-size: 0.85rem; }
 
 /* 운동 폼: 세트마다 다르게 */
-/* "모든 세트 같게"는 보조라 표 아래 오른쪽에 작게 */
+/* "모든 세트 같게"는 보조라 표 아래 오른쪽에 작은 알약 버튼으로 (누르는 자리는 40px 유지) */
+.perset-toggle-row { display: flex; justify-content: flex-end; margin: -2px 0 8px; }
 .perset-toggle {
-  display: flex; align-items: center; justify-content: flex-end; min-height: 40px;
-  margin: -4px 0 4px auto; font-size: 0.82rem; color: var(--muted);
+  min-height: 40px; padding: 0 14px; border-radius: 999px;
+  font-size: 0.8rem; color: var(--muted); background: transparent;
 }
+.perset-toggle:hover { color: var(--accent); border-color: var(--accent); }
 /* 기본은 세트별 표라 한 칸짜리 중량·횟수는 숨기고, "모든 세트 같게"일 때만 보인다 */
 #workoutForm:not(.uniform) .row > label:nth-child(2),
 #workoutForm:not(.uniform) .row > label:nth-child(3) { display: none; }

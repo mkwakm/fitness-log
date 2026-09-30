@@ -17,9 +17,9 @@ export default async function (t) {
   t.ok(await page.locator('#perSetBox').isVisible(), '처음부터 세트별 표가 보임 (기본)');
   t.eq(await rows(), [['', '10'], ['', '10'], ['', '10']], '빈 표 3세트 (횟수 10)');
   t.ok(await page.locator('#exWeight').isHidden(), '한 칸짜리 중량 칸은 숨김');
-  t.eq(await text(page, '#perSetToggle'), '모든 세트 같게', '"모든 세트 같게"는 표 아래 보조 링크');
+  t.eq(await text(page, '#perSetToggle'), '모든 세트 같게', '"모든 세트 같게"는 표 아래 작은 보조 버튼');
   const order = await page.evaluate(() => $('#perSetBox').compareDocumentPosition($('#perSetToggle')) & Node.DOCUMENT_POSITION_FOLLOWING);
-  t.ok(order, '링크가 표 아래에 있음');
+  t.ok(order, '버튼이 표 아래에 있음');
   await page.fill('#exName', '벤치프레스');
   await fillRow(0, 60, 12);
   await fillRow(1, 70, 10);
@@ -43,7 +43,7 @@ export default async function (t) {
   await page.click('#perSetToggle');
   t.ok(await page.locator('#perSetBox').isHidden() && await page.locator('#exWeight').isVisible(), '누르면 한 칸짜리 중량·횟수로');
   t.eq([await page.inputValue('#exWeight'), await page.inputValue('#exReps')], ['100', '5'], '표의 1세트 값을 옮겨 옴');
-  t.eq(await text(page, '#perSetToggle'), '세트마다 다르게 적기', '다시 표로 돌아가는 링크');
+  t.eq(await text(page, '#perSetToggle'), '세트마다 다르게 적기', '다시 표로 돌아가는 버튼');
   await page.fill('#exSets', '2');
   await page.click('#workoutForm button[type=submit]');
   t.eq(await sets(), [[100, 5], [100, 5]], '모든 세트 같게 저장');
