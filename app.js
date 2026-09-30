@@ -228,9 +228,7 @@ function foodName(name) {
 function allFoods() {
   return { ...FOOD_DB, ...(state.profile.foods || {}) };
 }
-function findFood(name) {
-  const n = foodName(name);
-  if (!n) return null;
+function findFoodIn(n) {
   const table = allFoods();
   if (Object.hasOwn(table, n)) return { key: n, food: table[n] };
   let best = null;
@@ -239,29 +237,59 @@ function findFood(name) {
   }
   return best;
 }
+// 표기만 다른 이름 (식약처 표는 오른쪽 표기를 쓴다)
+const SPELLING = [['계란', '달걀'], ['쭈꾸미', '주꾸미'], ['까스', '가스'], ['후라이', '프라이'], ['쏘세지', '소시지'],
+  ['만두국', '만둣국'], ['뼈해장국', '뼈다귀해장국'], ['자장', '짜장'], ['쨈', '잼']];
+function findFood(name) {
+  const n = foodName(name);
+  if (!n) return null;
+  const hit = findFoodIn(n);
+  if (hit && !hit.food.generic) return hit;
+  // 못 찾았거나 "○○찌개 평균"으로만 잡혔으면 표기를 바꿔 한 번 더 (계란말이 → 달걀말이, 돈까스 → 돈가스)
+  const alt = SPELLING.reduce((s, [a, b]) => s.replaceAll(a, b), n);
+  if (alt !== n) {
+    const again = findFoodIn(alt);
+    if (again && !again.food.generic) return again;
+  }
+  return hit;
+}
 
 // 표에 없는 음식을 지금 적은 양·칼로리 기준으로 등록한다.
 function rememberFood(name, amount, kcal, protein) {
   const key = foodName(name);
   if (!key || !(kcal > 0)) return;
-  const grams = amountToGrams(amount, null) ?? DEFAULT_UNITS['인분'];
+  // 표에 있던 음식을 고쳐 기억하는 거면 그 음식의 단위(1그릇=500g 등)를 그대로 써야 다음에도 같은 양이 된다
+  const base = findFood(name)?.food;
+  const grams = amountToGrams(amount, base) ?? base?.units?.['인분'] ?? DEFAULT_UNITS['인분'];
   if (!state.profile.foods) state.profile.foods = {};
   state.profile.foods[key] = {
     kcal100: Math.round(kcal / grams * 1000) / 10,
     protein: protein > 0 ? Math.round(protein / grams * 1000) / 10 : 0,
-    units: {},
+    units: { ...(base?.units || {}) },
+    ...(base?.kind ? { kind: base.kind } : {}),
   };
   save();
 }
 
 // "200g", "1공기", "1.5개", "300ml" → 그램 수. 모르는 단위면 null.
-function amountToGrams(amount, food) {
+// "1.5인분", "1/2그릇", "한 공기", "반공기", "두개", "한그릇반" → { n, unit }
+const KO_NUM = { 하나: 1, 한: 1, 둘: 2, 두: 2, 셋: 3, 세: 3, 석: 3, 넷: 4, 네: 4, 다섯: 5, 여섯: 6, 반: 0.5 };
+function parseAmount(amount) {
   const s = String(amount ?? '').trim().replace(/\s+/g, '');
-  const m = s.match(/^([\d.]+)(.*)$/);
-  if (!m) return null;
-  const n = Number(m[1]);
-  if (!(n > 0)) return null;
-  const unit = m[2] || 'g';
+  let m, n, unit, spoken = false;
+  if ((m = s.match(/^(\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?)(.*)$/))) { n = Number(m[1]) / Number(m[2]); unit = m[3]; spoken = true; }
+  else if ((m = s.match(/^(\d*\.?\d+)(.*)$/))) { n = Number(m[1]); unit = m[2]; }
+  else if ((m = s.match(/^(하나|다섯|여섯|한|둘|두|셋|세|석|넷|네|반)(.*)$/))) { n = KO_NUM[m[1]]; unit = m[2]; spoken = true; }
+  else return null;
+  if (unit.length > 1 && unit.endsWith('반')) { n += 0.5; unit = unit.slice(0, -1); }   // 한그릇반 → 1.5그릇
+  // 단위 없이 숫자만이면 g, "반"·"1/2"처럼 말로 한 양이면 1인분 기준
+  if (!unit) unit = spoken ? '인분' : 'g';
+  return n > 0 ? { n, unit } : null;
+}
+function amountToGrams(amount, food) {
+  const parsed = parseAmount(amount);
+  if (!parsed) return null;
+  const { n, unit } = parsed;
   if (unit === 'g' || unit === 'ml' || unit === 'cc') return n;
   if (unit === 'kg' || unit === 'l') return n * 1000;
   // Object.hasOwn 없이 찾으면 "1toString" 같은 입력이 프로토타입 함수를 집어 NaN이 된다
@@ -279,6 +307,8 @@ function estimateKcal(name, amount) {
     protein: Math.round((hit.food.protein || 0) * g / 100 * 10) / 10,
     grams: g,
     key: hit.key,
+    generic: !!hit.food.generic,
+    kind: hit.food.kind,
   });
   const grams = amountToGrams(amount, hit.food);
   if (grams != null) return { ...per(grams), assumed: false };
@@ -300,8 +330,15 @@ function updateMealHint() {
         : '표에 없는 음식이에요. 칼로리를 직접 적어 주세요.';
     return;
   }
-  const custom = state.profile.foods?.[est.key] ? ' (내가 등록한 음식)' : '';
-  hint.textContent = `🧮 ${est.key} ${est.grams}g 기준 약 ${est.kcal} kcal · 단백질 ${est.protein}g${custom}${est.assumed ? ' · 양을 안 적어 1인분으로 추정' : ''}`;
+  const custom = Object.hasOwn(state.profile.foods || {}, est.key) ? ' (내가 등록한 음식)' : '';
+  // 표에 딱 맞는 이름이 없어 "○○찌개 평균"으로 잡았으면 그렇다고 말한다 (틀릴 수 있다는 걸 알아야 고친다)
+  const what = est.generic ? `'${esc(est.key)}' 종류 평균으로 추정` : esc(est.key);
+  const typed = Number($('#foodKcal').value);
+  const fixed = kcalTouched && typed > 0 && typed !== est.kcal;
+  hint.innerHTML = `🧮 ${what} ${est.grams}g 기준 약 ${est.kcal} kcal · 단백질 ${est.protein}g${custom}` +
+    (est.assumed ? ' · 양을 안 적어 1인분으로 추정' : '') +
+    (est.kind === 's' ? ' · 밥은 따로 적어 주세요' : '') +
+    (fixed ? ` <button type="button" class="link-btn" id="rememberFood">＋ 고친 칼로리로 기억하기</button>` : '');
   if (!kcalTouched) { $('#foodKcal').value = est.kcal; $('#foodProtein').value = est.protein || ''; }
 }
 function resetMealForm() {
@@ -455,12 +492,36 @@ function overloadTip(name, before = currentDate) {
   const weight = Number(sets[0].weight) || 0;
   if (weight > 0) {
     const step = Number(state.profile.weightStep) || 2.5;
-    return { kind: 'weight', from: weight, to: Math.round((weight + step) * 100) / 100, reps: target, date: last.date };
+    // 세트마다 무게가 달랐으면(피라미드 등) 첫 세트 무게만 말하면 틀린 말이 된다
+    const varied = new Set(sets.map((x) => Number(x.weight) || 0)).size > 1;
+    return { kind: 'weight', from: weight, to: Math.round((weight + step) * 100) / 100, step, varied, reps: target, date: last.date };
   }
   // 맨몸 운동은 무게 대신 횟수를 올린다
   return { kind: 'reps', from: target, to: target + 2, date: last.date };
 }
+// 지난번 세트 모양 그대로 새 세트를 만든다. 세트마다 무게·횟수가 달랐으면 그대로 따라간다
+// (피라미드로 하는 사람에게 "모든 세트 같은 무게"를 채워 주면 매번 다 고쳐야 한다).
+// progress면 지난번을 다 채웠을 때 세트마다 한 단위씩 올려 둔다(폼·계획에서 추가할 때).
+// 루틴 불러오기는 "최근 기록 그대로"라고 말하므로 올리지 않는다. reps를 주면(루틴) 횟수는 그걸 쓴다.
+function setsLikeLast(name, count = 0, reps = null, { progress = false } = {}) {
+  const last = lastRecord(name, shiftDate(currentDate, 1));   // 오늘 것까지 포함해서 가장 최근
+  const src = last ? last.workout.sets : [];
+  const tip = progress ? overloadTip(name) : null;
+  const bump = tip?.kind === 'weight' ? tip.step : 0;
+  const n = Math.max(1, Number(count) || src.length || 1);
+  return Array.from({ length: n }, (_, i) => {
+    const s = src[Math.min(i, src.length - 1)] || {};
+    const w = Number(s.weight) > 0 ? Math.round((Number(s.weight) + bump) * 100) / 100 : null;
+    const pick = Array.isArray(reps) ? reps[Math.min(i, reps.length - 1)] : reps;
+    const r = tip?.kind === 'reps' ? tip.to : (Number(pick) || Number(s.reps) || 10);
+    return { weight: w, reps: r, done: false };
+  });
+}
+function setsVary(sets) {
+  return new Set(sets.map((x) => `${Number(x.weight) || 0}×${Number(x.reps) || 0}`)).size > 1;
+}
 function overloadText(tip) {
+  if (tip.kind === 'weight' && tip.varied) return `💪 지난번 세트를 다 채웠어요. 오늘은 세트마다 +${tip.step}kg 어때요?`;
   return tip.kind === 'weight'
     ? `💪 지난번 ${tip.from}kg × ${tip.reps}회를 다 채웠어요. 오늘은 ${tip.to}kg 어때요?`
     : `💪 지난번 ${tip.from}회를 다 채웠어요. 오늘은 ${tip.to}회 어때요?`;
@@ -1882,6 +1943,38 @@ function monthDaysHtml(list) {
   }).join('');
 }
 
+// 폼의 세트별 표. null이면 "모든 세트 같게"(위의 중량·횟수 칸을 쓴다)
+let perSet = null;
+let perSetTouched = false;     // 표를 직접 만졌으면 운동 이름을 바꿔도 덮어쓰지 않는다
+function renderPerSet() {
+  const on = !!perSet;
+  $('#workoutForm').classList.toggle('per-set-on', on);
+  $('#perSetToggle').textContent = on ? '모든 세트 같게 ▴' : '세트마다 다르게 ▾';
+  $('#perSetBox').hidden = !on;
+  if (!on) return;
+  if ($('#perSetBox').contains(document.activeElement)) return;   // 치는 중엔 다시 그리지 않는다
+  $('#perSetBox').innerHTML = perSet.map((s, i) => `
+    <div class="perset-row">
+      <span class="perset-no">${i + 1}세트</span>
+      <label><input type="number" inputmode="decimal" min="0" step="0.5" placeholder="맨몸" value="${s.weight ?? ''}" data-ps="${i}:weight" aria-label="${i + 1}세트 중량"><span>kg</span></label>
+      <label><input type="number" inputmode="numeric" min="0" value="${s.reps ?? ''}" data-ps="${i}:reps" aria-label="${i + 1}세트 횟수"><span>회</span></label>
+    </div>`).join('');
+}
+// 세트 수가 바뀌면 표도 늘리고 줄인다 (늘릴 땐 마지막 세트를 따라)
+function resizePerSet() {
+  if (!perSet) return;
+  const n = Math.max(1, Math.min(20, Number($('#exSets').value) || 1));
+  while (perSet.length < n) perSet.push({ ...perSet.at(-1) });
+  perSet.length = n;
+  renderPerSet();
+}
+function perSetFromCommon() {
+  const n = Math.max(1, Math.min(20, Number($('#exSets').value) || 1));
+  const weight = $('#exWeight').value ? nonNeg($('#exWeight').value) : null;
+  const reps = nonNeg($('#exReps').value);
+  return Array.from({ length: n }, () => ({ weight, reps }));
+}
+
 function updateExHint() {
   const name = $('#exName').value.trim();
   const last = name ? lastRecord(name) : null;
@@ -1891,6 +1984,17 @@ function updateExHint() {
       (last.workout.note ? `<br>📝 ${esc(last.workout.note)}` : '') +
       (tip ? `<br><span class="tip">${overloadText(tip)}</span>` : '')
     : (name ? '처음 하는 운동이에요.' : '');
+  // 지난번에 세트마다 무게·횟수가 달랐으면 그 모양대로 표를 채운다 (직접 만진 표는 그대로)
+  if (!perSetTouched) {
+    if (last && setsVary(last.workout.sets)) {
+      perSet = setsLikeLast(name, 0, null, { progress: true }).map(({ weight, reps }) => ({ weight, reps }));
+      $('#exSets').value = perSet.length;
+      $('#exHint').insertAdjacentHTML('beforeend', '<br>📋 지난번처럼 세트마다 다르게 채웠어요.');
+    } else {
+      perSet = null;
+    }
+    renderPerSet();
+  }
   // 올릴 중량을 폼에 미리 채워 준다 (직접 적은 값은 건드리지 않는다)
   if (tip?.kind === 'weight' && !$('#exWeight').value) $('#exWeight').value = tip.to;
   if (tip?.kind === 'reps' && last) $('#exReps').value = tip.to;
@@ -1913,7 +2017,8 @@ function routineFrom(workouts) {
   return workouts.map((w) => ({
     name: w.name,
     sets: w.sets.length,
-    reps: Number(w.sets[0]?.reps) || 10,
+    // 세트마다 횟수가 다르면(12·10·8) 그 모양을, 같으면 숫자 하나 — 예전 루틴과도 맞는다
+    reps: new Set(w.sets.map((x) => Number(x.reps) || 0)).size > 1 ? w.sets.map((x) => Number(x.reps) || 0) : (Number(w.sets[0]?.reps) || 10),
     minutes: w.minutes ?? null,
   }));
 }
@@ -1946,13 +2051,11 @@ function loadRoutineByName(key) {
   if (!items || !confirm(`'${key}' 루틴 ${items.length}종을 불러올까요?\n중량은 그 운동의 최근 기록으로 채워요.`)) return;
   day().plan = key;                                    // 불러온 루틴이 곧 오늘의 계획
   items.forEach((it) => {
-    const last = lastRecord(it.name, shiftDate(currentDate, 1));   // 오늘 것까지 포함해서 최근
-    const weight = last ? (Number(last.workout.sets.at(-1)?.weight) || null) : null;
     day().workouts.push({
       id: uid(),
       name: it.name,
       minutes: it.minutes,
-      sets: Array.from({ length: Math.max(1, it.sets) }, () => ({ reps: it.reps, weight, done: false })),
+      sets: setsLikeLast(it.name, it.sets, it.reps),   // 무게는 최근 기록에서 세트마다
     });
   });
   save();
@@ -2057,10 +2160,10 @@ function renderSuggestions() {
   const mine = new Set();
   const seen = new Set();
   const exNames = [];
-  const foodNames = new Set(Object.keys(FOOD_DB));
+  const myFoods = new Set();
   Object.values(state.days).forEach((d) => {
     d.workouts.forEach((w) => mine.add(w.name));
-    d.meals.forEach((m) => foodNames.add(m.name));
+    d.meals.forEach((m) => myFoods.add(m.name));
   });
   [...mine, ...COMMON_EX].forEach((n) => {
     const key = metKey(n);
@@ -2069,8 +2172,21 @@ function renderSuggestions() {
     exNames.push(n);
   });
   $('#exSuggestions').innerHTML = exNames.map((n) => `<option value="${esc(n)}">`).join('');
-  $('#foodSuggestions').innerHTML = [...foodNames].map((n) => `<option value="${esc(n)}">`).join('');
+  // 음식 표는 1,300가지가 넘어서 화면을 그릴 때마다 목록을 새로 만들면 느려진다.
+  // 내가 먹은 음식(앞)이 바뀌었을 때만 다시 만든다.
+  const foodSig = [...myFoods].join('|');
+  if (foodSig !== foodSuggestSig) {
+    foodSuggestSig = foodSig;
+    const seenFood = new Set();
+    $('#foodSuggestions').innerHTML = [...myFoods, ...FOOD_NAMES].filter((n) => {
+      const k = String(n).toLowerCase().replace(/\s+/g, '');
+      if (!k || seenFood.has(k)) return false;
+      seenFood.add(k);
+      return true;
+    }).map((n) => `<option value="${esc(n)}">`).join('');
+  }
 }
+let foodSuggestSig = null;
 
 function findWorkout(id) {
   return day().workouts.find((w) => w.id === id);
@@ -2273,6 +2389,19 @@ $('#bodyWeight').addEventListener('input', (e) => {
 });
 
 $('#exName').addEventListener('input', updateExHint);
+$('#perSetToggle').addEventListener('click', () => {
+  perSet = perSet ? null : perSetFromCommon();
+  perSetTouched = true;
+  renderPerSet();
+  if (perSet) $('#perSetBox input').focus();
+});
+$('#exSets').addEventListener('input', resizePerSet);
+$('#perSetBox').addEventListener('input', (e) => {
+  const [i, field] = (e.target.dataset.ps || '').split(':');
+  if (!perSet?.[i]) return;
+  perSet[i][field] = e.target.value === '' ? null : nonNeg(e.target.value);
+  perSetTouched = true;
+});
 $('#dayNote').addEventListener('input', (e) => { day().note = e.target.value; saveSoon(); });
 $('#dayNote').addEventListener('blur', flushSave);
 
@@ -2349,10 +2478,14 @@ $('#workoutForm').addEventListener('submit', (e) => {
     id: uid(),
     name: $('#exName').value.trim(),
     minutes,
-    sets: Array.from({ length: n }, () => ({ reps, weight, done: false })),
+    sets: perSet
+      ? perSet.map((x) => ({ weight: Number(x.weight) > 0 ? nonNeg(x.weight) : null, reps: nonNeg(x.reps), done: false }))
+      : Array.from({ length: n }, () => ({ reps, weight, done: false })),
   });
   save();
   $('#exName').value = $('#exMinutes').value = '';
+  perSet = null;
+  perSetTouched = false;
   render();
 });
 
@@ -2453,14 +2586,8 @@ document.addEventListener('click', (e) => {
     day().plan = null;
   } else if (ds.planAdd) {
     const [name, sets] = ds.planAdd.split(':');
-    const last = lastRecord(name, shiftDate(currentDate, 1));
-    const tip = overloadTip(name);
-    const weight = tip?.kind === 'weight' ? tip.to : (last ? Number(last.workout.sets.at(-1)?.weight) || null : null);
     const reps = state.profile.routines?.[day().plan]?.find((i) => metKey(i.name) === metKey(name))?.reps || 10;
-    day().workouts.push({
-      id: uid(), name, minutes: null,
-      sets: Array.from({ length: Math.max(1, Number(sets) || 1) }, () => ({ reps, weight, done: false })),
-    });
+    day().workouts.push({ id: uid(), name, minutes: null, sets: setsLikeLast(name, sets, reps, { progress: true }) });
   } else if (ds.loadRoutine) {
     loadRoutineByName(ds.loadRoutine);
     return;                          // loadRoutineByName이 알아서 저장·렌더링한다

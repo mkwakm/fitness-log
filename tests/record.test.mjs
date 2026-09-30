@@ -13,8 +13,9 @@ export default async function (t) {
   t.eq(await kcalOf('밥', '1공기'), '300', '밥 1공기 = 300kcal (143 × 210g)');
   t.eq(await kcalOf('닭가슴살', '200g'), '218', '닭가슴살 200g = 218kcal');
   t.eq(await kcalOf('바나나', '2개'), '214', '바나나 2개 = 214kcal (개당 120g)');
-  t.eq(await kcalOf('현미밥', '210g'), '273', '"현미밥"은 표의 현미밥으로');
-  t.eq(await kcalOf('할머니손맛김치전', ''), '', '"김치전"이 "김치"로 새지 않음 (이름 끝으로만 매칭)');
+  t.eq(await kcalOf('현미밥', '210g'), '252', '"현미밥"은 식약처 현미밥 값으로 (100g당 120)');
+  t.eq(await kcalOf('할머니손맛김치전', '100g'), '126', '"○○김치전"은 김치(30)가 아니라 김치전(126)으로 — 이름 끝으로 가장 긴 것');
+  t.eq(await kcalOf('우주비행식', '100g'), '', '표에 없는 음식');
   t.ok((await text(page, '#mealHint')).includes('표에 없는'), '표에 없는 음식이면 직접 적으라고 안내');
 
   await kcalOf('우유', '1컵');

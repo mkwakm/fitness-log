@@ -593,3 +593,15 @@ body.sheet-open { overflow: hidden; }
 .safety li { padding: 4px 0; }
 .safety li.warn { color: var(--danger); }
 .safety .link-btn { font-size: 0.85rem; }
+
+/* 운동 폼: 세트마다 다르게 */
+.perset-toggle { display: inline-flex; align-items: center; min-height: 40px; margin: 2px 0 0; }
+#workoutForm.per-set-on .row > label:nth-child(2),
+#workoutForm.per-set-on .row > label:nth-child(3) { display: none; }   /* 표를 쓰는 동안 공통 중량·횟수는 숨긴다 */
+.perset { display: grid; gap: 6px; margin: 4px 0 10px; }
+.perset[hidden] { display: none; }
+.perset-row { display: grid; grid-template-columns: 52px 1fr 1fr; gap: 8px; align-items: center; }
+.perset-no { color: var(--muted); font-size: 0.85rem; }
+.perset-row label { display: flex; align-items: center; gap: 6px; margin: 0; }
+.perset-row input { width: 100%; min-width: 0; min-height: 40px; }
+.perset-row label span { color: var(--muted); font-size: 0.85rem; }

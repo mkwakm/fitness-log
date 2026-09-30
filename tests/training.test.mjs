@@ -34,7 +34,7 @@ export default async function (t) {
 
   // ── 점진적 과부하 제안 ──
   const tip = async (sets) => { await seed(page, [[-2, [['벤치프레스', sets, 30]]]]); return page.evaluate(() => overloadTip('벤치프레스')); };
-  t.eq(await tip([[60, 10], [60, 10], [60, 10], [60, 10]]), { kind: 'weight', from: 60, to: 62.5, reps: 10, date: ago(2) }, '다 채웠으면 +2.5kg');
+  t.eq(await tip([[60, 10], [60, 10], [60, 10], [60, 10]]), { kind: 'weight', from: 60, to: 62.5, step: 2.5, varied: false, reps: 10, date: ago(2) }, '다 채웠으면 +2.5kg');
   t.eq(await tip([[60, 10], [60, 10], [60, 8], [60, 6]]), null, '마지막에 횟수가 떨어졌으면 제안 안 함');
   t.eq(await tip([[60, 10], [60, 10, false], [60, 10, false]]), null, '완료 세트가 하나뿐이면 보류');
   t.eq((await tip([[null, 12], [null, 12], [null, 13]]))?.kind, 'reps', '맨몸이면 횟수를 올리자고 함');
