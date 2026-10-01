@@ -436,7 +436,42 @@ function mmss(sec) {
 // 음수는 0으로 본다. 화면에서는 못 넣게 막지만, 다른 기기에서 망가진 값이 넘어오면
 // 볼륨이 음수가 되어 합계·그래프가 통째로 어긋난다.
 function volumeOf(w) {
-  return countedSets(w).reduce((v, s) => v + nonNeg(s.reps) * nonNeg(s.weight), 0);
+  return countedSets(w).reduce((v, s) => v + segsOf(s).reduce((t, x) => t + nonNeg(x.reps) * nonNeg(x.weight), 0), 0);
+}
+// 드롭세트: 한 세트 안에서 무게를 내려 바로 이어 한 것. set.drops = [{ weight, reps }, …] (없으면 보통 세트)
+// 세트 수는 1세트로 세고, 볼륨·횟수에는 드롭까지 더한다. 최고 기록·1RM·과부하 제안은 본 세트(첫 무게)로 본다.
+// 다른 기기에서 망가진 값이 넘어와도 화면이 안 깨지게 배열·객체만 받는다.
+function dropsOf(s) {
+  return Array.isArray(s?.drops) ? s.drops.filter((d) => d && typeof d === 'object') : [];
+}
+function segsOf(s) {
+  return [s, ...dropsOf(s)];
+}
+// 세트를 새로 만들 때(세트 추가·불러오기·지난번대로) 드롭 모양도 같이 옮긴다
+function copySet(s) {
+  const drops = dropsOf(s).map((d) => ({ weight: d.weight ?? null, reps: d.reps ?? 0 }));
+  return { weight: s.weight ?? null, reps: s.reps ?? 0, ...(drops.length ? { drops } : {}), done: false };
+}
+// 다음 드롭: 직전 무게의 80%를 무게 단위로 맞춰서, 횟수는 그대로 (보통 20~30% 내린다)
+function nextDrop(prev) {
+  const step = Number(state.profile.weightStep) || 2.5;
+  const w = Number(prev.weight) || 0;
+  const weight = w > 0 ? Math.max(step, Math.round(Math.round(w * 0.8 / step) * step * 100) / 100) : null;
+  return { weight, reps: Number(prev.reps) || 10 };
+}
+// 오늘 가장 최근에 완료한 세트 (집중 모드 휴식 화면의 "방금 세트에 드롭")
+function lastDoneSet(d = day()) {
+  let best = null;
+  d.workouts.forEach((w) => w.sets.forEach((s, i) => {
+    if (s.done && (!best || (Number(s.doneAt) || 0) >= (Number(best.s.doneAt) || 0))) best = { w, i, s };
+  }));
+  return best;
+}
+// "↘ 드롭"을 누르면 붙일 세트: 가장 최근에 완료한 세트, 없으면 마지막 세트
+function dropTarget(w) {
+  let at = w.sets.length - 1, t = -1;
+  w.sets.forEach((s, i) => { if (s.done && (Number(s.doneAt) || 0) >= t) { t = Number(s.doneAt) || 0; at = i; } });
+  return at;
 }
 function nonNeg(v) {
   const n = Number(v);
@@ -514,7 +549,8 @@ function setsLikeLast(name, count = 0, reps = null, { progress = false } = {}) {
     const w = Number(s.weight) > 0 ? Math.round((Number(s.weight) + bump) * 100) / 100 : null;
     const pick = Array.isArray(reps) ? reps[Math.min(i, reps.length - 1)] : reps;
     const r = tip?.kind === 'reps' ? tip.to : (Number(pick) || Number(s.reps) || 10);
-    return { weight: w, reps: r, done: false };
+    const drops = dropsOf(s).map((d) => ({ weight: d.weight ?? null, reps: d.reps ?? 0 }));
+    return { weight: w, reps: r, ...(drops.length ? { drops } : {}), done: false };
   });
 }
 function setsVary(sets) {
@@ -539,12 +575,14 @@ function lastRecord(name, before = currentDate) {
 }
 // 세트를 "60kg×10, 60×10" 처럼 짧게
 function setsText(w) {
-  return w.sets.map((s, i) => {
+  const one = (s, first) => {
     const reps = Number(s.reps) || 0;
     const kg = Number(s.weight) || 0;
     if (!kg) return `${reps}회`;
-    return i === 0 ? `${kg}kg×${reps}` : `${kg}×${reps}`;
-  }).join(', ');
+    return first ? `${kg}kg×${reps}` : `${kg}×${reps}`;
+  };
+  // 드롭세트는 "60kg×10↘50×8↘40×6"처럼 한 세트로 이어 쓴다
+  return w.sets.map((s, i) => [one(s, i === 0), ...dropsOf(s).map((d) => one(d, false))].join('↘')).join(', ');
 }
 // 운동이 있는 가장 최근 이전 날짜 (루틴 불러오기용)
 function lastWorkoutDate(before = currentDate) {
@@ -993,10 +1031,11 @@ function renderWorkouts() {
           <button data-step="${w.id}:${i}:reps:1" aria-label="횟수 늘리기">+</button>
         </span>
         <button class="del" data-del-set="${w.id}:${i}" aria-label="세트 삭제">✕</button>
-      </div>`).join('')}
+      </div>${dropRowsHtml(w, i, s)}`).join('')}
     </div>
     <div class="item meta">
-      <button data-add-set="${w.id}">+ 세트 추가</button>
+      <span class="set-btns"><button data-add-set="${w.id}">+ 세트 추가</button>
+      <button data-drop-add="${w.id}" title="방금 완료한 세트에 무게를 내려 이어 한 것을 붙여요">↘ 드롭</button></span>
       <span class="muted">${done ? `${done}/${w.sets.length}세트 완료 · ` : ''}볼륨 ${vol.toLocaleString()} kg${
         todayRm ? ` · 오늘 1RM ${todayRm}kg` : ''}${rest ? ` · 휴식 ${mmss(rest)}` : ''}</span>
     </div>
@@ -1011,6 +1050,16 @@ function renderWorkouts() {
     </div>` : ''}
   </div>`;
   }).join('');
+}
+
+// 세트 아래에 붙는 드롭 줄 (카드·집중 모드 같이 쓴다)
+function dropRowsHtml(w, i, s) {
+  return dropsOf(s).map((d, k) => `<div class="set-row drop ${s.done ? 'done' : ''}">
+    <span class="drop-mark" aria-hidden="true">↘</span>
+    <input type="number" inputmode="decimal" min="0" step="0.5" value="${d.weight ?? ''}" placeholder="맨몸" data-drop-edit="${w.id}:${i}:${k}:weight" aria-label="${i + 1}세트 ${k + 1}번째 드롭 중량">
+    <input type="number" inputmode="numeric" min="0" value="${d.reps ?? ''}" data-drop-edit="${w.id}:${i}:${k}:reps" aria-label="${i + 1}세트 ${k + 1}번째 드롭 횟수">
+    <button class="del" data-drop-del="${w.id}:${i}:${k}" aria-label="드롭 삭제">✕</button>
+  </div>`).join('');
 }
 
 function renderBurn(workouts, weight, burn) {
@@ -1293,6 +1342,8 @@ function focusSetHtml({ w, i, s, idx, q }) {
     </div>
     ${field('weight', '중량', 'kg', 'inputmode="decimal" min="0" step="0.5" placeholder="맨몸"')}
     ${field('reps', '횟수', '회', 'inputmode="numeric" min="0" step="1"')}
+    ${dropsOf(s).length ? `<div class="set-table focus-drops">${dropRowsHtml(w, i, s)}</div>` : ''}
+    <button class="link-btn focus-drop" data-drop-add="${w.id}:${i}">↘ 드롭 추가 (무게 내려 이어서)</button>
     ${last ? `<p class="hint focus-hint">↩ 지난번 ${fmtDate(last.date)}: ${esc(setsText(last.workout))}${
       last.workout.note ? `<br>📝 ${esc(last.workout.note)}` : ''}</p>` : ''}
     ${tip ? `<p class="tip focus-hint">${overloadText(tip)}</p>` : ''}
@@ -1306,6 +1357,8 @@ function focusSetHtml({ w, i, s, idx, q }) {
 }
 
 function focusRestHtml({ w, i, s }) {
+  // 세트를 완료하고 나서 무게를 내려 이어 했으면(드롭세트) 여기서 바로 붙인다
+  const prev = lastDoneSet();
   return `
     <div class="focus-restbox">
       <span class="focus-label">휴식</span>
@@ -1314,6 +1367,8 @@ function focusRestHtml({ w, i, s }) {
         <button data-focus-rest="30">+30초</button>
         <button class="primary" data-focus-rest="skip">바로 시작</button>
       </div>
+      ${prev ? `${dropsOf(prev.s).length ? `<div class="set-table focus-drops">${dropRowsHtml(prev.w, prev.i, prev.s)}</div>` : ''}
+      <button class="link-btn focus-drop" data-drop-add="last">↘ 방금 세트에 드롭 추가</button>` : ''}
       <p class="focus-next">다음 · <b>${esc(w.name)}</b> ${i + 1}세트<br>
         <span class="muted">${Number(s.weight) > 0 ? `${s.weight}kg × ` : ''}${s.reps ?? 0}회</span></p>
     </div>`;
@@ -1395,8 +1450,7 @@ function focusAddSet() {
   const cur = focusCurrent();
   const w = cur.w ?? day().workouts.at(-1);
   if (!w) return;
-  const lastSet = w.sets.at(-1) ?? { weight: null, reps: 10 };
-  w.sets.push({ weight: lastSet.weight, reps: lastSet.reps, done: false });
+  w.sets.push(copySet(w.sets.at(-1) ?? { weight: null, reps: 10 }));
   focusAt = { id: w.id, i: w.sets.length - 1 };
   stopRest();
   save();
@@ -1545,7 +1599,7 @@ function renderExSheet() {
   const sets = log.reduce((n, x) => n + countedSets(x.w).length, 0);
   const vol = log.reduce((v, x) => v + volumeOf(x.w), 0);
   // 맨몸 운동은 볼륨이 늘 0이라 타일이 비어 보인다. 그럴 땐 총 횟수를 보여준다.
-  const reps = log.reduce((n, x) => n + countedSets(x.w).reduce((r, t) => r + (Number(t.reps) || 0), 0), 0);
+  const reps = log.reduce((n, x) => n + countedSets(x.w).reduce((r, t) => r + segsOf(t).reduce((q, g) => q + (Number(g.reps) || 0), 0), 0), 0);
   const pr = personalBest(name);
   const dates = [...new Set(log.map((x) => x.date))];
   const first = dates[dates.length - 1];
@@ -1962,13 +2016,17 @@ function renderPerSet() {
       <span class="perset-no">${i + 1}세트</span>
       <label><input type="number" inputmode="decimal" min="0" step="0.5" placeholder="맨몸" value="${s.weight ?? ''}" data-ps="${i}:weight" aria-label="${i + 1}세트 중량"><span>kg</span></label>
       <label><input type="number" inputmode="numeric" min="0" value="${s.reps ?? ''}" data-ps="${i}:reps" aria-label="${i + 1}세트 횟수"><span>회</span></label>
+      ${dropsOf(s).length ? `<span class="perset-drops">${dropsOf(s).map((d) => `↘ ${Number(d.weight) > 0 ? `${d.weight}kg×` : ''}${d.reps ?? 0}`).join(' ')} <span class="muted">(지난번 드롭)</span></span>` : ''}
     </div>`).join('');
 }
 // 세트 수가 바뀌면 표도 늘리고 줄인다 (늘릴 땐 마지막 세트를 따라)
 function resizePerSet() {
   if (formUniform) return;
   const n = Math.max(1, Math.min(20, Number($('#exSets').value) || 1));
-  while (perSet.length < n) perSet.push({ ...perSet.at(-1) });
+  while (perSet.length < n) {
+    const { done, ...last } = copySet(perSet.at(-1));
+    perSet.push(last);
+  }
   perSet.length = n;
   renderPerSet();
 }
@@ -1989,7 +2047,7 @@ function updateExHint() {
   // 지난번 세트 모양대로 표를 채운다 (다 채웠으면 한 단위씩 올려서). 직접 만진 표는 그대로.
   if (!perSetTouched && !formUniform) {
     perSet = last
-      ? setsLikeLast(name, 0, null, { progress: true }).map(({ weight, reps }) => ({ weight, reps }))
+      ? setsLikeLast(name, 0, null, { progress: true }).map(({ weight, reps, drops }) => ({ weight, reps, ...(drops ? { drops } : {}) }))
       : defaultPerSet(Number($('#exSets').value) || 3);
     $('#exSets').value = perSet.length;
     if (last) $('#exHint').insertAdjacentHTML('beforeend', '<br>📋 지난번 세트대로 채웠어요.');
@@ -2149,7 +2207,7 @@ function loadRoutine(date) {
       id: uid(),
       name: w.name,
       minutes: w.minutes,
-      sets: w.sets.map((s) => ({ reps: s.reps, weight: s.weight, done: false })),
+      sets: w.sets.map(copySet),
     });
   });
   save();
@@ -2498,7 +2556,7 @@ $('#workoutForm').addEventListener('submit', (e) => {
     minutes,
     sets: formUniform
       ? Array.from({ length: n }, () => ({ reps, weight, done: false }))
-      : perSet.map((x) => ({ weight: Number(x.weight) > 0 ? nonNeg(x.weight) : null, reps: nonNeg(x.reps), done: false })),
+      : perSet.map((x) => ({ ...copySet(x), weight: Number(x.weight) > 0 ? nonNeg(x.weight) : null, reps: nonNeg(x.reps) })),
   });
   save();
   $('#exName').value = $('#exMinutes').value = '';
@@ -2598,7 +2656,7 @@ document.addEventListener('click', (e) => {
     if (!confirm(`${fmtDate(ds.copyDay)} 운동 ${src.workouts.length}종을 ${fmtDate(currentDate)}로 불러올까요?`)) return;
     src.workouts.forEach((w) => day().workouts.push({
       id: uid(), name: w.name, minutes: w.minutes,
-      sets: w.sets.map((x) => ({ reps: x.reps, weight: x.weight, done: false })),
+      sets: w.sets.map(copySet),
     }));
     showTab('workouts');
   } else if (ds.setPlan) {
@@ -2655,11 +2713,28 @@ document.addEventListener('click', (e) => {
     updateMealHint();
     renderMyFoods();
     return;
+  } else if (ds.dropAdd) {
+    const set = ds.dropAdd === 'last' ? lastDoneSet()?.s : (() => {
+      const [id, at] = ds.dropAdd.split(':');
+      const w = findWorkout(id);
+      return w?.sets[at != null ? Number(at) : dropTarget(w)];
+    })();
+    if (!set) return;
+    set.drops = [...dropsOf(set), nextDrop(segsOf(set).at(-1))];
+    // 세트를 완료하고 나서 드롭을 이어 했으면 쉬는 시간은 드롭이 끝난 지금부터다
+    if (set.done) { set.doneAt = Date.now(); startRest(); }
+  } else if (ds.dropDel) {
+    const [id, i, k] = ds.dropDel.split(':');
+    const set = findWorkout(id)?.sets[i];
+    if (!set) return;
+    const drops = dropsOf(set);
+    drops.splice(Number(k), 1);
+    if (drops.length) set.drops = drops;
+    else delete set.drops;
   } else if (ds.addSet) {
     const w = findWorkout(ds.addSet);
     if (!w) return;
-    const last = w.sets[w.sets.length - 1] || { reps: 10, weight: null };
-    w.sets.push({ reps: last.reps, weight: last.weight, done: false });
+    w.sets.push(copySet(w.sets[w.sets.length - 1] || { reps: 10, weight: null }));
   } else if (ds.delSet) {
     const [id, i] = ds.delSet.split(':');
     const w = findWorkout(id);
@@ -2709,6 +2784,12 @@ document.addEventListener('change', (e) => {
   } else if (ds.met) {
     const v = Number(e.target.value);
     setCustomMet(ds.met, v > 0 ? Math.min(20, Math.max(1, v)) : 0);   // 0이면 자동 추정으로 복귀
+  } else if (ds.dropEdit) {
+    const [id, i, k, field] = ds.dropEdit.split(':');
+    const d = dropsOf(findWorkout(id)?.sets[i])[Number(k)];
+    if (!d || (field !== 'weight' && field !== 'reps')) return;
+    const v = e.target.value;
+    d[field] = v === '' ? (field === 'reps' ? 0 : null) : Math.max(0, Number(v) || 0);
   } else if (ds.edit) {
     const [id, i, field] = ds.edit.split(':');
     const set = findWorkout(id)?.sets[i];

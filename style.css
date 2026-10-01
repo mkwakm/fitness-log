@@ -622,3 +622,13 @@ body.sheet-open { overflow: hidden; }
 .vision-box p { margin: 0; line-height: 1.5; }
 .vision-btns { display: flex; flex-wrap: wrap; gap: 8px; }
 .vision-btns button { min-height: 40px; padding: 0 14px; }
+
+/* 드롭세트: 세트 아래에 이어 붙는 줄 (무게를 내려 바로 이어 한 것) */
+.set-row.drop { margin-top: -2px; }
+.drop-mark { text-align: center; color: var(--accent); font-weight: 700; }
+.set-row.drop input { border-style: dashed; }
+.set-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.set-btns button { min-height: 40px; }
+.perset-drops { grid-column: 2 / -1; margin-top: -4px; font-size: 0.8rem; color: var(--accent); }
+.focus-drops { margin: 0 0 4px; }
+.focus-drop { display: block; min-height: 40px; margin: 0 auto 6px; font-size: 0.85rem; }
