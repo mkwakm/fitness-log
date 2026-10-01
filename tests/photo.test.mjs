@@ -96,6 +96,20 @@ export default async function (t) {
   await wait(B, 600);
   t.eq(await count(B), 1, '안 쓰는 사진 1장 정리');
   t.ok(await has(B, await B.evaluate(() => day().meals[0].photo)), '쓰는 사진은 남음');
+
+  // ── 사진을 담는 중엔 추가를 못 누른다 (누르면 버리는 중인 앞 사진이 기록에 붙었다) ──
+  await tab(B, 'meals');
+  await B.fill('#foodName', '김밥');
+  await B.evaluate(() => {
+    const orig = savePhoto;
+    savePhoto = (f) => new Promise((r) => { window.releaseSave = () => r(orig(f)); });
+  });
+  await B.setInputFiles('#mealPhoto', photo);
+  await B.waitForFunction(() => window.releaseSave);
+  t.ok(await B.locator('#mealForm button[type=submit]').isDisabled(), '담는 동안 추가 버튼은 잠김');
+  await B.evaluate(() => releaseSave());
+  await B.waitForFunction(() => pendingPhoto);
+  t.ok(await B.locator('#mealForm button[type=submit]').isEnabled(), '다 담으면 다시 눌림');
   t.noErrors(A, '폰');
   t.noErrors(B, 'PC');
 }

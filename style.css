@@ -612,3 +612,13 @@ body.sheet-open { overflow: hidden; }
 .perset-row label { display: flex; align-items: center; gap: 6px; margin: 0; }
 .perset-row input { width: 100%; min-width: 0; min-height: 40px; }
 .perset-row label span { color: var(--muted); font-size: 0.85rem; }
+
+/* 사진으로 알아본 결과 (vision.js) */
+.vision-box {
+  background: var(--card-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.vision-box[hidden] { display: none; }
+.vision-box p { margin: 0; line-height: 1.5; }
+.vision-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.vision-btns button { min-height: 40px; padding: 0 14px; }

@@ -63,6 +63,7 @@ async function getPhotoUrl(id) {
 }
 async function deletePhoto(id) {
   try { await photoTx('readwrite', (st) => st.delete(id)); } catch { /* 없으면 그만 */ }
+  if (typeof dropVector === 'function') await dropVector(id);   // 사진으로 배운 숫자도 같이 (vision.js)
 }
 
 // 화면에 붙은 <img data-photo="id">를 실제 사진으로 채운다.

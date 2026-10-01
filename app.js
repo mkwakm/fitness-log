@@ -2431,14 +2431,23 @@ $('#mealPhoto').addEventListener('change', async (e) => {
   e.target.value = '';
   if (!file) return;
   $('#photoName').textContent = '넣는 중…';
+  // 담는 동안 추가를 누르면 버리는 중인 앞 사진이 기록에 붙는다 — 끝날 때까지 막는다
+  const submit = $('#mealForm button[type=submit]');
+  submit.disabled = true;
   try {
     if (pendingPhoto) await deletePhoto(pendingPhoto);   // 다시 고르면 앞 사진은 버린다
+    pendingPhoto = null;
     pendingPhoto = await savePhoto(file);
     $('#photoName').textContent = '✓ 첨부됨';
+    // 이름을 아직 안 적었으면 사진으로 알아본다 (vision.js). 적었으면 그냥 붙이고, 넣을 때 그 사진을 배운다
+    if (!$('#foodName').value.trim()) visionStart(pendingPhoto);
+    else setVision(null);
   } catch (err) {
     pendingPhoto = null;
     $('#photoName').textContent = '';
     alert(`사진을 넣지 못했어요. ${err.message}`);
+  } finally {
+    submit.disabled = false;
   }
 });
 
@@ -2471,6 +2480,8 @@ $('#mealForm').addEventListener('submit', (e) => {
     photo: pendingPhoto,
   });
   save();
+  learnPhoto(pendingPhoto);   // 이름이 붙은 사진은 다음에 알아볼 예시가 된다
+  setVision(null);
   resetMealForm();
   render();
 });
