@@ -110,7 +110,8 @@ export default async function (t) {
   await P.click('#shareBtn');
   await wait(P, 200);
   t.ok(/\.json$/.test(await P.evaluate(() => window.__shared) || ''), '내보내 공유로 JSON 파일을 넘김');
-  const P2 = await t.open({ init: () => { delete window.showSaveFilePicker; } });
+  // 윈도우 크롬·엣지는 실제로 공유를 지원하므로 못 하는 브라우저를 직접 흉내 낸다
+  const P2 = await t.open({ init: () => { delete window.showSaveFilePicker; navigator.canShare = () => false; } });
   await tab(P2, 'history');
   t.eq(await P2.locator('#shareBtn').count(), 0, '공유를 못 하는 브라우저면 버튼을 숨김');
 
