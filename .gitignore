@@ -1,3 +1,5 @@
 node_modules/
 tools/mfds_food.json
 tools/.cj_*
+tools/aihub/
+tools/__pycache__/
