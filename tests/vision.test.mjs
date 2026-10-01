@@ -41,6 +41,8 @@ function fake(arg) {
     const b64 = btoa(String.fromCharCode(...new Uint8Array(W.buffer)));
     const head = { model: 'onnx-community/dinov2-small', labels: ['비빔밥', '된장찌개'], dim: 768, mean: [], W: b64, b: [0, 0], scale: 30 };
     window.VISION_HEAD_URL = 'data:application/json,' + encodeURIComponent(JSON.stringify(head));
+  } else {
+    window.VISION_HEAD_URL = '';   // 앱은 기본으로 food-vision.json을 읽는다. 내 사진만으로 알아보는 시험이라 끈다
   }
 }
 
@@ -81,6 +83,7 @@ export default async function (t) {
   await pickPhoto(A, RED);
   t.ok(await until(A, 'ask'), '이름 없이 사진을 고르면 먼저 물어봄 (모델이 50MB라서)');
   t.ok((await A.textContent('#visionBox')).includes('이 기기 밖으로 나가지 않아요'), '사진이 밖으로 안 나간다고 알려줌');
+  t.ok(!(await A.textContent('#visionBox')).includes('AI 허브'), '기본 분류기가 없으면 데이터 출처도 안 적음');
   t.eq(await A.evaluate(() => FAKE_VISION.calls), 0, '동의 전엔 모델을 안 부름');
   await A.click('[data-vision="on"]');
   t.ok(await until(A, 'new'), '배운 게 없으면 "아직 모르는 음식"');
@@ -212,8 +215,10 @@ export default async function (t) {
 
   // ── 기본 분류기 (AI Hub로 학습해 둘 표) ──
   const D = await t.open({ init: { fn: fake, arg: { head: true } } });
-  await D.evaluate(() => saveUi({ vision: 'on' }));
   await pickPhoto(D, GREEN);
+  await until(D, 'ask');
+  t.ok((await D.textContent('#visionBox')).includes('한국지능정보사회진흥원의 사업결과인 AI 허브'), '기본 분류기를 쓰면 동의 화면에 AI Hub 데이터 출처를 밝힘 (이용정책)');
+  await D.click('[data-vision="on"]');
   t.ok(await until(D, 'done'), '기본 분류기가 확실하면 내 사진이 없어도 자동');
   t.eq((await meals(D))[0].name, '비빔밥', '기본 분류기의 이름으로');
   t.eq((await meals(D))[0].kcal, await D.evaluate(() => estimateKcal('비빔밥', '1인분').kcal), '처음 먹는 음식은 1인분으로');
@@ -226,6 +231,15 @@ export default async function (t) {
   t.ok(await until(D, 'pick'), '기본 분류기도 반반이면 자동 대신 후보');
   t.eq((await D.evaluate(() => visionState.cands)).slice().sort(), ['된장찌개', '비빔밥'], '후보는 두 음식');
   t.noErrors(D);
+
+  // ── 실제 기본 분류기 (food-vision.json, tools/train_food_vision.py가 만든다) ──
+  const real = JSON.parse(readFileSync(join(ROOT, 'food-vision.json'), 'utf8'));
+  t.eq(real.model, 'onnx-community/dinov2-small', 'food-vision.json은 앱과 같은 모델로 학습');
+  t.eq(Buffer.from(real.W, 'base64').length, real.labels.length * real.dim * 4, 'W 크기 = 음식 수 × 768 (Float32)');
+  t.eq([real.b.length, real.mean.length], [real.labels.length, real.dim], 'b·mean 길이가 맞음');
+  const unknown = await D.evaluate((labels) => labels.filter((l) => !estimateKcal(l, '1인분')), real.labels);
+  t.eq(unknown, [], `분류기의 음식 이름 ${real.labels.length}개가 모두 food-db.js에서 칼로리가 나옴`);
+  t.ok(/self\.VISION_HEAD_URL \?\? 'food-vision\.json'/.test(readFileSync(join(ROOT, 'vision.js'), 'utf8')), '앱은 기본으로 food-vision.json을 읽음');
 
   // ── 견주는 규칙 (rankFoods) ──
   const r = await D.evaluate(() => {
@@ -256,4 +270,5 @@ export default async function (t) {
   const sw = readFileSync(join(ROOT, 'sw.js'), 'utf8');
   t.ok(/k !== CACHE && k !== AI_CACHE/.test(sw), '앱 새 버전이 깔려도 AI 캐시는 남김 (50MB를 다시 받지 않게)');
   t.ok(/'vision\.js'/.test(sw), 'vision.js도 오프라인 캐시에 들어감');
+  t.ok(/'food-vision\.json'/.test(sw), '기본 분류기(food-vision.json)도 오프라인 캐시에 들어감');
 }

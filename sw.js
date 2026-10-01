@@ -1,10 +1,10 @@
 // 오프라인에서도 앱이 열리도록 파일을 캐시합니다. 파일을 바꾸면 CACHE 버전을 올리세요.
-const CACHE = 'fitness-log-v39';
+const CACHE = 'fitness-log-v40';
 // 사진 인식 AI(라이브러리·모델, 50MB쯤)는 앱을 고칠 때마다 다시 받으면 안 되므로 따로 두고 안 지운다
 const AI_CACHE = 'fitness-log-ai';
 const AI_HOSTS = ['cdn.jsdelivr.net'];
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'manifest.json', 'food-db.js', 'sync.js', 'photos.js', 'vision.js',
-  'icon.svg', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png'];
+  'food-vision.json', 'icon.svg', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)));

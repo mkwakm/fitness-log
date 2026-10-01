@@ -5,11 +5,12 @@
 // 모델은 사진을 768개 숫자(특징 벡터)로 바꿀 뿐이고, 무슨 음식인지는 "이름이 붙은 사진"과 견줘서 정한다.
 //  ① 내 사진: 식단에 사진과 이름을 같이 넣으면 그 사진이 예시가 된다. 이름은 식단 기록에서 읽으므로
 //     기록의 이름이 바뀌면 따라 바뀌고, 기록을 지우면 예시에서도 빠진다. 벡터만 IndexedDB에 따로 둔다.
-//  ② 기본 분류기(VISION_HEAD_URL, 있을 때만): AI Hub 한식 사진으로 미리 학습해 둔 표.
+//  ② 기본 분류기(VISION_HEAD_URL): AI Hub 한식 사진으로 미리 학습해 둔 표(tools/train_food_vision.py).
+//     AI Hub 이용정책상 한국지능정보사회진흥원의 사업결과임을 밝혀야 해서 동의 화면에 출처를 적는다.
 // 확실할 때만 바로 넣고(자동 입력), 애매하면 후보 3개를 보여준다. 기준값은 시험 사진으로 정했다(아래 VISION).
 const VISION_LIB = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.0/dist/transformers.min.js';
 const VISION_MODEL = 'onnx-community/dinov2-small';
-const VISION_HEAD_URL = self.VISION_HEAD_URL ?? null;   // 학습한 기본 분류기가 생기면 'food-vision.json'
+const VISION_HEAD_URL = self.VISION_HEAD_URL ?? 'food-vision.json';   // 테스트는 data: URL을 심거나 ''로 끈다
 const VISION_DB = 'fitness-log-vision';
 const VISION_STORE = 'vectors';
 const VISION = {
@@ -299,6 +300,7 @@ function renderVision() {
   if (s.mode === 'ask') {
     box.innerHTML = `<p><strong>📷 사진으로 음식을 알아볼까요?</strong></p>
       <p class="hint">처음 한 번 AI 모델(약 50MB)을 받아요. 와이파이에서 받는 걸 권해요. 사진은 이 기기 밖으로 나가지 않아요.</p>
+      ${VISION_HEAD_URL ? '<p class="hint">기본 음식 분류는 한국지능정보사회진흥원의 사업결과인 AI 허브 「한국 이미지(음식)」 데이터로 학습했어요.</p>' : ''}
       <div class="vision-btns"><button type="button" class="primary" data-vision="on">받고 알아보기</button>
       <button type="button" data-vision="skip">직접 적을게요</button></div>`;
   } else if (s.mode === 'loading') {

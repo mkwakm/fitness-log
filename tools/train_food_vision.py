@@ -5,7 +5,8 @@
 학습 결과인 food-vision.json(숫자 표, 약 0.6MB)만 저장소에 올린다.
 
     pip install onnxruntime numpy pillow
-    # 키: AI Hub 고객지원 → AI 허브 오픈 API → API key 발급 (이메일로 온다)
+    # 키: AI Hub 'AI 허브 오픈 API' 페이지의 API key 발급 (이메일로 온다). 메뉴(AI 개발지원)에 안 보여서
+    #     https://www.aihub.or.kr/devsport/apishell/list.do?currMenu=403 로 바로 들어간다. 데이터셋 다운로드 승인도 필요
     set AIHUB_APIKEY=키          (Windows cmd)    /  export AIHUB_APIKEY=키   (macOS·리눅스·Git Bash)
     python tools/train_food_vision.py download     # 한국 이미지(음식) 16GB → tools/aihub/kfood.zip (잠깐 32GB 필요)
     python tools/train_food_vision.py train        # → food-vision.json (음식마다 300장, 1시간 안쪽)
@@ -33,7 +34,18 @@ DOWN_URL = f'https://api.aihub.or.kr/down/0.6/{DATASET}.do?fileSn={FILE}'
 OUT = os.path.join(ROOT, 'food-vision.json')
 IMG_EXT = ('.jpg', '.jpeg', '.png', '.bmp', '.webp')
 # AI Hub 폴더 이름 → food-db.js 이름 (표기가 다를 때만). 학습 뒤 출력되는 "표에 없는 이름"을 보고 채운다.
-LABEL_MAP = {}
+# None이면 뺀다: food-db.js에 없는 음식이라 알아봐도 칼로리를 못 낸다. 표에 더하면 여기서 지우고 다시 train.
+LABEL_MAP = {
+    # 같은 음식을 표에서는 다른 이름으로 적었다 (그대로 두면 "볶음 평균"처럼 끝말 평균으로만 잡히거나 못 찾는다)
+    '계란후라이': '달걀부침', '동그랑땡': '완자전', '콩자반': '콩조림', '도토리묵': '도토리묵무침',
+    '감자채볶음': '감자볶음', '고추장진미채볶음': '오징어채볶음', '도라지무침': '도라지생채',
+    '북엇국': '북어국', '소세지볶음': '소시지볶음', '시래기국': '시래기 된장국',
+    # 두 음식을 한 폴더에 묶어 두었다 (밑줄 이름이 화면에 그대로 뜬다)
+    '곰탕_설렁탕': '설렁탕', '떡국_만두국': '떡국',
+    # 표에 없는 음식
+    '과메기': None, '닭계장': None, '떡꼬치': None, '멍게': None, '산낙지': None,
+    '수정과': None, '젓갈': None, '편육': None, '한과': None,
+}
 
 
 def log(*a):
@@ -196,11 +208,17 @@ def train(zip_path, per_class, out=OUT, seed=0):
     if not os.path.exists(zip_path):
         sys.exit(f'{zip_path}가 없어요. 먼저 download를 하거나 --zip으로 받은 파일을 알려 주세요.')
     zf = zipfile.ZipFile(zip_path)
-    by_label = defaultdict(list)
-    for name in zf.namelist():
-        if name.lower().endswith(IMG_EXT) and '/' in name:
-            label = name.rstrip('/').split('/')[-2].strip()
-            by_label[LABEL_MAP.get(label, label)].append(name)
+    # kfood.zip은 분류별 zip(구이.zip, 국.zip …)을 압축 없이 한 번 더 담고 있다. 16GB를 또 풀지 않고 그 자리에서 연다
+    zips = [zf] + [zipfile.ZipFile(zf.open(n)) for n in zf.namelist() if n.lower().endswith('.zip')]
+    by_label, src = defaultdict(list), {}
+    for z in zips:
+        for name in z.namelist():
+            if name.lower().endswith(IMG_EXT) and '/' in name:
+                label = name.rstrip('/').split('/')[-2].strip()
+                label = LABEL_MAP.get(label, label)
+                if label:
+                    by_label[label].append(name)
+                    src[name] = z
     least = min(20, per_class)
     labels = sorted(l for l, v in by_label.items() if len(v) >= least)
     log(f'음식 {len(labels)}가지 (사진 {least}장 미만은 뺌)')
@@ -215,7 +233,7 @@ def train(zip_path, per_class, out=OUT, seed=0):
         val.update(names[:max(5, len(names) // 10)])          # 10%는 시험용으로 남긴다
         items += [((l, n), n) for n in names]
     sess = load_model()
-    vecs = embed_all(sess, [(n, (lambda n=n: zf.read(n))) for _, n in items], os.path.join(WORK, 'kfood-emb.npz'))
+    vecs = embed_all(sess, [(n, (lambda n=n: src[n].read(n))) for _, n in items], os.path.join(WORK, 'kfood-emb.npz'))
     rows = [(l, n) for (l, n), _ in items if n in vecs]
     X = np.stack([vecs[n] for _, n in rows])
     y = np.array([labels.index(l) for l, _ in rows])
