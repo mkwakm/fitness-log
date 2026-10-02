@@ -165,7 +165,8 @@ let favCache = [];        // 자주 먹는 음식 칩이 가리키는 목록
 let range = 7;            // 통계 기간 (일)
 let liftPick = '';        // 중량 추이로 보고 있는 운동
 let volPart = '';         // 볼륨 추이로 보고 있는 부위
-let exSheetName = null;   // 상세를 열어 둔 운동 이름 (안 열었으면 null)
+let exSheetName = null;
+const exMetaOpen = new Set();   // 시간·MET를 펼쳐 둔 운동 (다시 그려도 그대로 — 안 그러면 고치는 도중에 접힌다)   // 상세를 열어 둔 운동 이름 (안 열었으면 null)
 let focusOn = false;      // 집중 모드가 열려 있는지
 let focusAt = null;       // 집중 모드에서 보고 있는 세트 { id, i } — null이면 다음에 할 세트
 
@@ -1085,7 +1086,8 @@ function renderWorkouts() {
         ${idx < workouts.length - 1 ? `<button data-move="${w.id}:1" aria-label="아래로" title="아래로">↓</button>` : ''}
         <button class="del" data-del-workout="${w.id}" aria-label="삭제">✕</button>
       </span></div>
-    <div class="item meta">
+    <details class="ex-meta" data-meta-id="${w.id}" ${exMetaOpen.has(w.id) ? 'open' : ''}>
+      <summary>🔥 ${burnOf(w, weight)} kcal${isEstimated(w) ? ' (추정)' : ''} · ${minutesOf(w)}분 · MET ${metOf(w.name)}${customMet(w.name) ? ' (직접)' : ''} <span class="muted">시간·MET 고치기</span></summary>
       <div class="meta-inputs">
         <label class="inline">시간
           <input type="number" inputmode="numeric" min="0" step="1" value="${w.minutes ?? ''}"
@@ -1097,8 +1099,7 @@ function renderWorkouts() {
         </label>
         ${customMet(w.name) ? `<button class="link-btn" data-reset-met="${esc(w.name)}" title="자동 추정값으로 되돌리기">↺ 자동(${autoMet(w.name)})</button>` : ''}
       </div>
-      <span class="burn-chip">🔥 ${burnOf(w, weight)} kcal${isEstimated(w) ? ' (추정)' : ''}</span>
-    </div>
+    </details>
     <input class="ex-note" type="text" placeholder="메모 (그립, 자세, 컨디션…)"
            value="${esc(w.note ?? '')}" data-ex-note="${w.id}">
     <div class="set-table">
@@ -1118,13 +1119,13 @@ function renderWorkouts() {
         <button class="del" data-del-set="${w.id}:${i}" aria-label="세트 삭제">✕</button>
       </div>${dropRowsHtml(w, i, s)}${justDone?.s === s ? `<button class="drop-inline" data-drop-add="${w.id}:${i}">↘ 무게 내려 이어 했으면 드롭 추가</button>` : ''}`).join('')}
     </div>
-    <div class="item meta">
-      <span class="set-btns"><button data-add-set="${w.id}">+ 세트 추가</button>
+    <div class="set-btns">
+      <button data-add-set="${w.id}">+ 세트</button>
       <button data-add-warmup="${w.id}" title="본 세트 앞에 가벼운 워밍업 세트를 넣어요 (볼륨·기록에서 빠져요)">+ 워밍업</button>
-      <button data-drop-add="${w.id}" title="방금 완료한 세트에 무게를 내려 이어 한 것을 붙여요">↘ 드롭</button></span>
-      <span class="muted">${done ? `${done}/${workSets(w).length}세트 완료 · ` : ''}볼륨 ${vol.toLocaleString()} kg${
-        todayRm ? ` · 오늘 1RM ${todayRm}kg` : ''}${rest ? ` · 휴식 ${mmss(rest)}` : ''}</span>
+      <button data-drop-add="${w.id}" title="방금 완료한 세트에 무게를 내려 이어 한 것을 붙여요">↘ 드롭</button>
     </div>
+    <p class="muted card-stats">${done ? `${done}/${workSets(w).length}세트 완료 · ` : ''}볼륨 ${vol.toLocaleString()} kg${
+        todayRm ? ` · 오늘 1RM ${todayRm}kg` : ''}${rest ? ` · 휴식 ${mmss(rest)}` : ''}</p>
     ${last ? `<div class="item pr">
       <span class="muted">↩ 지난번 ${fmtDate(last.date)}</span>
       <span class="muted">${setsText(last.workout)}</span>
@@ -2832,6 +2833,13 @@ document.addEventListener('click', (e) => {
   else if (act === 'install') $('#installBtn').click();
 });
 $('#focusBtn').addEventListener('click', () => openFocus());
+// toggle은 거품이 안 올라와서 잡는 단계(capture)에서 듣는다
+document.addEventListener('toggle', (e) => {
+  const id = e.target.dataset?.metaId;
+  if (!id) return;
+  if (e.target.open) exMetaOpen.add(id);
+  else exMetaOpen.delete(id);
+}, true);
 $('#focusSheet').addEventListener('click', (e) => {
   const b = e.target.closest('button');
   if (!b) return;

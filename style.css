@@ -672,3 +672,17 @@ body.sheet-open { overflow: hidden; }
 button.perset-no { min-height: 40px; padding: 0 4px; border-radius: 8px; background: transparent; border: 1px dashed var(--line); color: var(--muted); font-size: 0.8rem; }
 button.perset-no.warm { border-color: var(--accent); color: var(--accent); font-weight: 700; }
 .perset-tip { grid-column: 1 / -1; margin: 0; }
+
+/* 운동 카드 다듬기: 시간·MET는 한 줄 요약으로 접고, 세트 버튼은 한 줄로 */
+.ex-meta { border-top: 1px solid var(--line); padding: 4px 0; }
+.ex-meta summary {
+  min-height: 40px; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; cursor: pointer;
+  font-size: 0.85rem; font-weight: 600; color: var(--accent); list-style: none;
+}
+.ex-meta summary::-webkit-details-marker { display: none; }
+.ex-meta summary .muted { font-weight: 400; font-size: 0.75rem; text-decoration: underline; }
+.ex-meta[open] summary .muted { display: none; }
+.ex-meta .meta-inputs { padding: 4px 0 6px; }
+.card > .set-btns { display: flex; flex-wrap: nowrap; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.card > .set-btns button { flex: 1 1 0; min-width: 0; padding: 0 6px; font-size: 0.85rem; white-space: nowrap; }
+.card-stats { margin: 6px 0 0; font-size: 0.8rem; }

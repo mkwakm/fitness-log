@@ -64,11 +64,15 @@ export default async function (t) {
   t.ok(await page.evaluate(() => day().workouts[0].sets[0].doneAt > 0), '완료 시각을 남김 (휴식 계산용)');
 
   // ── 시간을 적으면 그 값, MET 직접 수정 ──
+  t.ok(await page.locator('[data-minutes]').first().isHidden(), '시간·MET는 한 줄 요약으로 접혀 있음 (운동 중엔 잘 안 고치니까)');
+  t.ok((await page.locator('.ex-meta summary').first().textContent()).includes('kcal'), '접힌 줄에 소모 칼로리·시간·MET가 보임');
+  await page.click('.ex-meta summary');
   const minInput = page.locator('[data-minutes]').first();
   await minInput.fill('20');
   await minInput.dispatchEvent('change');
   await wait(page, 100);
   t.eq(await page.evaluate(() => burnOf(day().workouts[0], 75)), 125, '20분 적으면 5 × 75 × 20/60 = 125kcal');
+  t.ok(await minInput.isVisible(), '고치고 다시 그려도 펼친 그대로');
   const met = page.locator('[data-met]').first();
   await met.fill('8');
   await met.dispatchEvent('change');
