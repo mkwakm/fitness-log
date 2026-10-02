@@ -632,3 +632,21 @@ body.sheet-open { overflow: hidden; }
 .perset-drops { grid-column: 2 / -1; margin-top: -4px; font-size: 0.8rem; color: var(--accent); }
 .focus-drops { margin: 0 0 4px; }
 .focus-drop { display: block; min-height: 40px; margin: 0 auto 6px; font-size: 0.85rem; }
+
+/* 슈퍼세트: 묶인 카드를 하나로 잇는다 (왼쪽 띠 + 사이 간격 없앰) */
+.card.ss { border-left: 3px solid var(--accent); }
+.card.ss:not(.ss-last) { margin-bottom: 0; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.card.ss:not(.ss-first) { border-top-left-radius: 0; border-top-right-radius: 0; }
+.ss-tag { margin: 0 0 8px; font-size: 0.8rem; color: var(--accent); font-weight: 600; }
+.ss-link { display: flex; justify-content: center; margin: -6px 0 6px; }
+.ss-link button {
+  min-height: 40px; padding: 0 14px; border-radius: 999px; font-size: 0.8rem;
+  color: var(--muted); background: transparent; border: 1px dashed var(--line);
+}
+.ss-link.on { margin: 0; background: var(--card); border-left: 3px solid var(--accent); border-right: 1px solid var(--line); }
+.ss-link.on button { border: none; color: var(--accent); }
+.drop-inline {
+  justify-self: start; min-height: 40px; padding: 0 12px; margin: -2px 0 2px 48px; border-radius: 999px;
+  font-size: 0.8rem; color: var(--accent); background: var(--accent-soft); border: 1px dashed var(--accent);
+}
+.focus-ss { margin: 0 0 6px; text-align: center; font-size: 0.85rem; color: var(--accent); }

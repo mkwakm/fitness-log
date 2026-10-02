@@ -1,7 +1,8 @@
 // 데이터 구조 (localStorage "fitness-log-v1"):
 // { profile: { weight, theme, mets, weightStep, restSec, foods, goal, updatedAt },
 //   days: { "YYYY-MM-DD": { meals: [{id, type, name, amount, kcal}],
-//                           workouts: [{id, name, minutes, sets: [{reps, weight, done}]}],
+//                           workouts: [{id, name, minutes, ss?, sets: [{reps, weight, done, drops?: [{weight, reps}]}]}],
+//                           (ss: 슈퍼세트 묶음 표시 — 붙어 있는 운동끼리 같으면 한 묶음)
 //                           note, weight, deleted: [지운 id], updatedAt } } }
 // updatedAt은 기기 간 병합 기준이라 save()가 자동으로 찍는다 (stampChanges).
 // 음식 칼로리 표(FOOD_DB, DEFAULT_UNITS)는 food-db.js, 동기화·병합은 sync.js에 있습니다.
@@ -459,6 +460,59 @@ function nextDrop(prev) {
   const weight = w > 0 ? Math.max(step, Math.round(Math.round(w * 0.8 / step) * step * 100) / 100) : null;
   return { weight, reps: Number(prev.reps) || 10 };
 }
+// ---------- 슈퍼세트 ----------
+// 두 운동 이상을 번갈아 하는 것(A1 → B1 → 휴식 → A2 → B2). 운동마다 묶음 표시(w.ss)를 달고,
+// **붙어 있는 운동끼리 같은 표시**면 한 묶음이다. 순서를 바꾸거나 지워서 떨어지면 저절로 풀린다(ssNormalize).
+// 볼륨·최고 기록·과부하는 지금처럼 운동별로 따로. 바뀌는 건 순서(집중 모드)와 휴식(묶음을 한 바퀴 돌아야 쉰다).
+function ssRuns(workouts) {
+  const runs = [];
+  workouts.forEach((w) => {
+    const last = runs.at(-1);
+    if (last && w.ss && last[0].ss === w.ss) last.push(w);
+    else runs.push([w]);
+  });
+  return runs;
+}
+function ssRunOf(w, workouts = day().workouts) {
+  return ssRuns(workouts).find((r) => r.includes(w)) ?? [w];
+}
+// 혼자 남은 표시는 지우고, 떨어진 두 묶음이 같은 표시를 쓰면 뒤 묶음에 새 표시를 준다
+function ssNormalize(workouts = day().workouts) {
+  const seen = new Set();
+  ssRuns(workouts).forEach((run) => {
+    if (run.length < 2) { run.forEach((w) => { delete w.ss; }); return; }
+    if (seen.has(run[0].ss)) { const id = uid(); run.forEach((w) => { w.ss = id; }); }
+    seen.add(run[0].ss);
+  });
+}
+// 위아래 두 운동을 묶거나(아래 운동이 이미 다른 묶음이면 그 묶음째로) 푼다
+function ssToggle(aId, bId, workouts = day().workouts) {
+  const i = workouts.findIndex((w) => w.id === aId);
+  const a = workouts[i], b = workouts[i + 1];
+  if (!a || !b || b.id !== bId) return;
+  if (a.ss && a.ss === b.ss) {
+    // 풀기: 아래쪽 운동들에 새 표시를 줘서 둘로 나눈다 (한 개만 남는 쪽은 ssNormalize가 지운다)
+    const id = uid();
+    const run = ssRunOf(a, workouts);
+    run.slice(run.indexOf(b)).forEach((w) => { w.ss = id; });
+  } else {
+    const id = a.ss || uid();
+    ssRunOf(b, workouts).forEach((w) => { w.ss = id; });
+    a.ss = id;
+  }
+  ssNormalize(workouts);
+}
+// 이 세트를 끝냈을 때 같은 바퀴에 남은 운동이 있나 (있으면 쉬지 않고 바로 넘어간다)
+function ssMoreInRound(w, i, workouts = day().workouts) {
+  const run = ssRunOf(w, workouts);
+  return run.length > 1 && run.slice(run.indexOf(w) + 1).some((x) => x.sets[i] && !x.sets[i].done);
+}
+// 날짜를 옮기거나 루틴으로 불러올 때: 묶음은 그대로, 표시만 새로 (같은 날 두 번 불러와도 안 섞이게)
+function ssRemap() {
+  const map = new Map();
+  return (ss) => (ss ? (map.has(ss) ? map.get(ss) : (map.set(ss, uid()), map.get(ss))) : undefined);
+}
+
 // 오늘 가장 최근에 완료한 세트 (집중 모드 휴식 화면의 "방금 세트에 드롭")
 function lastDoneSet(d = day()) {
   let best = null;
@@ -981,7 +1035,17 @@ function renderWorkouts() {
 
   renderBurn(workouts, weight, burn);
 
+  const runs = ssRuns(workouts);
+  const runOf = new Map(runs.flatMap((r) => r.map((w) => [w, r])));
+  const justDone = lastDoneSet();   // 방금 완료한 세트 바로 아래에 "드롭" 버튼을 띄운다 (카드 맨 아래는 눈에 안 띈다)
   $('#workoutList').innerHTML = workouts.map((w, idx) => {
+    const run = runOf.get(w);
+    const ss = run.length > 1;
+    const ssCls = ss ? ` ss ${run[0] === w ? 'ss-first' : ''} ${run.at(-1) === w ? 'ss-last' : ''}` : '';
+    const next = workouts[idx + 1];
+    const linked = next && runOf.get(next) === run && ss;
+    const linkRow = next ? `<div class="ss-link ${linked ? 'on' : ''}">
+      <button data-ss-link="${w.id}:${next.id}">${linked ? '🔗 슈퍼세트 · 풀기' : '🔗 아래 운동과 슈퍼세트로 묶기'}</button></div>` : '';
     const vol = volumeOf(w);
     const done = doneCount(w);
     const pr = personalBest(w.name);
@@ -993,7 +1057,8 @@ function renderWorkouts() {
     const tip = overloadTip(w.name);
     const rest = avgRest(w);
     const todayRm = Math.max(0, ...countedSets(w).map((x) => oneRM(Number(x.weight) || 0, Number(x.reps) || 0)));
-    return `<div class="card">
+    return `<div class="card${ssCls}">
+    ${ss && run[0] === w ? `<p class="ss-tag">🔗 슈퍼세트 ${run.length}종 · 번갈아 하고 한 바퀴 뒤에 쉬어요</p>` : ''}
     <div class="item"><h3><button class="ex-title" data-ex-detail="${esc(w.name)}">${esc(w.name)} <span aria-hidden="true">›</span></button></h3>
       <span class="order">
         ${idx > 0 ? `<button data-move="${w.id}:-1" aria-label="위로" title="위로">↑</button>` : ''}
@@ -1031,7 +1096,7 @@ function renderWorkouts() {
           <button data-step="${w.id}:${i}:reps:1" aria-label="횟수 늘리기">+</button>
         </span>
         <button class="del" data-del-set="${w.id}:${i}" aria-label="세트 삭제">✕</button>
-      </div>${dropRowsHtml(w, i, s)}`).join('')}
+      </div>${dropRowsHtml(w, i, s)}${justDone?.s === s ? `<button class="drop-inline" data-drop-add="${w.id}:${i}">↘ 무게 내려 이어 했으면 드롭 추가</button>` : ''}`).join('')}
     </div>
     <div class="item meta">
       <span class="set-btns"><button data-add-set="${w.id}">+ 세트 추가</button>
@@ -1048,7 +1113,7 @@ function renderWorkouts() {
       <span>${prText}</span>
       <span class="${isNewPr ? 'new-pr' : 'muted'}">${isNewPr ? '🎉 신기록!' : pr.date}</span>
     </div>` : ''}
-  </div>`;
+  </div>${linkRow}`;
   }).join('');
 }
 
@@ -1260,7 +1325,14 @@ function closeExSheet(fromPop = false) {
 // 운동하는 동안은 카드 목록에서 세트 줄을 찾아 누르는 게 일이다. 지금 할 세트 하나만 크게 띄우고,
 // 완료 → 휴식 → 다음 세트로 저절로 넘어가게 한다. 기록은 카드 화면과 같은 데이터를 쓴다.
 function focusQueue(d = day()) {
-  return d.workouts.flatMap((w) => w.sets.map((s, i) => ({ w, i, s })));
+  return ssRuns(d.workouts).flatMap((run) => {
+    if (run.length < 2) return run[0].sets.map((s, i) => ({ w: run[0], i, s }));
+    // 슈퍼세트: A1 → B1 → A2 → B2 … (세트 수가 다르면 남는 쪽만 이어서)
+    const rounds = Math.max(...run.map((w) => w.sets.length));
+    const out = [];
+    for (let i = 0; i < rounds; i++) run.forEach((w) => { if (w.sets[i]) out.push({ w, i, s: w.sets[i] }); });
+    return out;
+  });
 }
 function focusCurrent() {
   const q = focusQueue();
@@ -1335,6 +1407,7 @@ function focusSetHtml({ w, i, s, idx, q }) {
       </div>
     </div>`;
   return `
+    ${focusSsHtml(w)}
     <button class="focus-ex" data-ex-detail="${esc(w.name)}">${esc(w.name)} <span aria-hidden="true">›</span></button>
     <div class="focus-sets">
       <span class="focus-set">${i + 1}세트 <span class="muted">/ ${w.sets.length}</span></span>
@@ -1354,6 +1427,12 @@ function focusSetHtml({ w, i, s, idx, q }) {
       <button data-focus-move="1">${idx < q.length - 1 ? '다음 ›' : q.some((x) => !x.s.done) ? '남은 세트 ›' : '마무리 ›'}</button>
     </div>
     <button class="link-btn focus-addex" data-focus-addex>다른 운동 추가하기</button>`;
+}
+
+function focusSsHtml(w) {
+  const run = ssRunOf(w);
+  if (run.length < 2) return '';
+  return `<p class="focus-ss">🔗 슈퍼세트 · ${run.map((x) => x === w ? `<b>${esc(x.name)}</b>` : esc(x.name)).join(' → ')}</p>`;
 }
 
 function focusRestHtml({ w, i, s }) {
@@ -1411,7 +1490,8 @@ function focusComplete() {
   if (cur.s.done) {
     const nx = nextPending(cur.q, cur.idx);
     focusAt = nx ? { id: nx.w.id, i: nx.i } : null;
-    if (nx) startRest();          // 마지막 세트 뒤엔 쉴 이유가 없다
+    // 마지막 세트 뒤엔 쉴 이유가 없고, 슈퍼세트는 한 바퀴를 다 돌아야 쉰다
+    if (nx && !ssMoreInRound(cur.w, cur.i)) startRest();
     else stopRest();
   }
   save();
@@ -2074,8 +2154,11 @@ function renderRoutineBtn() {
 // 루틴은 "무슨 운동을 몇 세트 몇 회" 까지만 담는다. 중량은 저장하지 않고 불러올 때
 // 그 운동의 최근 기록에서 가져온다. 안 그러면 석 달 전 무게가 그대로 따라온다.
 function routineFrom(workouts) {
+  // 슈퍼세트 묶음은 루틴 안에서만 통하는 번호로 (날짜마다 다른 표시를 그대로 옮기면 의미가 없다)
+  const runIdx = new Map(ssRuns(workouts).flatMap((r, k) => (r.length > 1 ? r.map((w) => [w, k + 1]) : [])));
   return workouts.map((w) => ({
     name: w.name,
+    ...(runIdx.has(w) ? { ss: runIdx.get(w) } : {}),
     sets: w.sets.length,
     // 세트마다 횟수가 다르면(12·10·8) 그 모양을, 같으면 숫자 하나 — 예전 루틴과도 맞는다
     reps: new Set(w.sets.map((x) => Number(x.reps) || 0)).size > 1 ? w.sets.map((x) => Number(x.reps) || 0) : (Number(w.sets[0]?.reps) || 10),
@@ -2110,11 +2193,13 @@ function loadRoutineByName(key) {
   const items = state.profile.routines?.[key];
   if (!items || !confirm(`'${key}' 루틴 ${items.length}종을 불러올까요?\n중량은 그 운동의 최근 기록으로 채워요.`)) return;
   day().plan = key;                                    // 불러온 루틴이 곧 오늘의 계획
+  const ss = ssRemap();
   items.forEach((it) => {
     day().workouts.push({
       id: uid(),
       name: it.name,
       minutes: it.minutes,
+      ...(it.ss ? { ss: ss(String(it.ss)) } : {}),
       sets: setsLikeLast(it.name, it.sets, it.reps),   // 무게는 최근 기록에서 세트마다
     });
   });
@@ -2202,11 +2287,13 @@ function renderRoutines() {
 function loadRoutine(date) {
   const src = state.days[date];
   if (!src || !confirm(`${fmtDate(date)} 운동 ${src.workouts.length}종을 그대로 불러올까요?`)) return;
+  const ss = ssRemap();
   src.workouts.forEach((w) => {
     day().workouts.push({
       id: uid(),
       name: w.name,
       minutes: w.minutes,
+      ...(w.ss ? { ss: ss(w.ss) } : {}),
       sets: w.sets.map(copySet),
     });
   });
@@ -2635,6 +2722,7 @@ document.addEventListener('click', (e) => {
     if (!w || !confirm('이 운동을 삭제할까요?')) return;
     pushUndo(`'${w?.name ?? '운동'}' 삭제함`);
     day().workouts = day().workouts.filter((x) => x.id !== ds.delWorkout);
+    ssNormalize();
     markDeleted(ds.delWorkout);
   } else if (ds.toggle) {
     const [id, i] = ds.toggle.split(':');
@@ -2642,7 +2730,9 @@ document.addEventListener('click', (e) => {
     if (!set) return;
     set.done = !set.done;
     set.doneAt = set.done ? Date.now() : null;   // 세트 사이 쉰 시간을 재는 기준
-    if (set.done) startRest();      // 세트를 끝냈으니 휴식 시작
+    const w = findWorkout(id);
+    if (set.done && !ssMoreInRound(w, Number(i))) startRest();   // 세트를 끝냈으니 휴식 (슈퍼세트는 한 바퀴 뒤에)
+    else if (set.done) stopRest();
   } else if (ds.step) {
     const [id, i, field, dir] = ds.step.split(':');
     const set = findWorkout(id)?.sets[i];
@@ -2654,8 +2744,9 @@ document.addEventListener('click', (e) => {
     const src = state.days[ds.copyDay];
     if (!src?.workouts.length) return;
     if (!confirm(`${fmtDate(ds.copyDay)} 운동 ${src.workouts.length}종을 ${fmtDate(currentDate)}로 불러올까요?`)) return;
+    const ss = ssRemap();
     src.workouts.forEach((w) => day().workouts.push({
-      id: uid(), name: w.name, minutes: w.minutes,
+      id: uid(), name: w.name, minutes: w.minutes, ...(w.ss ? { ss: ss(w.ss) } : {}),
       sets: w.sets.map(copySet),
     }));
     showTab('workouts');
@@ -2687,6 +2778,7 @@ document.addEventListener('click', (e) => {
     const j = i + Number(dir);
     if (i < 0 || j < 0 || j >= list.length) return;
     [list[i], list[j]] = [list[j], list[i]];
+    ssNormalize(list);
   } else if (ds.water) {
     const cups = Math.max(0, (Number(day().water) || 0) + Number(ds.water));
     day().water = cups || null;
@@ -2713,6 +2805,9 @@ document.addEventListener('click', (e) => {
     updateMealHint();
     renderMyFoods();
     return;
+  } else if (ds.ssLink) {
+    const [a, b] = ds.ssLink.split(':');
+    ssToggle(a, b);
   } else if (ds.dropAdd) {
     const set = ds.dropAdd === 'last' ? lastDoneSet()?.s : (() => {
       const [id, at] = ds.dropAdd.split(':');
@@ -2745,6 +2840,7 @@ document.addEventListener('click', (e) => {
     } else if (confirm('마지막 세트예요. 이 운동을 삭제할까요?')) {
       pushUndo(`'${w.name}' 삭제함`);
       day().workouts = day().workouts.filter((x) => x.id !== id);
+      ssNormalize();
       markDeleted(id);
     } else {
       return;
