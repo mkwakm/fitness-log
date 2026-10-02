@@ -1,7 +1,7 @@
 // 데이터 구조 (localStorage "fitness-log-v1"):
 // { profile: { weight, theme, mets, weightStep, restSec, foods, goal, updatedAt },
 //   days: { "YYYY-MM-DD": { meals: [{id, type, name, amount, kcal}],
-//                           workouts: [{id, name, minutes, ss?, sets: [{reps, weight, done, drops?: [{weight, reps}]}]}],
+//                           workouts: [{id, name, minutes, ss?, sets: [{reps, weight, done, warmup?, drops?: [{weight, reps}]}]}],
 //                           (ss: 슈퍼세트 묶음 표시 — 붙어 있는 운동끼리 같으면 한 묶음)
 //                           note, weight, deleted: [지운 id], updatedAt } } }
 // updatedAt은 기기 간 병합 기준이라 save()가 자동으로 찍는다 (stampChanges).
@@ -396,7 +396,8 @@ function autoMet(name) {
 // 시간을 직접 적었으면 그 값이 사실이므로 그대로 쓰고, 안 적었으면 완료한 세트 수로 추정한다.
 function minutesOf(w) {
   const m = Number(w.minutes);
-  return m > 0 ? m : countedSets(w).length * MIN_PER_SET;
+  // 워밍업도 시간은 든다 — 볼륨·기록에선 빼도 시간(→ 소모 칼로리) 추정엔 넣는다
+  return m > 0 ? m : (countedSets(w).length + warmupsCounted(w).length) * MIN_PER_SET;
 }
 function isEstimated(w) {
   return !(Number(w.minutes) > 0);
@@ -407,12 +408,31 @@ function burnOf(w, weight = bodyWeight()) {
 }
 // 완료 체크한 세트만 집계한다. 하나도 체크 안 했으면 (체크를 안 쓰는 경우) 전체를 집계.
 // 덕분에 "계획만 넣어둔 세트"가 볼륨·칼로리에 먼저 잡히지 않는다.
+// 워밍업 세트(set.warmup)는 몸을 데우는 가벼운 세트라 볼륨·세트 수·최고 기록·과부하 제안에서 뺀다.
+// 안 빼면 워밍업을 많이 한 날이 더 많이 한 날처럼 보이고, 첫 세트(워밍업) 기준으로 "다 채웠다"를 잘못 판단한다.
+function workSets(w) {
+  return w.sets.filter((s) => !s.warmup);
+}
 function countedSets(w) {
-  const done = w.sets.filter((s) => s.done);
-  return done.length ? done : w.sets;
+  const work = workSets(w);
+  const done = work.filter((s) => s.done);
+  return done.length ? done : work;
+}
+function warmupsCounted(w) {
+  const ws = w.sets.filter((s) => s.warmup);
+  const done = ws.filter((s) => s.done);
+  return w.sets.some((s) => s.done) ? done : ws;
 }
 function doneCount(w) {
-  return w.sets.filter((s) => s.done).length;
+  return workSets(w).filter((s) => s.done).length;
+}
+// 워밍업 다음 무게: 첫 본 세트의 절반(무게 단위로), 이미 워밍업이 있으면 그것과 본 세트의 가운데
+function nextWarmup(w) {
+  const step = Number(state.profile.weightStep) || 2.5;
+  const work = Number(workSets(w)[0]?.weight) || 0;
+  const prev = Number(w.sets.filter((s) => s.warmup).at(-1)?.weight) || 0;
+  const raw = prev ? (prev + work) / 2 : work * 0.5;
+  return { weight: work > 0 ? Math.max(step, Math.round(Math.round(raw / step) * step * 100) / 100) : null, reps: 10, done: false, warmup: true };
 }
 // 세트를 완료한 시각(set.doneAt)으로 세트 사이 쉰 시간을 되짚는다.
 // 20분이 넘으면 쉰 게 아니라 자리를 비운 것으로 보고 뺀다.
@@ -451,7 +471,7 @@ function segsOf(s) {
 // 세트를 새로 만들 때(세트 추가·불러오기·지난번대로) 드롭 모양도 같이 옮긴다
 function copySet(s) {
   const drops = dropsOf(s).map((d) => ({ weight: d.weight ?? null, reps: d.reps ?? 0 }));
-  return { weight: s.weight ?? null, reps: s.reps ?? 0, ...(drops.length ? { drops } : {}), done: false };
+  return { weight: s.weight ?? null, reps: s.reps ?? 0, ...(s.warmup ? { warmup: true } : {}), ...(drops.length ? { drops } : {}), done: false };
 }
 // 다음 드롭: 직전 무게의 80%를 무게 단위로 맞춰서, 횟수는 그대로 (보통 20~30% 내린다)
 function nextDrop(prev) {
@@ -600,11 +620,11 @@ function setsLikeLast(name, count = 0, reps = null, { progress = false } = {}) {
   const n = Math.max(1, Number(count) || src.length || 1);
   return Array.from({ length: n }, (_, i) => {
     const s = src[Math.min(i, src.length - 1)] || {};
-    const w = Number(s.weight) > 0 ? Math.round((Number(s.weight) + bump) * 100) / 100 : null;
+    const w = Number(s.weight) > 0 ? Math.round((Number(s.weight) + (s.warmup ? 0 : bump)) * 100) / 100 : null;   // 워밍업은 안 올린다
     const pick = Array.isArray(reps) ? reps[Math.min(i, reps.length - 1)] : reps;
     const r = tip?.kind === 'reps' ? tip.to : (Number(pick) || Number(s.reps) || 10);
     const drops = dropsOf(s).map((d) => ({ weight: d.weight ?? null, reps: d.reps ?? 0 }));
-    return { weight: w, reps: r, ...(drops.length ? { drops } : {}), done: false };
+    return { weight: w, reps: s.warmup ? (Number(s.reps) || 10) : r, ...(s.warmup ? { warmup: true } : {}), ...(drops.length ? { drops } : {}), done: false };
   });
 }
 function setsVary(sets) {
@@ -636,7 +656,7 @@ function setsText(w) {
     return first ? `${kg}kg×${reps}` : `${kg}×${reps}`;
   };
   // 드롭세트는 "60kg×10↘50×8↘40×6"처럼 한 세트로 이어 쓴다
-  return w.sets.map((s, i) => [one(s, i === 0), ...dropsOf(s).map((d) => one(d, false))].join('↘')).join(', ');
+  return w.sets.map((s, i) => (s.warmup ? 'W' : '') + [one(s, i === 0), ...dropsOf(s).map((d) => one(d, false))].join('↘')).join(', ');
 }
 // 운동이 있는 가장 최근 이전 날짜 (루틴 불러오기용)
 function lastWorkoutDate(before = currentDate) {
@@ -1022,7 +1042,7 @@ function renderMyFoods() {
 function renderWorkouts() {
   const workouts = day().workouts;
   const weight = bodyWeight();
-  const totalSets = workouts.reduce((s, w) => s + w.sets.length, 0);
+  const totalSets = workouts.reduce((s, w) => s + workSets(w).length, 0);
   const done = workouts.reduce((s, w) => s + doneCount(w), 0);
   const volume = workouts.reduce((s, w) => s + volumeOf(w), 0);
   const totalMin = workouts.reduce((s, w) => s + minutesOf(w), 0);
@@ -1084,7 +1104,7 @@ function renderWorkouts() {
     <div class="set-table">
       <div class="set-row head"><span>세트</span><span>중량(kg)</span><span>횟수</span><span></span></div>
       ${w.sets.map((s, i) => `<div class="set-row ${s.done ? 'done' : ''}">
-        <button class="set-no" data-toggle="${w.id}:${i}" title="완료 표시">${i + 1}${s.done ? ' ✓' : ''}</button>
+        <button class="set-no ${s.warmup ? 'warm' : ''}" data-toggle="${w.id}:${i}" title="${s.warmup ? '워밍업 세트 (볼륨·기록에서 빠져요) · ' : ''}완료 표시">${s.warmup ? 'W' : setNo(w, i)}${s.done ? ' ✓' : ''}</button>
         <span class="stepper">
           <button data-step="${w.id}:${i}:weight:-1" aria-label="중량 줄이기">−</button>
           <input type="number" inputmode="decimal" min="0" step="0.5" value="${s.weight ?? ''}" placeholder="맨몸" data-edit="${w.id}:${i}:weight">
@@ -1100,8 +1120,9 @@ function renderWorkouts() {
     </div>
     <div class="item meta">
       <span class="set-btns"><button data-add-set="${w.id}">+ 세트 추가</button>
+      <button data-add-warmup="${w.id}" title="본 세트 앞에 가벼운 워밍업 세트를 넣어요 (볼륨·기록에서 빠져요)">+ 워밍업</button>
       <button data-drop-add="${w.id}" title="방금 완료한 세트에 무게를 내려 이어 한 것을 붙여요">↘ 드롭</button></span>
-      <span class="muted">${done ? `${done}/${w.sets.length}세트 완료 · ` : ''}볼륨 ${vol.toLocaleString()} kg${
+      <span class="muted">${done ? `${done}/${workSets(w).length}세트 완료 · ` : ''}볼륨 ${vol.toLocaleString()} kg${
         todayRm ? ` · 오늘 1RM ${todayRm}kg` : ''}${rest ? ` · 휴식 ${mmss(rest)}` : ''}</span>
     </div>
     ${last ? `<div class="item pr">
@@ -1118,6 +1139,10 @@ function renderWorkouts() {
 }
 
 // 세트 아래에 붙는 드롭 줄 (카드·집중 모드 같이 쓴다)
+// 본 세트 번호 (워밍업은 빼고 센다: W, W, 1, 2, 3)
+function setNo(w, i) {
+  return w.sets.slice(0, i + 1).filter((s) => !s.warmup).length;
+}
 function dropRowsHtml(w, i, s) {
   return dropsOf(s).map((d, k) => `<div class="set-row drop ${s.done ? 'done' : ''}">
     <span class="drop-mark" aria-hidden="true">↘</span>
@@ -1410,7 +1435,7 @@ function focusSetHtml({ w, i, s, idx, q }) {
     ${focusSsHtml(w)}
     <button class="focus-ex" data-ex-detail="${esc(w.name)}">${esc(w.name)} <span aria-hidden="true">›</span></button>
     <div class="focus-sets">
-      <span class="focus-set">${i + 1}세트 <span class="muted">/ ${w.sets.length}</span></span>
+      <span class="focus-set">${s.warmup ? '워밍업' : `${setNo(w, i)}세트`} <span class="muted">/ ${workSets(w).length}</span></span>
       <span class="focus-dots">${w.sets.map((x, k) => `<i class="${x.done ? 'on' : ''} ${k === i ? 'cur' : ''}"></i>`).join('')}</span>
     </div>
     ${field('weight', '중량', 'kg', 'inputmode="decimal" min="0" step="0.5" placeholder="맨몸"')}
@@ -2064,7 +2089,7 @@ function monthDaysHtml(list) {
     const d = state.days[date];
     const kcal = dayIntake(d);
     const burn = dayBurn(date);
-    const ex = d.workouts.map((w) => `${esc(w.name)} ${w.sets.length}×${w.sets[0]?.reps ?? 0}`).join(', ');
+    const ex = d.workouts.map((w) => `${esc(w.name)} ${workSets(w).length}×${workSets(w)[0]?.reps ?? 0}`).join(', ');
     return `<div class="card history-day" data-goto="${date}">
       <h3>${date}</h3>
       <div class="muted">🍚 ${d.meals.length}개${kcal ? ` · ${kcal} kcal` : ''}</div>
@@ -2093,21 +2118,23 @@ function renderPerSet() {
   $('#perSetToggle').textContent = formUniform ? '세트마다 다르게 적기' : '모든 세트 같게';
   $('#perSetBox').hidden = formUniform;
   if (formUniform) return;
-  if ($('#perSetBox').contains(document.activeElement)) return;   // 치는 중엔 다시 그리지 않는다
+  // 치는 중엔 다시 그리지 않는다 — 입력칸만 (세트 번호 버튼까지 막으면 눌러도 안 바뀐 것처럼 보인다)
+  if (document.activeElement?.matches?.('#perSetBox input')) return;
+  const no = (i) => perSet.slice(0, i + 1).filter((x) => !x.warmup).length;
   $('#perSetBox').innerHTML = perSet.map((s, i) => `
     <div class="perset-row">
-      <span class="perset-no">${i + 1}세트</span>
+      <button type="button" class="perset-no ${s.warmup ? 'warm' : ''}" data-psw="${i}" aria-pressed="${!!s.warmup}" title="누르면 워밍업 ↔ 본 세트">${s.warmup ? '워밍업' : `${no(i)}세트`}</button>
       <label><input type="number" inputmode="decimal" min="0" step="0.5" placeholder="맨몸" value="${s.weight ?? ''}" data-ps="${i}:weight" aria-label="${i + 1}세트 중량"><span>kg</span></label>
       <label><input type="number" inputmode="numeric" min="0" value="${s.reps ?? ''}" data-ps="${i}:reps" aria-label="${i + 1}세트 횟수"><span>회</span></label>
       ${dropsOf(s).length ? `<span class="perset-drops">${dropsOf(s).map((d) => `↘ ${Number(d.weight) > 0 ? `${d.weight}kg×` : ''}${d.reps ?? 0}`).join(' ')} <span class="muted">(지난번 드롭)</span></span>` : ''}
-    </div>`).join('');
+    </div>`).join('') + '<p class="hint perset-tip">세트 번호를 누르면 워밍업으로 바뀌어요 (볼륨·최고 기록·과부하 제안에서 빠져요)</p>';
 }
 // 세트 수가 바뀌면 표도 늘리고 줄인다 (늘릴 땐 마지막 세트를 따라)
 function resizePerSet() {
   if (formUniform) return;
   const n = Math.max(1, Math.min(20, Number($('#exSets').value) || 1));
   while (perSet.length < n) {
-    const { done, ...last } = copySet(perSet.at(-1));
+    const { done, warmup, ...last } = copySet(perSet.at(-1));   // 늘린 세트는 본 세트로
     perSet.push(last);
   }
   perSet.length = n;
@@ -2126,9 +2153,10 @@ function partnerHint(name) {
   return `↩ 지난번 ${fmtDate(last.date)}: ${esc(setsText(last.workout))}${tip ? `<br><span class="tip">${overloadText(tip)}</span>` : ''}`;
 }
 function partnerRowsHtml(p, k) {
+  const no = (i) => p.sets.slice(0, i + 1).filter((x) => !x.warmup).length;
   return p.sets.map((s, i) => `
     <div class="perset-row">
-      <span class="perset-no">${i + 1}세트</span>
+      <button type="button" class="perset-no ${s.warmup ? 'warm' : ''}" data-ppw="${k}:${i}" aria-pressed="${!!s.warmup}">${s.warmup ? '워밍업' : `${no(i)}세트`}</button>
       <label><input type="number" inputmode="decimal" min="0" step="0.5" placeholder="맨몸" value="${s.weight ?? ''}" data-pps="${k}:${i}:weight" aria-label="${k + 2}번째 운동 ${i + 1}세트 중량"><span>kg</span></label>
       <label><input type="number" inputmode="numeric" min="0" value="${s.reps ?? ''}" data-pps="${k}:${i}:reps" aria-label="${k + 2}번째 운동 ${i + 1}세트 횟수"><span>회</span></label>
     </div>`).join('');
@@ -2192,7 +2220,7 @@ function updateExHint() {
   // 지난번 세트 모양대로 표를 채운다 (다 채웠으면 한 단위씩 올려서). 직접 만진 표는 그대로.
   if (!perSetTouched && !formUniform) {
     perSet = last
-      ? setsLikeLast(name, 0, null, { progress: true }).map(({ weight, reps, drops }) => ({ weight, reps, ...(drops ? { drops } : {}) }))
+      ? setsLikeLast(name, 0, null, { progress: true }).map(({ done, ...x }) => x)
       : defaultPerSet(Number($('#exSets').value) || 3);
     $('#exSets').value = perSet.length;
     if (last) $('#exHint').insertAdjacentHTML('beforeend', '<br>📋 지난번 세트대로 채웠어요.');
@@ -2285,9 +2313,9 @@ function planItems(date = currentDate) {
     return {
       name: it.name,
       target: it.sets,
-      done: w ? doneCount(w) : 0,
+      done: w ? w.sets.filter((x) => x.done).length : 0,
       added: !!w,
-      hit: w ? doneCount(w) >= it.sets : false,
+      hit: w ? w.sets.filter((x) => x.done).length >= it.sets : false,
       inList: doneNames.has(metKey(it.name)),
     };
   });
@@ -2634,6 +2662,17 @@ $('#ssBox').addEventListener('input', (e) => {
   }
 });
 $('#ssBox').addEventListener('click', (e) => {
+  const pw = e.target.closest('[data-ppw]')?.dataset.ppw;
+  if (pw) {
+    const [k, i] = pw.split(':').map(Number);
+    const row = partners[k]?.sets[i];
+    if (!row) return;
+    if (row.warmup) delete row.warmup;
+    else row.warmup = true;
+    partners[k].touched = true;
+    $(`#ssRows${k}`).innerHTML = partnerRowsHtml(partners[k], k);
+    return;
+  }
   const k = e.target.closest('[data-pdel]')?.dataset.pdel;
   if (k == null) return;
   partners.splice(Number(k), 1);
@@ -2644,6 +2683,14 @@ $('#exHint').addEventListener('click', (e) => {
   if (!b) return;
   b.dataset.ssSuggest.split('\n').forEach((n) => addPartner(n));
   updateExHint();
+});
+$('#perSetBox').addEventListener('click', (e) => {
+  const i = e.target.closest('[data-psw]')?.dataset.psw;
+  if (i == null || !perSet[i]) return;
+  if (perSet[i].warmup) delete perSet[i].warmup;
+  else perSet[i].warmup = true;
+  perSetTouched = true;
+  renderPerSet();
 });
 $('#perSetBox').addEventListener('input', (e) => {
   const [i, field] = (e.target.dataset.ps || '').split(':');
@@ -2933,10 +2980,16 @@ document.addEventListener('click', (e) => {
     drops.splice(Number(k), 1);
     if (drops.length) set.drops = drops;
     else delete set.drops;
+  } else if (ds.addWarmup) {
+    const w = findWorkout(ds.addWarmup);
+    if (!w) return;
+    const at = w.sets.filter((x) => x.warmup).length;   // 워밍업 끝, 본 세트 바로 앞에
+    w.sets.splice(at, 0, nextWarmup(w));
   } else if (ds.addSet) {
     const w = findWorkout(ds.addSet);
     if (!w) return;
-    w.sets.push(copySet(w.sets[w.sets.length - 1] || { reps: 10, weight: null }));
+    const { warmup, ...last } = copySet(w.sets[w.sets.length - 1] || { reps: 10, weight: null });
+    w.sets.push(last);
   } else if (ds.delSet) {
     const [id, i] = ds.delSet.split(':');
     const w = findWorkout(id);

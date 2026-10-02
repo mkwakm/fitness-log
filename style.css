@@ -665,3 +665,10 @@ body.sheet-open { overflow: hidden; }
   color: var(--accent); background: transparent; border: 1px dashed var(--accent);
 }
 .ss-suggest { font-size: 0.8rem; min-height: 40px; color: var(--accent); }
+
+/* 워밍업 세트: 볼륨·기록에서 빠지는 가벼운 세트 */
+.set-no.warm { color: var(--muted); border-style: dashed; font-weight: 700; }
+.set-row:has(.set-no.warm) input { color: var(--muted); }
+button.perset-no { min-height: 40px; padding: 0 4px; border-radius: 8px; background: transparent; border: 1px dashed var(--line); color: var(--muted); font-size: 0.8rem; }
+button.perset-no.warm { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+.perset-tip { grid-column: 1 / -1; margin: 0; }
