@@ -650,3 +650,18 @@ body.sheet-open { overflow: hidden; }
   font-size: 0.8rem; color: var(--accent); background: var(--accent-soft); border: 1px dashed var(--accent);
 }
 .focus-ss { margin: 0 0 6px; text-align: center; font-size: 0.85rem; color: var(--accent); }
+
+/* 운동 폼: 슈퍼세트로 같이 넣을 운동 */
+.ss-box { display: grid; gap: 8px; }
+.ss-box:empty { display: none; }
+.ss-partner {
+  display: grid; gap: 8px; padding: 10px 12px; border-radius: 10px;
+  border: 1px dashed var(--accent); border-left: 3px solid var(--accent); background: var(--card-2);
+}
+.ss-partner-head { display: flex; align-items: center; justify-content: space-between; font-size: 0.85rem; color: var(--accent); font-weight: 600; }
+.ss-partner-head .del { min-height: 40px; min-width: 40px; }
+.ss-add {
+  min-height: 40px; border-radius: 999px; font-size: 0.85rem;
+  color: var(--accent); background: transparent; border: 1px dashed var(--accent);
+}
+.ss-suggest { font-size: 0.8rem; min-height: 40px; color: var(--accent); }

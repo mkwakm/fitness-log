@@ -106,20 +106,68 @@ export default async function (t) {
   await page.click('.drop-inline');
   t.eq(await page.evaluate(() => day().workouts[0].sets[1].drops), [{ weight: 12.5, reps: 10 }], '누르면 그 세트에 드롭이 붙음');
 
+  // ── 운동 폼에서 한 번에 넣기 (운동 순서가 처음부터 번갈아라) ──
+  await page.evaluate(() => {
+    state.days = {};
+    state.days[shiftDate(todayStr(), -3)] = { meals: [], note: '', workouts: [
+      { id: 'p', name: '벤치프레스', ss: 'old', sets: [1, 2, 3].map(() => ({ weight: 60, reps: 10, done: true })) },
+      { id: 'q', name: '바벨로우', ss: 'old', sets: [1, 2, 3].map(() => ({ weight: 50, reps: 8, done: true })) },
+      { id: 'r', name: '레그프레스', sets: [{ weight: 100, reps: 10, done: true }] }] };
+    currentDate = todayStr(); save(); render();
+  });
+  await page.fill('#exName', '레그프레스');
+  await wait(page, 80);
+  t.eq(await page.locator('[data-ss-suggest]').count(), 0, '슈퍼세트로 안 했던 운동은 제안 없음');
+  await page.fill('#exName', '벤치프레스');
+  await wait(page, 80);
+  t.ok((await text(page, '#exHint')).includes('바벨로우와(과) 슈퍼세트'), '지난번에 같이 한 운동을 알려줌');
+  await page.click('[data-ss-suggest]');
+  t.eq(await page.evaluate(() => partners.map((p) => [p.name, p.sets.map((x) => [x.weight, x.reps])])),
+    [['바벨로우', [[52.5, 8], [52.5, 8], [52.5, 8]]]], '"같이 추가"를 누르면 두 번째 칸이 그 운동의 지난번 세트로 (다 채웠으면 한 단위 올려서, 첫 운동과 같은 규칙)');
+  t.eq(await page.locator('[data-ss-suggest]').count(), 0, '이미 넣었으면 제안은 사라짐');
+  await page.fill('#exSets', '2');
+  await page.dispatchEvent('#exSets', 'input');
+  t.eq(await page.evaluate(() => partners[0].sets.length), 2, '세트 수는 위 칸 하나로 같이');
+  await page.fill('[data-pps="0:1:reps"]', '6');
+  await page.click('#ssAdd');                                         // 세 번째 (자이언트 세트)
+  await page.fill('[data-pn="1"]', '케이블플라이');
+  await wait(page, 50);
+  t.eq(await page.evaluate(() => partners[1].sets.length), 2, '세 번째 운동도 같은 세트 수');
+  t.ok((await text(page, '#ssHint1')).includes('처음 하는 운동'), '처음 하는 운동이면 그렇게 알려줌');
+  await page.click('#workoutForm button[type=submit]');
+  const ws = await page.evaluate(() => day().workouts.map((w) => ({ name: w.name, ss: w.ss ?? null, sets: w.sets.map((x) => [x.weight, x.reps]) })));
+  t.eq(ws.map((w) => w.name), ['벤치프레스', '바벨로우', '케이블플라이'], '"운동 추가" 한 번에 셋이 순서대로');
+  t.ok(ws[0].ss && ws.every((w) => w.ss === ws[0].ss) && ws[0].ss !== 'old', '처음부터 한 묶음 (지난번 표시와는 다른 새 표시)');
+  t.eq(ws[1].sets, [[52.5, 8], [52.5, 6]], '두 번째 운동에 적은 값 그대로');
+  t.eq(await page.evaluate(() => focusQueue().map((x) => `${x.w.name[0]}${x.i + 1}`)), ['벤1', '바1', '케1', '벤2', '바2', '케2'], '집중 모드는 바로 번갈아');
+  t.eq(await page.evaluate(() => partners.length), 0, '추가하면 폼의 슈퍼세트 칸은 비워짐');
+  t.ok(await page.locator('#ssBox').isHidden(), '빈 칸은 숨김');
+  // 빈 이름 칸은 무시
+  await page.fill('#exName', '스쿼트');
+  await page.click('#ssAdd');
+  await page.click('#workoutForm button[type=submit]');
+  t.eq(await page.evaluate(() => day().workouts.at(-1).ss ?? null), null, '두 번째 이름을 비워 두면 그냥 한 운동으로');
+  await page.click('#ssAdd');
+  await page.click('[data-pdel="0"]');
+  t.eq(await page.evaluate(() => partners.length), 0, '✕로 뺄 수 있음');
+
   // ── 휴대폰 화면 ──
   await page.evaluate(() => {
     const mk = (id, name, ss) => ({ id, name, ...(ss ? { ss } : {}), sets: [{ weight: 60, reps: 10, done: true, doneAt: Date.now() }] });
     day().workouts = [mk('a', '벤치프레스', 'g'), mk('b', '바벨로우', 'g'), mk('c', '사이드레터럴레이즈')];
     save(); render();
   });
+  await page.click('#ssAdd');
   for (const w of [375, 320]) {
     await page.setViewportSize({ width: w, height: 800 });
     const r = await page.evaluate(() => ({
       over: document.documentElement.scrollWidth - innerWidth,
-      small: [...document.querySelectorAll('#workoutList [data-ss-link], #workoutList .drop-inline')].filter((x) => x.getBoundingClientRect().height < 40).length,
+      small: [...document.querySelectorAll('#workoutList [data-ss-link], #workoutList .drop-inline, #ssAdd, #ssBox button, #ssBox input')].filter((x) => x.getBoundingClientRect().height < 40).length,
+      font: Math.min(...[...document.querySelectorAll('#ssBox input')].map((x) => parseFloat(getComputedStyle(x).fontSize))),
     }));
     t.ok(r.over <= 0, `${w}px 가로 스크롤 없음`);
-    t.eq(r.small, 0, `${w}px 묶기·드롭 버튼 40px 이상`);
+    t.eq(r.small, 0, `${w}px 묶기·드롭·폼 슈퍼세트 칸 40px 이상`);
+    t.ok(r.font >= 16, `${w}px 폼 슈퍼세트 입력칸 16px 이상`);
   }
   t.noErrors(page);
 }

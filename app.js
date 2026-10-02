@@ -2082,6 +2082,9 @@ function monthDaysHtml(list) {
 let perSet = defaultPerSet();
 let formUniform = false;
 let perSetTouched = false;     // 표를 직접 만졌으면 운동 이름을 바꿔도 덮어쓰지 않는다
+// 폼에서 슈퍼세트로 같이 넣을 운동들 [{ name, sets: [{weight, reps, drops?}], touched }].
+// 사용자는 슈퍼세트를 처음부터 번갈아 하므로 하나씩 넣고 나중에 묶는 것보다 한 번에 넣는 게 순서에 맞다.
+let partners = [];
 function defaultPerSet(n = 3, weight = null, reps = 10) {
   return Array.from({ length: Math.max(1, Math.min(20, n)) }, () => ({ weight, reps }));
 }
@@ -2110,6 +2113,63 @@ function resizePerSet() {
   perSet.length = n;
   renderPerSet();
 }
+// ---------- 폼: 슈퍼세트로 같이 추가 ----------
+function partnerSets(name, n) {
+  return name && lastRecord(name)
+    ? setsLikeLast(name, n, null, { progress: true }).map(({ done, ...x }) => x)
+    : defaultPerSet(n);
+}
+function partnerHint(name) {
+  const last = name ? lastRecord(name) : null;
+  if (!last) return name ? '처음 하는 운동이에요.' : '';
+  const tip = overloadTip(name);
+  return `↩ 지난번 ${fmtDate(last.date)}: ${esc(setsText(last.workout))}${tip ? `<br><span class="tip">${overloadText(tip)}</span>` : ''}`;
+}
+function partnerRowsHtml(p, k) {
+  return p.sets.map((s, i) => `
+    <div class="perset-row">
+      <span class="perset-no">${i + 1}세트</span>
+      <label><input type="number" inputmode="decimal" min="0" step="0.5" placeholder="맨몸" value="${s.weight ?? ''}" data-pps="${k}:${i}:weight" aria-label="${k + 2}번째 운동 ${i + 1}세트 중량"><span>kg</span></label>
+      <label><input type="number" inputmode="numeric" min="0" value="${s.reps ?? ''}" data-pps="${k}:${i}:reps" aria-label="${k + 2}번째 운동 ${i + 1}세트 횟수"><span>회</span></label>
+    </div>`).join('');
+}
+function renderPartners() {
+  $('#ssBox').innerHTML = partners.map((p, k) => `
+    <div class="ss-partner">
+      <div class="ss-partner-head"><span>🔗 슈퍼세트 ${k + 2}번째 운동</span>
+        <button type="button" class="del" data-pdel="${k}" aria-label="이 운동 빼기">✕</button></div>
+      <input list="exSuggestions" placeholder="운동 종류 (예: 바벨로우)" autocomplete="off" value="${esc(p.name)}" data-pn="${k}">
+      <div class="perset" id="ssRows${k}">${partnerRowsHtml(p, k)}</div>
+      <p class="hint" id="ssHint${k}">${partnerHint(p.name)}</p>
+    </div>`).join('');
+  $('#ssAdd').textContent = partners.length ? '+ 하나 더 (번갈아 할 운동)' : '🔗 슈퍼세트로 같이 추가';
+}
+function formSetCount() {
+  return Math.max(1, Math.min(20, Number($('#exSets').value) || 1));
+}
+function addPartner(name = '') {
+  partners.push({ name, sets: partnerSets(name, formSetCount()), touched: false });
+  renderPartners();
+  $(`[data-pn="${partners.length - 1}"]`)?.focus();
+}
+// 세트 수는 위 칸 하나로 같이 정한다 (보통 같은 세트 수로 번갈아 하니까)
+function resizePartners() {
+  const n = formSetCount();
+  partners.forEach((p) => {
+    while (p.sets.length < n) p.sets.push({ ...(p.sets.at(-1) ?? { weight: null, reps: 10 }) });
+    p.sets.length = n;
+  });
+  renderPartners();
+}
+// 지난번에 이 운동을 슈퍼세트로 했으면 같이 했던 운동들
+function lastPartners(name) {
+  const last = name ? lastRecord(name) : null;
+  if (!last) return [];
+  const list = state.days[last.date].workouts;
+  const run = ssRunOf(last.workout, list);
+  return run.length > 1 ? run.filter((w) => w !== last.workout).map((w) => w.name) : [];
+}
+
 function perSetFromCommon() {
   const weight = $('#exWeight').value ? nonNeg($('#exWeight').value) : null;
   return defaultPerSet(Number($('#exSets').value) || 1, weight, nonNeg($('#exReps').value));
@@ -2124,6 +2184,11 @@ function updateExHint() {
       (last.workout.note ? `<br>📝 ${esc(last.workout.note)}` : '') +
       (tip ? `<br><span class="tip">${overloadText(tip)}</span>` : '')
     : (name ? '처음 하는 운동이에요.' : '');
+  const was = lastPartners(name).filter((n) => !partners.some((p) => metKey(p.name) === metKey(n)));
+  if (was.length) {
+    $('#exHint').insertAdjacentHTML('beforeend', `<br><span class="tip">🔗 지난번엔 ${esc(was.join(' · '))}와(과) 슈퍼세트</span>
+      <button type="button" class="link-btn ss-suggest" data-ss-suggest="${esc(was.join('\n'))}">같이 추가</button>`);
+  }
   // 지난번 세트 모양대로 표를 채운다 (다 채웠으면 한 단위씩 올려서). 직접 만진 표는 그대로.
   if (!perSetTouched && !formUniform) {
     perSet = last
@@ -2547,7 +2612,39 @@ $('#perSetToggle').addEventListener('click', () => {
   perSetTouched = true;
   renderPerSet();
 });
-$('#exSets').addEventListener('input', resizePerSet);
+$('#exSets').addEventListener('input', () => { resizePerSet(); resizePartners(); });
+$('#ssAdd').addEventListener('click', () => addPartner());
+$('#ssBox').addEventListener('input', (e) => {
+  const ds = e.target.dataset;
+  if (ds.pn != null) {
+    const p = partners[Number(ds.pn)];
+    if (!p) return;
+    p.name = e.target.value;
+    if (!p.touched) {
+      p.sets = partnerSets(p.name.trim(), formSetCount());
+      $(`#ssRows${ds.pn}`).innerHTML = partnerRowsHtml(p, Number(ds.pn));   // 이름 칸은 그대로 두고 표만 (치는 중이라)
+    }
+    $(`#ssHint${ds.pn}`).innerHTML = partnerHint(p.name.trim());
+  } else if (ds.pps) {
+    const [k, i, field] = ds.pps.split(':');
+    const row = partners[Number(k)]?.sets[Number(i)];
+    if (!row || (field !== 'weight' && field !== 'reps')) return;
+    row[field] = e.target.value === '' ? null : nonNeg(e.target.value);
+    partners[Number(k)].touched = true;
+  }
+});
+$('#ssBox').addEventListener('click', (e) => {
+  const k = e.target.closest('[data-pdel]')?.dataset.pdel;
+  if (k == null) return;
+  partners.splice(Number(k), 1);
+  renderPartners();
+});
+$('#exHint').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-ss-suggest]');
+  if (!b) return;
+  b.dataset.ssSuggest.split('\n').forEach((n) => addPartner(n));
+  updateExHint();
+});
 $('#perSetBox').addEventListener('input', (e) => {
   const [i, field] = (e.target.dataset.ps || '').split(':');
   if (!perSet?.[i]) return;
@@ -2637,14 +2734,24 @@ $('#workoutForm').addEventListener('submit', (e) => {
   const reps = nonNeg($('#exReps').value);
   const weight = $('#exWeight').value ? nonNeg($('#exWeight').value) : null;
   const minutes = Number($('#exMinutes').value) > 0 ? Number($('#exMinutes').value) : null;
-  day().workouts.push({
+  const fromRows = (rows) => rows.map((x) => ({ ...copySet(x), weight: Number(x.weight) > 0 ? nonNeg(x.weight) : null, reps: nonNeg(x.reps) }));
+  const main = {
     id: uid(),
     name: $('#exName').value.trim(),
     minutes,
     sets: formUniform
       ? Array.from({ length: n }, () => ({ reps, weight, done: false }))
-      : perSet.map((x) => ({ ...copySet(x), weight: Number(x.weight) > 0 ? nonNeg(x.weight) : null, reps: nonNeg(x.reps) })),
-  });
+      : fromRows(perSet),
+  };
+  // 슈퍼세트로 같이 넣은 운동: 이름을 적은 것만, 처음부터 한 묶음으로
+  const more = partners.filter((p) => p.name.trim()).map((p) => ({ id: uid(), name: p.name.trim(), minutes: null, sets: fromRows(p.sets) }));
+  if (more.length) {
+    const ss = uid();
+    [main, ...more].forEach((w) => { w.ss = ss; });
+  }
+  day().workouts.push(main, ...more);
+  partners = [];
+  renderPartners();
   save();
   $('#exName').value = $('#exMinutes').value = '';
   // 다음 운동은 다시 기본(세트별 표)으로
