@@ -691,3 +691,30 @@ button.perset-no.warm { border-color: var(--accent); color: var(--accent); font-
 .perset-row.drop { margin-top: -2px; }
 .perset-row.drop input { border-style: dashed; }
 .perset-row.drop .del { min-height: 40px; min-width: 40px; }
+
+/* 오늘의 운동 (분할) */
+.split-card h3 { margin: 0; }
+.split-card .accent { color: var(--accent); }
+.split-invite { margin: 0 0 8px; font-size: 0.9rem; line-height: 1.5; }
+.split-card > button, .split-actions button { min-height: 40px; }
+.split-week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin: 10px 0; }
+.split-day { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 2px; border-radius: 8px; background: var(--card-2); border: 1px solid var(--line); min-width: 0; }
+.split-day span { font-size: 0.7rem; color: var(--muted); }
+.split-day b { font-size: 0.7rem; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.split-day.done, .split-day.done.today { border-color: var(--accent); }
+.split-day.done b, .split-day.done.today b { color: var(--accent); }
+.split-day.today { border: 2px solid var(--accent); }
+.split-day.rest, .split-day.rest.today { opacity: 0.6; }
+.split-day.next b { color: var(--muted); }
+.split-pick { margin: 6px 0; }
+.chip.on { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+.split-last { margin: 10px 0 4px; font-weight: 600; }
+.split-list { margin: 0 0 8px; padding-left: 18px; display: grid; gap: 3px; font-size: 0.85rem; }
+.split-list .muted { font-size: 0.78rem; }
+.split-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 6px; }
+.split-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 40px; }
+.split-line .link-btn { min-height: 40px; }
+.split-n, .split-rest { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.split-names { display: grid; gap: 6px; }
+.split-names label { display: grid; grid-template-columns: 52px 1fr; align-items: center; gap: 8px; margin: 0; }
+.split-names span { font-size: 0.8rem; color: var(--muted); }

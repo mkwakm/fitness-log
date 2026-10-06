@@ -3,6 +3,7 @@
 //   days: { "YYYY-MM-DD": { meals: [{id, type, name, amount, kcal}],
 //                           workouts: [{id, name, minutes, ss?, sets: [{reps, weight, done, warmup?, drops?: [{weight, reps}]}]}],
 //                           (ss: 슈퍼세트 묶음 표시 — 붙어 있는 운동끼리 같으면 한 묶음)
+//                           split?: 그 날 한 분할 이름 ('하체·어깨') — 운동 전에 골라 둔다
 //                           note, weight, deleted: [지운 id], updatedAt } } }
 // updatedAt은 기기 간 병합 기준이라 save()가 자동으로 찍는다 (stampChanges).
 // 음식 칼로리 표(FOOD_DB, DEFAULT_UNITS)는 food-db.js, 동기화·병합은 sync.js에 있습니다.
@@ -26,6 +27,7 @@ const DEFAULT_PROFILE = {
   routines: {},      // 저장해둔 루틴 { 이름: [{name, reps, sets, minutes}] }
   partGoals: {},     // 부위별 주간 목표 세트 수 { 가슴: 12, ... } — 안 정하면 비교 안 함
   volGoals: {},      // 부위별 주간 목표 볼륨(kg) { 가슴: 6000, ... } — 안 정하면 비교 안 함
+  split: null,       // 분할 { days: ['가슴·삼두', '등·이두', '하체·어깨'], rest: [0, 3] (쉬는 요일, 0=일) } — 안 정하면 null
 };
 
 // 운동 이름으로 MET(운동 강도) 추정. 위에서부터 먼저 걸리는 것을 사용하므로 순서가 중요하다.
@@ -912,6 +914,7 @@ function render() {
   renderHistory();
   renderSuggestions();
   renderRoutineBtn();
+  renderSplit();
   renderPlan();
   renderRoutines();
   renderSession();
@@ -2037,7 +2040,7 @@ const monthOpen = new Map();
 
 // 하루에 들어있는 모든 글자 (검색용)
 function dayText(d) {
-  return [...d.workouts.flatMap((w) => [w.name, w.note ?? '']), ...d.meals.map((m) => m.name), d.note ?? '']
+  return [d.split ?? '', ...d.workouts.flatMap((w) => [w.name, w.note ?? '']), ...d.meals.map((m) => m.name), d.note ?? '']
     .join(' ').toLowerCase();
 }
 
@@ -2094,7 +2097,7 @@ function monthDaysHtml(list) {
     return `<div class="card history-day" data-goto="${date}">
       <h3>${date}</h3>
       <div class="muted">🍚 ${d.meals.length}개${kcal ? ` · ${kcal} kcal` : ''}</div>
-      <div class="muted">🏋️ ${ex || '운동 없음'}${burn ? ` · 🔥 ${burn} kcal` : ''}</div>
+      <div class="muted">🏋️ ${d.split && d.workouts.length ? `<b>${esc(d.split)}</b> · ` : ''}${ex || '운동 없음'}${burn ? ` · 🔥 ${burn} kcal` : ''}</div>
       ${kcal && burn ? `<div class="muted">➖ 순 ${kcal - burn} kcal</div>` : ''}
       ${d.note ? `<div class="muted">📝 ${esc(d.note)}</div>` : ''}
       ${d.workouts.length && date !== currentDate
@@ -2344,13 +2347,161 @@ function planItems(date = currentDate) {
   });
 }
 
+// ---------- 오늘의 운동 (분할) ----------
+// 루틴은 보통 정해져 있다(3분할이면 가슴 → 등 → 하체 → 가슴 …). 분할과 쉬는 요일을 정해 두면
+// "오늘은 하체 차례, 지난번 하체 날엔 이걸 했다"를 운동 전에 보여주고 한 번에 꺼내 온다.
+// 순서는 날짜가 아니라 **분할을 적은 운동한 날**을 따라 넘어간다(빠진 날이 있어도 밀리지 않게).
+const SPLIT_PRESETS = {
+  2: ['상체', '하체'],
+  3: ['가슴·삼두', '등·이두', '하체·어깨'],
+  4: ['가슴', '등', '하체', '어깨·팔'],
+  5: ['가슴', '등', '하체', '어깨', '팔'],
+  6: ['가슴', '등', '하체', '어깨', '팔', '전신'],
+};
+const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+let splitEdit = null;       // 분할 설정 중이면 { n, days, rest } (저장 전 임시)
+let splitPickOpen = false;  // 오늘 분할을 바꾸려고 고르는 중
+let restAnyway = '';        // 쉬는 날인데 "그래도 운동"을 누른 날짜
+
+function splitCfg() {
+  const s = state.profile.split;
+  return s && Array.isArray(s.days) && s.days.filter(Boolean).length ? s : null;
+}
+function weekdayOf(date) {
+  return new Date(date + 'T00:00:00').getDay();
+}
+function isRestDay(date = currentDate) {
+  const rest = splitCfg()?.rest;
+  return Array.isArray(rest) && rest.includes(weekdayOf(date));
+}
+// 분할을 적고 운동한 가장 최근 날 (보고 있는 날 전까지)
+function lastSplitDay(before = currentDate) {
+  const days = splitCfg()?.days || [];
+  const date = Object.keys(state.days).filter((d) => d < before).sort().reverse()
+    .find((d) => days.includes(state.days[d].split) && state.days[d].workouts.length);
+  return date ? { date, split: state.days[date].split } : null;
+}
+function nextSplit(before = currentDate) {
+  const days = splitCfg()?.days || [];
+  const last = lastSplitDay(before);
+  return last ? days[(days.indexOf(last.split) + 1) % days.length] : days[0];
+}
+// 오늘 할 분할: 골라 뒀으면 그것, 아니면 순서상 차례
+function todaySplit() {
+  return day().split || nextSplit();
+}
+// 그 분할을 마지막으로 한 날의 운동
+function lastSessionOf(label, before = currentDate) {
+  const date = Object.keys(state.days).filter((d) => d < before).sort().reverse()
+    .find((d) => state.days[d].split === label && state.days[d].workouts.length);
+  return date ? { date, workouts: state.days[date].workouts } : null;
+}
+// 이번 주(월~일) 한눈에: 지난 날은 한 것, 오늘부터는 순서대로 예상 (쉬는 요일은 건너뛴다)
+// 주간 띠는 칸이 좁아서(375px에 7칸) 첫 부위만: "가슴·삼두" → "가슴"
+function splitShort(label) { return String(label || '').split(/[·・\/,+&\s]+/).filter(Boolean)[0] || ''; }
+function splitWeek() {
+  const cfg = splitCfg();
+  const start = weekStart(currentDate);
+  let cursor = null;
+  return Array.from({ length: 7 }, (_, i) => {
+    const date = shiftDate(start, i);
+    const d = state.days[date];
+    const did = d?.workouts?.length > 0;
+    if (date < currentDate) return { date, kind: did ? 'done' : (isRestDay(date) ? 'rest' : 'skip'), label: did ? (d.split || '운동') : (isRestDay(date) ? '휴식' : '') };
+    if (date === currentDate) {
+      cursor = todaySplit();
+      if (!did && !d?.split && isRestDay(date) && restAnyway !== date) return { date, kind: 'rest today', label: '휴식' };
+      const label = did ? (d.split || '운동') : cursor;
+      cursor = cfg.days[(cfg.days.indexOf(label) + 1) % cfg.days.length] ?? cursor;
+      return { date, kind: did ? 'done today' : 'today', label };
+    }
+    if (isRestDay(date)) return { date, kind: 'rest', label: '휴식' };
+    const label = cursor ?? nextSplit();
+    cursor = cfg.days[(cfg.days.indexOf(label) + 1) % cfg.days.length];
+    return { date, kind: 'next', label };
+  });
+}
+// 지난번 그 분할 날의 운동을 그대로 꺼내 온다: 순서·세트 모양·워밍업·드롭·슈퍼세트 묶음까지,
+// 무게는 운동마다 최근 기록에서(다 채웠으면 한 단위 올려서 — 폼과 같은 규칙)
+function startFromLast(label) {
+  const last = lastSessionOf(label);
+  day().split = label;
+  if (last) {
+    const ss = ssRemap();
+    last.workouts.forEach((w) => day().workouts.push({
+      id: uid(), name: w.name, minutes: null,
+      ...(w.ss ? { ss: ss(w.ss) } : {}),
+      sets: setsLikeLast(w.name, w.sets.length, null, { progress: true }),
+    }));
+  }
+}
+
+function renderSplit() {
+  const card = $('#splitCard');
+  const cfg = splitCfg();
+  const d = day();
+  const hasWork = d.workouts.length > 0;
+  if (splitEdit) {
+    const e = splitEdit;
+    card.hidden = false;
+    card.innerHTML = `<h3>📅 분할 정하기</h3>
+      <div class="split-n">${[2, 3, 4, 5, 6].map((n) => `<button type="button" class="chip ${e.days.length === n ? 'on' : ''}" data-split-n="${n}">${n}분할</button>`).join('')}</div>
+      <div class="split-names">${e.days.map((x, i) => `<label><span>${i + 1}일차</span><input value="${esc(x)}" data-split-name="${i}" autocomplete="off"></label>`).join('')}</div>
+      <p class="hint">쉬는 요일 (누르면 휴식일)</p>
+      <div class="split-rest">${[1, 2, 3, 4, 5, 6, 0].map((w) => `<button type="button" class="chip ${e.rest.includes(w) ? 'on' : ''}" data-split-rest="${w}">${WEEKDAYS[w]}</button>`).join('')}</div>
+      <div class="split-actions"><button type="button" class="primary" data-split-save>저장</button>
+        <button type="button" data-split-cancel>취소</button>
+        ${cfg ? '<button type="button" class="link-btn" data-split-clear>분할 안 쓰기</button>' : ''}</div>`;
+    return;
+  }
+  if (!cfg) {
+    // 아직 안 정했으면 운동 없는 날에만 한 줄로 권한다
+    card.hidden = hasWork;
+    card.innerHTML = `<p class="split-invite">📅 분할과 쉬는 요일을 정해 두면 <b>오늘 무슨 운동 차례인지</b>, 지난번 그 날 뭘 했는지 바로 꺼내 드려요.</p>
+      <button type="button" data-split-setup>분할 정하기</button>`;
+    return;
+  }
+  card.hidden = false;
+  const label = todaySplit();
+  const k = cfg.days.indexOf(label);
+  const week = `<div class="split-week">${splitWeek().map((x) => `<div class="split-day ${x.kind}" title="${esc(x.label || '')}"><span>${WEEKDAYS[weekdayOf(x.date)]}</span><b>${esc(splitShort(x.label) || '·')}</b></div>`).join('')}</div>`;
+  const chips = `<div class="chips split-pick">${cfg.days.map((x) => `<button type="button" class="chip ${x === (d.split || (hasWork ? '' : label)) ? 'on' : ''}" data-split-pick="${esc(x)}">${esc(x)}</button>`).join('')}</div>`;
+  if (hasWork) {
+    // 운동 중엔 한 줄만 (카드가 주인공) — 분할을 안 적었으면 적게 한다(그래야 다음 차례가 맞는다)
+    card.innerHTML = d.split
+      ? `<div class="split-line"><span>📅 오늘: <b>${esc(d.split)}</b> <span class="muted">${cfg.days.length}분할 ${k + 1}일차</span></span>
+          <button type="button" class="link-btn" data-split-change>바꾸기</button></div>${splitPickOpen ? chips : ''}`
+      : `<p class="split-invite">📅 오늘 운동은 어느 날이었나요? <span class="muted">(적어 두면 다음 차례가 맞아요)</span></p>${chips}`;
+    return;
+  }
+  if (isRestDay() && !d.split && restAnyway !== currentDate) {
+    card.innerHTML = `<h3>😴 오늘은 쉬는 날이에요</h3>${week}
+      <p class="hint">다음 운동은 <b>${esc(nextSplit())}</b> 차례예요.</p>
+      <div class="split-actions"><button type="button" data-rest-anyway>그래도 운동할래요</button>
+        <button type="button" class="link-btn" data-split-setup>분할 설정</button></div>`;
+    return;
+  }
+  const last = lastSessionOf(label);
+  card.innerHTML = `<div class="card-head"><h3>📅 오늘은 <span class="accent">${esc(label)}</span> 차례</h3>
+      <span class="muted">${cfg.days.length}분할 ${k + 1}일차</span></div>
+    ${week}${chips}
+    ${last ? `<p class="split-last">↩ 지난번 ${esc(label)} <span class="muted">${fmtDate(last.date)} · ${last.workouts.length}종</span></p>
+      <ul class="split-list">${last.workouts.slice(0, 10).map((w) => `<li><b>${esc(w.name)}</b> <span class="muted">${esc(setsText(w))}</span></li>`).join('')}</ul>`
+      : `<p class="hint">아직 ${esc(label)} 기록이 없어요. 오늘 하는 운동이 다음번 ${esc(label)}의 기준이 돼요.</p>`}
+    <div class="split-actions">
+      ${last ? `<button type="button" class="primary" data-split-start="${esc(label)}">지난번 ${esc(label)}대로 시작</button>` : ''}
+      <button type="button" data-split-own="${esc(label)}">${last ? '직접 넣을게요' : `${esc(label)}로 시작`}</button>
+      <button type="button" class="link-btn" data-split-setup>분할 설정</button>
+    </div>`;
+}
+
 function renderPlan() {
   const card = $('#planCard');
   const items = planItems();
   const routines = Object.keys(state.profile.routines || {});
   if (!items) {
     // 아직 안 골랐으면 고를 수 있게만 해 둔다
-    card.hidden = !routines.length || day().workouts.length > 0;
+    card.hidden = !routines.length || day().workouts.length > 0 || !!splitCfg();   // 분할을 쓰면 위 "오늘의 운동"이 대신한다
     if (!card.hidden) {
       card.innerHTML = `<h3>🗒 오늘의 계획</h3>
         <p class="hint">루틴을 걸어두면 뭘 했고 뭐가 남았는지 보여드려요.</p>
@@ -2573,7 +2724,9 @@ $('#historySearch').addEventListener('input', renderHistory);
 $('#liftPick').addEventListener('change', (e) => { liftPick = e.target.value; renderLiftChart(); });
 $('#volPick').addEventListener('change', (e) => { volPart = e.target.value; renderVolumeChart(); });
 document.addEventListener('input', (e) => {
-  if (e.target.id === 'weeklyGoal') {
+  if (e.target.dataset.splitName != null) {
+    if (splitEdit) splitEdit.days[Number(e.target.dataset.splitName)] = e.target.value;   // 저장은 "저장"을 눌러야
+  } else if (e.target.id === 'weeklyGoal') {
     const v = Number(e.target.value);
     state.profile.weeklyGoal = v > 0 ? Math.min(7, v) : 3;
     saveSoon();
@@ -2970,6 +3123,7 @@ document.addEventListener('click', (e) => {
       id: uid(), name: w.name, minutes: w.minutes, ...(w.ss ? { ss: ss(w.ss) } : {}),
       sets: w.sets.map(copySet),
     }));
+    if (src.split && !day().split) day().split = src.split;   // 그 날이 무슨 분할이었는지도 따라온다
     showTab('workouts');
   } else if (ds.setPlan) {
     day().plan = ds.setPlan;
@@ -3025,6 +3179,57 @@ document.addEventListener('click', (e) => {
     kcalTouched = false;
     updateMealHint();
     renderMyFoods();
+    return;
+  } else if ('splitSetup' in ds) {
+    const cur = splitCfg();
+    splitEdit = cur ? { days: [...cur.days], rest: [...(cur.rest || [])] } : { days: [...SPLIT_PRESETS[3]], rest: [0] };
+    renderSplit();
+    return;
+  } else if (ds.splitN) {
+    const n = Number(ds.splitN);
+    if (!splitEdit) return;
+    splitEdit.days = Array.from({ length: n }, (_, i) => splitEdit.days[i] && splitEdit.days.length === n ? splitEdit.days[i] : SPLIT_PRESETS[n][i]);
+    renderSplit();
+    return;
+  } else if (ds.splitRest) {
+    if (!splitEdit) return;
+    const w = Number(ds.splitRest);
+    splitEdit.rest = splitEdit.rest.includes(w) ? splitEdit.rest.filter((x) => x !== w) : [...splitEdit.rest, w];
+    renderSplit();
+    return;
+  } else if ('splitSave' in ds) {
+    if (!splitEdit) return;
+    const days = splitEdit.days.map((x) => String(x).trim()).filter(Boolean);
+    // 같은 이름이 둘이면 순서를 못 따라가서 뒤에 번호를 붙인다
+    const seen = new Map();
+    state.profile.split = { days: days.map((x) => { const n = (seen.get(x) || 0) + 1; seen.set(x, n); return n > 1 ? `${x} ${n}` : x; }), rest: [...splitEdit.rest].sort() };
+    splitEdit = null;
+  } else if ('splitCancel' in ds) {
+    splitEdit = null;
+    renderSplit();
+    return;
+  } else if ('splitClear' in ds) {
+    if (!confirm('분할을 안 쓸까요? 지난 기록은 그대로예요.')) return;
+    state.profile.split = null;
+    splitEdit = null;
+  } else if (ds.splitPick) {
+    day().split = ds.splitPick;           // 운동 전에 오늘 할 운동을 적어 둔다
+    splitPickOpen = false;
+  } else if ('splitChange' in ds) {
+    splitPickOpen = !splitPickOpen;
+    renderSplit();
+    return;
+  } else if (ds.splitStart) {
+    startFromLast(ds.splitStart);
+  } else if (ds.splitOwn) {
+    day().split = ds.splitOwn;
+    save();
+    render();
+    $('#exName').focus();
+    return;
+  } else if ('restAnyway' in ds) {
+    restAnyway = currentDate;
+    renderSplit();
     return;
   } else if (ds.ssLink) {
     const [a, b] = ds.ssLink.split(':');
