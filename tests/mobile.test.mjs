@@ -33,7 +33,7 @@ export default async function (t) {
   await page.waitForSelector('#mealList', { state: 'attached' });
   t.ok(Date.now() - t0 < 4000, `3년치로 새로 여는 데 ${Date.now() - t0}ms`);
   await tab(page, 'history');
-  t.ok(await page.locator('#historyList .history-day').count() < 60, '기록 탭이 1100장을 한꺼번에 그리지 않음');
+  t.ok(await page.locator('#history .history-day, #history .cal-day').count() < 60, '기록 탭이 1100장을 한꺼번에 그리지 않음 (달력은 한 달만)');
 
   // ── 화면 폭 ──
   for (const w of [375, 360, 320]) {

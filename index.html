@@ -149,6 +149,17 @@
 
     <!-- 기록 -->
     <section id="history" class="panel">
+      <!-- 운동 달력: 날짜 밑에 한 부위, 누르면 그 날 운동이 아래에 -->
+      <div class="card cal-card" id="calCard">
+        <div class="cal-top" id="calTop"></div>
+        <div class="cal-search" id="calSearch" hidden>
+          <input id="historySearch" type="search" placeholder="운동·음식·메모 검색" autocomplete="off" aria-label="기록 검색">
+          <div id="historyList"></div>
+        </div>
+        <div class="cal-grid" id="calGrid"></div>
+        <div class="cal-detail" id="calDetail" aria-live="polite"></div>
+      </div>
+
       <div class="card" id="streakCard">
         <h3>🔥 운동 꾸준함</h3>
         <div class="tiles" id="streakTiles"></div>
@@ -210,8 +221,6 @@
         <div id="liftChart"></div>
         <button class="link-btn" id="liftDetail">이 운동 자세히 보기 ›</button>
       </div>
-      <input id="historySearch" placeholder="🔍 운동·음식·메모 검색" autocomplete="off">
-      <div id="historyList"></div>
       <button id="installBtn" class="wide-btn" hidden>📲 홈 화면에 앱으로 설치하기</button>
       <div class="card" id="syncCard"></div>
       <div class="card backup">

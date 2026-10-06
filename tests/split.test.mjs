@@ -122,11 +122,8 @@ export default async function (t) {
   // ── 기록 탭: 요약·검색, 이 날 운동 불러오기도 분할을 따라옴 ──
   await page.evaluate(() => { currentDate = '2026-10-06'; render(); });
   await tab(page, 'history');
-  await page.fill('#historySearch', '하체·어깨').catch(() => {});
-  await page.dispatchEvent('#historySearch', 'input').catch(() => {});
-  await wait(page, 100);
   t.ok(await page.evaluate(() => dayText(state.days['2026-09-29']).includes('하체·어깨')), '검색 글에 분할 이름이 들어감');
-  t.ok(await page.evaluate(() => monthDaysHtml(['2026-09-29']).includes('<b>하체·어깨</b>')), '날짜 요약에 분할 이름');
+  t.ok(await page.evaluate(() => calDetailHtml('2026-09-29').includes('<span class="cal-split">하체·어깨</span>')), '달력 그 날 보기에 분할 이름');
   await page.evaluate(() => { currentDate = '2026-10-10'; render(); });
   await page.evaluate(() => document.body.insertAdjacentHTML('beforeend', '<button id="cp" data-copy-day="2026-09-29">x</button>'));
   await page.click('#cp');

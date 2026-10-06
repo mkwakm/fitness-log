@@ -2035,15 +2035,6 @@ function renderWeekChart() {
     <div class="tile"><span class="muted">운동한 날</span><strong>${withWorkout}<small> / ${range}일</small></strong></div>`;
 }
 
-// 펼쳐 둔 달을 기억한다. 안 그러면 다시 그릴 때마다 도로 접힌다.
-const monthOpen = new Map();
-
-// 하루에 들어있는 모든 글자 (검색용)
-function dayText(d) {
-  return [d.split ?? '', ...d.workouts.flatMap((w) => [w.name, w.note ?? '']), ...d.meals.map((m) => m.name), d.note ?? '']
-    .join(' ').toLowerCase();
-}
-
 function renderHistory() {
   renderStreak();
   renderReport();
@@ -2052,58 +2043,181 @@ function renderHistory() {
   renderWeightChart();
   renderLiftChart();
   renderVolumeChart();
-  const q = $('#historySearch').value.trim().toLowerCase();
-  const dates = Object.keys(state.days)
-    .filter((d) => !isEmptyDay(state.days[d]))
-    .filter((d) => !q || dayText(state.days[d]).includes(q))
-    .sort().reverse();
-
-  if (!dates.length) {
-    $('#historyList').innerHTML = `<p class="muted">${q ? '검색 결과가 없어요.' : '아직 기록이 없어요.'}</p>`;
-    return;
-  }
-
-  // 달별로 묶고, 가장 최근 달(또는 검색 중일 때는 전부)만 펼쳐 둔다
-  const months = {};
-  dates.forEach((date) => (months[date.slice(0, 7)] ??= []).push(date));
-
-  // 접힌 달은 속을 비워 둔다. 펼칠 때 채운다 — 3년치면 1100장이라, 다 그려 두면
-  // 보이지도 않는 카드로 DOM이 무거워진다.
-  $('#historyList').innerHTML = Object.entries(months).map(([month, list], i) => {
-    const open = !!(q || (monthOpen.has(month) ? monthOpen.get(month) : i === 0));
-    return `<details class="month" data-month="${month}" ${open ? 'open' : ''}>
-      <summary>${month.replace('-', '년 ')}월 <span class="muted">${list.length}일</span></summary>
-      ${open ? monthDaysHtml(list) : ''}
-    </details>`;
-  }).join('');
-
-  $('#historyList').querySelectorAll('details.month').forEach((el) => {
-    el.addEventListener('toggle', () => {
-      // 검색 중에는 전부 펼쳐 보여주는 것이므로 그 상태를 기억하지 않는다
-      if (!q) monthOpen.set(el.dataset.month, el.open);
-      if (el.open && el.children.length === 1) {      // summary만 있으면 아직 안 채운 달
-        el.insertAdjacentHTML('beforeend', monthDaysHtml(months[el.dataset.month]));
-      }
-    });
-  });
+  renderCalendar();
 }
 
-function monthDaysHtml(list) {
-  return list.map((date) => {
-    const d = state.days[date];
-    const kcal = dayIntake(d);
-    const burn = dayBurn(date);
-    const ex = d.workouts.map((w) => `${esc(w.name)} ${workSets(w).length}×${workSets(w)[0]?.reps ?? 0}`).join(', ');
-    return `<div class="card history-day" data-goto="${date}">
-      <h3>${date}</h3>
-      <div class="muted">🍚 ${d.meals.length}개${kcal ? ` · ${kcal} kcal` : ''}</div>
-      <div class="muted">🏋️ ${d.split && d.workouts.length ? `<b>${esc(d.split)}</b> · ` : ''}${ex || '운동 없음'}${burn ? ` · 🔥 ${burn} kcal` : ''}</div>
-      ${kcal && burn ? `<div class="muted">➖ 순 ${kcal - burn} kcal</div>` : ''}
-      ${d.note ? `<div class="muted">📝 ${esc(d.note)}</div>` : ''}
-      ${d.workouts.length && date !== currentDate
-        ? `<button class="link-btn day-copy" data-copy-day="${date}">↩ 이 날 운동 불러오기</button>` : ''}
-    </div>`;
+// ---------- 운동 달력 (기록 탭 맨 위) ----------
+// 예전엔 달별로 접은 날짜 카드 목록이 통계 아래에 있었는데, 사용자가 "중간에 있고 조잡하다,
+// 달력에 무슨 부위 했는지만 적고 누르면 그 날 운동이 깔끔하게 나오게"라고 해서 바꿨다.
+let calMonth = null;     // 보고 있는 달 'YYYY-MM' (null이면 보고 있는 날짜의 달)
+let calPick = null;      // 누른 날 (null이면 그 달에서 알아서 고른다)
+let calSearchOpen = false;
+const CAL_RESULTS = 60;  // 검색 결과는 이만큼만 (몇 년치가 다 걸려도 무겁지 않게)
+
+// 그 날 한 부위, 세트가 많은 순. 부위를 모르는 운동('기타')은 다른 부위가 있으면 뺀다.
+function dayParts(d) {
+  const sets = new Map();
+  for (const w of d?.workouts || []) {
+    const p = partOf(w.name);
+    sets.set(p, (sets.get(p) || 0) + Math.max(1, workSets(w).length));
+  }
+  const list = [...sets].sort((a, b) => b[1] - a[1] || PART_ORDER.indexOf(a[0]) - PART_ORDER.indexOf(b[0])).map(([p]) => p);
+  return list.length > 1 ? list.filter((p) => p !== '기타') : list;
+}
+function partLabel(p) {
+  return p === '기타' ? '운동' : p;
+}
+// 달력 칸: 그 달 1일이 든 주의 월요일부터, 말일이 든 주의 일요일까지
+function calDates(month) {
+  const out = [];
+  for (let d = weekStart(`${month}-01`); d.slice(0, 7) <= month || out.length % 7; d = shiftDate(d, 1)) out.push(d);
+  return out;
+}
+function shiftMonth(month, n) {
+  const [y, m] = month.split('-').map(Number);
+  const t = y * 12 + (m - 1) + n;
+  return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, '0')}`;
+}
+// 따로 누른 날이 없으면: 보고 있는 날에 운동했으면 그 날, 아니면 그 달에서 그 날 전 마지막 운동한 날
+function calSelected(month) {
+  if (calPick && calPick.slice(0, 7) === month) return calPick;
+  if (currentDate.slice(0, 7) === month && didWorkout(currentDate)) return currentDate;
+  const limit = currentDate.slice(0, 7) === month ? currentDate : `${month}-31`;
+  return Object.keys(state.days).filter((d) => d.slice(0, 7) === month && d <= limit && didWorkout(d)).sort().at(-1) || null;
+}
+
+function renderCalendar() {
+  const month = calMonth ?? currentDate.slice(0, 7);
+  const today = todayStr();
+  const pick = calSelected(month);
+  const [y, m] = month.split('-').map(Number);
+  const worked = Object.keys(state.days).filter((d) => d.slice(0, 7) === month && didWorkout(d)).length;
+  $('#calTop').innerHTML = `
+    <button type="button" class="cal-nav" data-cal-nav="-1" aria-label="지난달">‹</button>
+    <h3>${y}년 ${m}월</h3>
+    <button type="button" class="cal-nav" data-cal-nav="1" aria-label="다음 달">›</button>
+    <span class="cal-count">${worked ? `<b>${worked}</b>일 운동` : ''}</span>
+    ${month !== today.slice(0, 7) ? '<button type="button" class="cal-today" data-cal-nav="0">이번 달</button>' : ''}
+    <button type="button" class="cal-find ${calSearchOpen ? 'on' : ''}" data-cal-search aria-label="기록 검색" aria-expanded="${calSearchOpen}">🔍</button>`;
+  $('#calGrid').innerHTML = WEEKDAYS.slice(1).concat(WEEKDAYS[0]).map((w) => `<span class="cal-wd">${w}</span>`).join('')
+    + calDates(month).map((date) => {
+      if (date.slice(0, 7) !== month) return '<span class="cal-blank"></span>';
+      const d = state.days[date];
+      const parts = dayParts(d);
+      const cls = ['cal-day', parts.length && 'work', date === today && 'today', date === pick && 'pick', date > today && 'future'].filter(Boolean).join(' ');
+      const shown = parts.slice(0, 2).map(partLabel);
+      if (parts.length > 2) shown[1] += `+${parts.length - 2}`;
+      const mark = parts.length ? shown.map((p) => `<span>${p}</span>`).join('')
+        : (isEmptyDay(d) ? '' : '<i class="cal-dot" aria-hidden="true"></i>');
+      const label = `${m}월 ${Number(date.slice(8))}일${parts.length ? ` ${parts.map(partLabel).join(', ')}` : ''}`;
+      return `<button type="button" class="${cls}" data-cal="${date}" aria-label="${label}" aria-pressed="${date === pick}"><b>${Number(date.slice(8))}</b>${mark}</button>`;
+    }).join('');
+  $('#calDetail').innerHTML = pick ? calDetailHtml(pick)
+    : `<p class="cal-empty">${worked ? '날짜를 누르면 그 날 한 운동이 나와요.' : '이 달엔 운동 기록이 없어요.'}</p>`;
+  renderCalSearch();
+}
+
+// 누른 날의 운동: 한눈에 보는 숫자 4개 → 운동마다 이름·부위·세트 칩 → 메모·식단 한 줄 → 버튼
+function calDetailHtml(date) {
+  const d = state.days[date];
+  const [, mm, dd] = date.split('-').map(Number);
+  const title = `${mm}월 ${dd}일 ${WEEKDAYS[weekdayOf(date)]}요일`;
+  const ws = d?.workouts || [];
+  const extra = [
+    d?.note ? `<p class="cal-line">📝 ${esc(d.note)}</p>` : '',
+    d?.meals.length ? `<p class="cal-line muted">🍚 ${dayIntake(d).toLocaleString()} kcal · 단백질 ${dayProtein(d)}g${d.weight ? ` · ⚖️ ${d.weight}kg` : ''}</p>`
+      : (d?.weight ? `<p class="cal-line muted">⚖️ ${d.weight}kg</p>` : ''),
+  ].join('');
+  if (!ws.length) {
+    return `<div class="cal-dhead"><h4>${title}</h4></div>
+      <p class="cal-empty">${isRestDay(date) ? '😴 쉬는 날' : '운동 기록이 없어요'}</p>${extra}
+      <div class="cal-actions"><button type="button" data-goto="${date}">이 날 열기</button></div>`;
+  }
+  const sets = ws.reduce((n, w) => n + countedSets(w).length, 0);
+  const vol = ws.reduce((n, w) => n + volumeOf(w), 0);
+  const min = Number(d.sessionMin) > 0 ? Math.round(d.sessionMin) : ws.reduce((n, w) => n + minutesOf(w), 0);
+  const burn = dayBurn(date);
+  const stat = (v, unit, label) => `<div><strong>${v}<small>${unit}</small></strong><span>${label}</span></div>`;
+  const runs = ssRuns(ws).map((run) => {
+    const body = run.map((w) => calExHtml(w, date)).join('');
+    return run.length > 1 ? `<div class="cal-ss"><span class="cal-ss-tag">🔗 슈퍼세트</span>${body}</div>` : body;
   }).join('');
+  const into = currentDate === todayStr() ? '오늘' : fmtDate(currentDate);
+  return `<div class="cal-dhead"><h4>${title}</h4>${d.split ? `<span class="cal-split">${esc(d.split)}</span>` : ''}</div>
+    <div class="cal-stats">
+      ${stat(ws.length, '종목', '운동')}${stat(sets, '세트', '본 세트')}
+      ${stat(vol >= 10000 ? (vol / 1000).toFixed(1) : vol.toLocaleString(), vol >= 10000 ? 't' : 'kg', '볼륨')}
+      ${stat(min, '분', burn ? `🔥 ${burn}kcal` : '시간')}
+    </div>
+    <div class="cal-exs">${runs}</div>${extra}
+    <div class="cal-actions">
+      ${date !== currentDate ? `<button type="button" data-copy-day="${date}">↩ ${into} 운동으로 불러오기</button>` : ''}
+      <button type="button" data-goto="${date}">이 날 열기</button>
+    </div>`;
+}
+function calExHtml(w, date) {
+  const counted = new Set(countedSets(w));
+  const anyDone = w.sets.some((s) => s.done);
+  const one = (s, kg) => {
+    const r = Number(s.reps) || 0;
+    const wt = Number(s.weight) || 0;
+    return wt ? `${wt}${kg ? 'kg' : ''}×${r}` : `${r}회`;
+  };
+  let first = true;
+  const chips = w.sets.filter((s) => Number(s.weight) || Number(s.reps)).map((s) => {
+    const text = [one(s, first), ...dropsOf(s).map((x) => one(x, false))].join(' ↘ ');
+    first = false;
+    // 완료 체크를 쓰는 날, 체크 안 한 세트는 안 한 세트라 흐리게
+    const skip = !s.warmup && anyDone && !counted.has(s);
+    return `<span class="cal-set${s.warmup ? ' wu' : ''}${skip ? ' skip' : ''}">${s.warmup ? '<em>W</em>' : ''}${text}</span>`;
+  }).join('');
+  const pb = personalBest(w.name);
+  const pr = pb?.date === date && lastRecord(w.name, date) ? '<span class="cal-pr" title="신기록">🏆</span>' : '';
+  const vol = volumeOf(w);
+  const n = countedSets(w).length;
+  const sum = [n ? `${n}세트` : '', vol ? `${vol.toLocaleString()}kg` : '', !chips && Number(w.minutes) > 0 ? `${w.minutes}분` : ''].filter(Boolean).join(' · ');
+  return `<div class="cal-ex">
+    <div class="cal-ex-head">
+      <button type="button" class="cal-ex-name" data-ex-detail="${esc(w.name)}">${esc(w.name)}</button>${pr}
+      <span class="cal-tag">${partLabel(partOf(w.name))}</span>
+      <span class="cal-ex-sum">${sum}</span>
+    </div>
+    ${chips ? `<div class="cal-sets">${chips}</div>` : ''}
+    ${w.note ? `<p class="cal-note">📝 ${esc(w.note)}</p>` : ''}
+  </div>`;
+}
+
+// 하루에 들어있는 모든 글자 (검색용)
+function dayText(d) {
+  return [d.split ?? '', ...d.workouts.flatMap((w) => [w.name, w.note ?? '']), ...d.meals.map((m) => m.name), d.note ?? '']
+    .join(' ').toLowerCase();
+}
+
+// 검색: 달력 머리의 🔍로 연다. 결과를 누르면 달력이 그 날로 간다.
+function renderCalSearch() {
+  const q = $('#historySearch').value.trim().toLowerCase();
+  $('#calSearch').hidden = !(calSearchOpen || q);
+  if (!q) {
+    $('#historyList').innerHTML = '';
+    return;
+  }
+  const dates = Object.keys(state.days)
+    .filter((d) => !isEmptyDay(state.days[d]) && dayText(state.days[d]).includes(q))
+    .sort().reverse();
+  if (!dates.length) {
+    $('#historyList').innerHTML = '<p class="cal-empty">검색 결과가 없어요.</p>';
+    return;
+  }
+  $('#historyList').innerHTML = dates.slice(0, CAL_RESULTS).map((date) => {
+    const d = state.days[date];
+    const parts = dayParts(d).map(partLabel).join('·');
+    const what = d.workouts.length ? d.workouts.map((w) => esc(w.name)).join(', ')
+      : (d.meals.length ? '🍚 ' + d.meals.map((x) => esc(x.name)).join(', ') : `📝 ${esc(d.note || '')}`);
+    return `<button type="button" class="history-day" data-cal-go="${date}">
+      <span class="hd-date">${date.slice(2).replace(/-/g, '.')} <small>${WEEKDAYS[weekdayOf(date)]}</small></span>
+      <span class="hd-what">${parts ? `<b>${parts}</b> ` : ''}${what}</span>
+    </button>`;
+  }).join('') + (dates.length > CAL_RESULTS ? `<p class="cal-empty">최근 ${CAL_RESULTS}일만 보여요 (모두 ${dates.length}일). 더 좁혀 검색해 보세요.</p>` : '');
 }
 
 // 폼은 세트별 표가 기본이다(세트마다 무게를 바꾸는 사람이 많다). "모든 세트 같게"(formUniform)는
@@ -2720,7 +2834,7 @@ $('#todayBtn').addEventListener('click', () => {
   const t = todayStr();
   goToDate(t, t > currentDate ? 1 : -1);
 });
-$('#historySearch').addEventListener('input', renderHistory);
+$('#historySearch').addEventListener('input', renderCalSearch);
 $('#liftPick').addEventListener('change', (e) => { liftPick = e.target.value; renderLiftChart(); });
 $('#volPick').addEventListener('change', (e) => { volPart = e.target.value; renderVolumeChart(); });
 document.addEventListener('input', (e) => {
@@ -3287,10 +3401,33 @@ document.addEventListener('click', (e) => {
   } else if (ds.exDetail) {
     openExSheet(ds.exDetail);
     return;                        // 보기만 하는 거라 저장할 것도, 다시 그릴 것도 없다
+  } else if (ds.cal) {
+    calPick = ds.cal;              // 달력에서 날짜를 누르면 그 날 운동을 아래에 펼친다 (보기만)
+    renderCalendar();
+    return;
+  } else if (ds.calNav) {
+    const n = Number(ds.calNav);
+    calMonth = n ? shiftMonth(calMonth ?? currentDate.slice(0, 7), n) : todayStr().slice(0, 7);
+    calPick = null;
+    renderCalendar();
+    return;
+  } else if ('calSearch' in ds) {
+    calSearchOpen = !calSearchOpen;
+    if (!calSearchOpen) $('#historySearch').value = '';
+    renderCalendar();
+    if (calSearchOpen) $('#historySearch').focus();
+    return;
+  } else if (ds.calGo) {
+    calMonth = ds.calGo.slice(0, 7);   // 검색 결과를 누르면 달력이 그 날로
+    calPick = ds.calGo;
+    renderCalendar();
+    $('#calDetail').scrollIntoView({ block: 'nearest', behavior: reduceMotion() ? 'auto' : 'smooth' });
+    return;
   } else if (ds.goto) {
     closeExSheet();                // 상세에서 날짜를 눌렀으면 상세는 닫고 그 날로 간다
     currentDate = ds.goto;
-    showTab('workouts');
+    const g = state.days[ds.goto];
+    showTab(!g?.workouts.length && g?.meals.length ? 'meals' : 'workouts');
   } else {
     return;
   }

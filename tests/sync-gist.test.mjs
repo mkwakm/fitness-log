@@ -76,7 +76,7 @@ export default async function (t) {
   t.ok(calls.some((c) => c.startsWith('PATCH')), '잠잠해지면 올림');
 
   calls = [];
-  await A.evaluate(async () => { document.querySelector('#historySearch').focus(); await gistSync({ quiet: true }); });
+  await A.evaluate(async () => { calSearchOpen = true; renderCalendar(); document.querySelector('#historySearch').focus(); await gistSync({ quiet: true }); });
   t.eq(calls.length, 0, '입력 중이면 건너뜀 (화면을 갈아엎으면 입력이 끊긴다)');
   await A.evaluate(() => document.activeElement.blur());
 

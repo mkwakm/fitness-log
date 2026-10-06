@@ -105,6 +105,8 @@ export default async function (t) {
   await page.keyboard.press('Escape');
 
   // ── 메모로 검색 ──
+  await tab(page, 'history');
+  await page.click('[data-cal-search]');
   await page.fill('#historySearch', '와이드그립');
   await wait(page, 150);
   t.eq(await page.locator('#historyList .history-day').count(), 1, '운동 메모로도 검색됨');
