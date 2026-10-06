@@ -70,13 +70,44 @@ export default async function (t) {
   });
   await page.fill('#exName', '랫풀다운');
   await wait(page, 80);
-  t.ok((await text(page, '#perSetBox')).includes('↘ 40kg×8'), '운동 폼에 지난번 드롭이 보임');
+  t.eq(await page.evaluate(() => [...document.querySelectorAll('#perSetBox .perset-row.drop input')].map((x) => x.value)), ['40', '8', '30', '6'], '운동 폼에 지난번 드롭이 고칠 수 있는 줄로 보임');
   t.ok((await text(page, '#exHint')).includes('50×10↘40×8↘30×6'), '지난번 줄에도 드롭');
   await page.click('#workoutForm button[type=submit]');
   s = await sets();
   t.eq(s[1].drops, [{ weight: 40, reps: 8 }, { weight: 30, reps: 6 }], '추가하면 지난번 드롭 모양 그대로 (무게를 멋대로 안 올림)');
   t.eq(s[0].drops, null, '드롭 없던 세트는 그대로');
   t.ok((await page.locator('#workoutList .card').last().textContent()).includes('↘'), '카드의 "지난번" 줄에도 ↘');
+
+  // ── 운동 폼 표에서 바로: 세트 줄마다 ↘ 버튼 (드롭세트 = 한 세트에 무게·횟수 여러 개) ──
+  await page.evaluate(() => { day().workouts = []; save(); render(); });
+  await page.fill('#exName', '');
+  await page.fill('#exName', '케이블크런치');
+  await wait(page, 50);
+  t.eq(await page.locator('#perSetBox [data-psd]').count(), 3, '폼 표의 세트 줄마다 ↘ 드롭 버튼');
+  await page.fill('[data-ps="2:weight"]', '50');
+  await page.fill('[data-ps="2:reps"]', '12');
+  await page.click('[data-psd="2"]');
+  t.eq(await page.evaluate(() => perSet[2].drops), [{ weight: 40, reps: 12 }], '누르면 그 세트 아래에 드롭 줄 (80%, 횟수 그대로)');
+  await page.click('[data-psd="2"]');
+  await page.fill('[data-psdv="2:1:weight"]', '30');
+  await page.fill('[data-psdv="2:1:reps"]', '8');
+  t.eq(await page.evaluate(() => perSet[2].drops), [{ weight: 40, reps: 12 }, { weight: 30, reps: 8 }], '한 번 더 → 또 한 줄, 칸에서 바로 고침');
+  await page.click('[data-psd="0"]');
+  await page.click('[data-psdx="0:0"]');
+  t.eq(await page.evaluate(() => perSet[0].drops ?? null), null, '✕로 그 드롭만 뺌');
+  await page.click('#workoutForm button[type=submit]');
+  s = await sets();
+  t.eq([s[0].drops, s[2].drops], [null, [{ weight: 40, reps: 12 }, { weight: 30, reps: 8 }]], '"운동 추가"하면 드롭세트로 저장');
+  // 슈퍼세트 칸에도
+  await page.fill('#exName', '레그익스텐션');
+  await page.click('#ssAdd');
+  await page.fill('[data-pn="0"]', '레그컬');
+  await page.fill('[data-pps="0:0:weight"]', '40');
+  await page.click('[data-ppd="0:0"]');
+  await page.fill('[data-ppdv="0:0:0:reps"]', '6');
+  t.eq(await page.evaluate(() => partners[0].sets[0].drops), [{ weight: 32.5, reps: 6 }], '슈퍼세트 칸 표에도 ↘');
+  await page.click('#workoutForm button[type=submit]');
+  t.eq(await page.evaluate(() => day().workouts.at(-1).sets[0].drops), [{ weight: 32.5, reps: 6 }], '슈퍼세트로 넣어도 드롭이 따라감');
 
   // ── 지난 운동 불러오기에도 ──
   await page.evaluate(() => { currentDate = shiftDate(todayStr(), 1); render(); });

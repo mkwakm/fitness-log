@@ -2114,6 +2114,40 @@ let partners = [];
 function defaultPerSet(n = 3, weight = null, reps = 10) {
   return Array.from({ length: Math.max(1, Math.min(20, n)) }, () => ({ weight, reps }));
 }
+// 운동 폼의 세트 표 한 벌 (첫 운동·슈퍼세트 칸이 같이 쓴다). a = 데이터 속성 이름들과 번호 앞머리.
+//  세트 번호 = 워밍업 전환, ↘ = 그 세트에 드롭 한 줄 (드롭세트: 한 세트에 무게·횟수 여러 개)
+function setRowsHtml(rows, a) {
+  const no = (i) => rows.slice(0, i + 1).filter((x) => !x.warmup).length;
+  return rows.map((s, i) => `
+    <div class="perset-row">
+      <button type="button" class="perset-no ${s.warmup ? 'warm' : ''}" data-${a.w}="${a.key}${i}" aria-pressed="${!!s.warmup}" title="누르면 워밍업 ↔ 본 세트">${s.warmup ? '워밍업' : `${no(i)}세트`}</button>
+      <label><input type="number" inputmode="decimal" min="0" step="0.5" placeholder="맨몸" value="${s.weight ?? ''}" data-${a.v}="${a.key}${i}:weight" aria-label="${a.label}${i + 1}세트 중량"><span>kg</span></label>
+      <label><input type="number" inputmode="numeric" min="0" value="${s.reps ?? ''}" data-${a.v}="${a.key}${i}:reps" aria-label="${a.label}${i + 1}세트 횟수"><span>회</span></label>
+      <button type="button" class="perset-drop" data-${a.d}="${a.key}${i}" title="드롭세트: 무게를 내려 이어 한 것을 이 세트에 붙여요" aria-label="${a.label}${i + 1}세트에 드롭 추가">↘</button>
+    </div>${dropsOf(s).map((d, k) => `
+    <div class="perset-row drop">
+      <span class="drop-mark" aria-hidden="true">↘</span>
+      <label><input type="number" inputmode="decimal" min="0" step="0.5" placeholder="맨몸" value="${d.weight ?? ''}" data-${a.dv}="${a.key}${i}:${k}:weight" aria-label="${a.label}${i + 1}세트 ${k + 1}번째 드롭 중량"><span>kg</span></label>
+      <label><input type="number" inputmode="numeric" min="0" value="${d.reps ?? ''}" data-${a.dv}="${a.key}${i}:${k}:reps" aria-label="${a.label}${i + 1}세트 ${k + 1}번째 드롭 횟수"><span>회</span></label>
+      <button type="button" class="del" data-${a.dx}="${a.key}${i}:${k}" aria-label="드롭 빼기">✕</button>
+    </div>`).join('')}`).join('');
+}
+// 폼 표의 드롭: 더하기(직전 무게의 80%) · 빼기 · 값 고치기
+function formDropAdd(row) {
+  row.drops = [...dropsOf(row), nextDrop(segsOf(row).at(-1))];
+}
+function formDropDel(row, k) {
+  const drops = dropsOf(row);
+  drops.splice(k, 1);
+  if (drops.length) row.drops = drops;
+  else delete row.drops;
+}
+function formDropSet(row, k, field, v) {
+  const d = dropsOf(row)[k];
+  if (!d || (field !== 'weight' && field !== 'reps')) return;
+  d[field] = v === '' ? (field === 'reps' ? 0 : null) : nonNeg(v);
+}
+
 function renderPerSet() {
   $('#workoutForm').classList.toggle('uniform', formUniform);
   $('#perSetToggle').textContent = formUniform ? '세트마다 다르게 적기' : '모든 세트 같게';
@@ -2121,14 +2155,8 @@ function renderPerSet() {
   if (formUniform) return;
   // 치는 중엔 다시 그리지 않는다 — 입력칸만 (세트 번호 버튼까지 막으면 눌러도 안 바뀐 것처럼 보인다)
   if (document.activeElement?.matches?.('#perSetBox input')) return;
-  const no = (i) => perSet.slice(0, i + 1).filter((x) => !x.warmup).length;
-  $('#perSetBox').innerHTML = perSet.map((s, i) => `
-    <div class="perset-row">
-      <button type="button" class="perset-no ${s.warmup ? 'warm' : ''}" data-psw="${i}" aria-pressed="${!!s.warmup}" title="누르면 워밍업 ↔ 본 세트">${s.warmup ? '워밍업' : `${no(i)}세트`}</button>
-      <label><input type="number" inputmode="decimal" min="0" step="0.5" placeholder="맨몸" value="${s.weight ?? ''}" data-ps="${i}:weight" aria-label="${i + 1}세트 중량"><span>kg</span></label>
-      <label><input type="number" inputmode="numeric" min="0" value="${s.reps ?? ''}" data-ps="${i}:reps" aria-label="${i + 1}세트 횟수"><span>회</span></label>
-      ${dropsOf(s).length ? `<span class="perset-drops">${dropsOf(s).map((d) => `↘ ${Number(d.weight) > 0 ? `${d.weight}kg×` : ''}${d.reps ?? 0}`).join(' ')} <span class="muted">(지난번 드롭)</span></span>` : ''}
-    </div>`).join('') + '<p class="hint perset-tip">세트 번호를 누르면 워밍업으로 바뀌어요 (볼륨·최고 기록·과부하 제안에서 빠져요)</p>';
+  $('#perSetBox').innerHTML = setRowsHtml(perSet, { key: '', w: 'psw', v: 'ps', d: 'psd', dv: 'psdv', dx: 'psdx', label: '' }) +
+    '<p class="hint perset-tip">세트 번호 → 워밍업 · ↘ → 드롭세트 (그 세트에 무게를 내려 이어 한 것)</p>';
 }
 // 세트 수가 바뀌면 표도 늘리고 줄인다 (늘릴 땐 마지막 세트를 따라)
 function resizePerSet() {
@@ -2154,13 +2182,7 @@ function partnerHint(name) {
   return `↩ 지난번 ${fmtDate(last.date)}: ${esc(setsText(last.workout))}${tip ? `<br><span class="tip">${overloadText(tip)}</span>` : ''}`;
 }
 function partnerRowsHtml(p, k) {
-  const no = (i) => p.sets.slice(0, i + 1).filter((x) => !x.warmup).length;
-  return p.sets.map((s, i) => `
-    <div class="perset-row">
-      <button type="button" class="perset-no ${s.warmup ? 'warm' : ''}" data-ppw="${k}:${i}" aria-pressed="${!!s.warmup}">${s.warmup ? '워밍업' : `${no(i)}세트`}</button>
-      <label><input type="number" inputmode="decimal" min="0" step="0.5" placeholder="맨몸" value="${s.weight ?? ''}" data-pps="${k}:${i}:weight" aria-label="${k + 2}번째 운동 ${i + 1}세트 중량"><span>kg</span></label>
-      <label><input type="number" inputmode="numeric" min="0" value="${s.reps ?? ''}" data-pps="${k}:${i}:reps" aria-label="${k + 2}번째 운동 ${i + 1}세트 횟수"><span>회</span></label>
-    </div>`).join('');
+  return setRowsHtml(p.sets, { key: `${k}:`, w: 'ppw', v: 'pps', d: 'ppd', dv: 'ppdv', dx: 'ppdx', label: `${k + 2}번째 운동 ` });
 }
 function renderPartners() {
   $('#ssBox').innerHTML = partners.map((p, k) => `
@@ -2654,6 +2676,12 @@ $('#ssBox').addEventListener('input', (e) => {
       $(`#ssRows${ds.pn}`).innerHTML = partnerRowsHtml(p, Number(ds.pn));   // 이름 칸은 그대로 두고 표만 (치는 중이라)
     }
     $(`#ssHint${ds.pn}`).innerHTML = partnerHint(p.name.trim());
+  } else if (ds.ppdv) {
+    const [k, i, d, field] = ds.ppdv.split(':');
+    const row = partners[Number(k)]?.sets[Number(i)];
+    if (!row) return;
+    formDropSet(row, Number(d), field, e.target.value);
+    partners[Number(k)].touched = true;
   } else if (ds.pps) {
     const [k, i, field] = ds.pps.split(':');
     const row = partners[Number(k)]?.sets[Number(i)];
@@ -2663,6 +2691,17 @@ $('#ssBox').addEventListener('input', (e) => {
   }
 });
 $('#ssBox').addEventListener('click', (e) => {
+  const pb = e.target.closest('button');
+  if (pb?.dataset.ppd || pb?.dataset.ppdx) {
+    const [k, i, d] = (pb.dataset.ppd || pb.dataset.ppdx).split(':').map(Number);
+    const row = partners[k]?.sets[i];
+    if (!row) return;
+    if (pb.dataset.ppd) formDropAdd(row);
+    else formDropDel(row, d);
+    partners[k].touched = true;
+    $(`#ssRows${k}`).innerHTML = partnerRowsHtml(partners[k], k);
+    return;
+  }
   const pw = e.target.closest('[data-ppw]')?.dataset.ppw;
   if (pw) {
     const [k, i] = pw.split(':').map(Number);
@@ -2686,6 +2725,20 @@ $('#exHint').addEventListener('click', (e) => {
   updateExHint();
 });
 $('#perSetBox').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (b?.dataset.psd != null && perSet[b.dataset.psd]) {
+    formDropAdd(perSet[b.dataset.psd]);
+    perSetTouched = true;
+    renderPerSet();
+    return;
+  }
+  if (b?.dataset.psdx) {
+    const [i, k] = b.dataset.psdx.split(':').map(Number);
+    if (perSet[i]) formDropDel(perSet[i], k);
+    perSetTouched = true;
+    renderPerSet();
+    return;
+  }
   const i = e.target.closest('[data-psw]')?.dataset.psw;
   if (i == null || !perSet[i]) return;
   if (perSet[i].warmup) delete perSet[i].warmup;
@@ -2694,6 +2747,12 @@ $('#perSetBox').addEventListener('click', (e) => {
   renderPerSet();
 });
 $('#perSetBox').addEventListener('input', (e) => {
+  if (e.target.dataset.psdv) {
+    const [i, k, field] = e.target.dataset.psdv.split(':');
+    if (perSet[i]) formDropSet(perSet[i], Number(k), field, e.target.value);
+    perSetTouched = true;
+    return;
+  }
   const [i, field] = (e.target.dataset.ps || '').split(':');
   if (!perSet?.[i]) return;
   perSet[i][field] = e.target.value === '' ? null : nonNeg(e.target.value);

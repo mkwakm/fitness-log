@@ -607,7 +607,7 @@ body.sheet-open { overflow: hidden; }
 #workoutForm:not(.uniform) .row > label:nth-child(3) { display: none; }
 .perset { display: grid; gap: 6px; margin: 4px 0 10px; }
 .perset[hidden] { display: none; }
-.perset-row { display: grid; grid-template-columns: 52px 1fr 1fr; gap: 8px; align-items: center; }
+.perset-row { display: grid; grid-template-columns: 52px 1fr 1fr 40px; gap: 6px; align-items: center; }
 .perset-no { color: var(--muted); font-size: 0.85rem; }
 .perset-row label { display: flex; align-items: center; gap: 6px; margin: 0; }
 .perset-row input { width: 100%; min-width: 0; min-height: 40px; }
@@ -629,7 +629,6 @@ body.sheet-open { overflow: hidden; }
 .set-row.drop input { border-style: dashed; }
 .set-btns { display: flex; gap: 6px; flex-wrap: wrap; }
 .set-btns button { min-height: 40px; }
-.perset-drops { grid-column: 2 / -1; margin-top: -4px; font-size: 0.8rem; color: var(--accent); }
 .focus-drops { margin: 0 0 4px; }
 .focus-drop { display: block; min-height: 40px; margin: 0 auto 6px; font-size: 0.85rem; }
 
@@ -686,3 +685,9 @@ button.perset-no.warm { border-color: var(--accent); color: var(--accent); font-
 .card > .set-btns { display: flex; flex-wrap: nowrap; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
 .card > .set-btns button { flex: 1 1 0; min-width: 0; padding: 0 6px; font-size: 0.85rem; white-space: nowrap; }
 .card-stats { margin: 6px 0 0; font-size: 0.8rem; }
+
+/* 폼 표의 드롭 버튼(↘)과 드롭 줄 */
+.perset-drop { min-height: 40px; min-width: 40px; padding: 0; border-radius: 8px; font-size: 1.05rem; font-weight: 700; color: var(--accent); background: transparent; border: 1px dashed var(--accent); }
+.perset-row.drop { margin-top: -2px; }
+.perset-row.drop input { border-style: dashed; }
+.perset-row.drop .del { min-height: 40px; min-width: 40px; }
