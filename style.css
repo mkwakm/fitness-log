@@ -791,3 +791,33 @@ button.perset-no.warm { border-color: var(--accent); color: var(--accent); font-
 .split-names { display: grid; gap: 6px; }
 .split-names label { display: grid; grid-template-columns: 52px 1fr; align-items: center; gap: 8px; margin: 0; }
 .split-names span { font-size: 0.8rem; color: var(--muted); }
+
+/* 접히는 운동 카드 — 접었을 땐 종목·세트 수만, 누르면 펼쳐진다 */
+.ex-card { padding: 0; }
+.ex-head {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 16px 14px; min-height: 56px; text-align: left;
+  background: none; border: none; border-radius: 14px;
+}
+.ex-card.open .ex-head { border-radius: 14px 14px 0 0; padding-bottom: 10px; }
+.ex-name { flex: 1; font-size: 1.05rem; font-weight: 700; overflow-wrap: anywhere; }
+.ex-count { flex: none; font-size: 0.9rem; color: var(--muted); }
+.ex-card.open .ex-count { color: var(--accent); }
+.ex-head .chev { flex: none; width: 14px; text-align: center; color: var(--muted); }
+.ex-body { padding: 0 14px 14px; }
+.ex-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin-top: 6px; border-top: 1px solid var(--line); padding-top: 4px;
+}
+.ex-foot .link-btn { min-height: 40px; }
+.ex-card .ss-tag { padding: 10px 14px 0; }
+
+/* 식단은 선택이라 가장 손이 덜 가는 길(사진)을 크게 둔다 */
+.file-btn.big { min-height: 56px; font-size: 1.05rem; font-weight: 600; border-style: dashed; }
+
+/* 도움말 시트 */
+#helpBody .help { margin-bottom: 10px; }
+#helpBody .hint { font-size: 0.88rem; line-height: 1.7; }
+/* 헤더에 도움말 버튼이 늘어서 375px에서 날짜 칸이 눌린다 — 아이콘을 조금 좁힌다 */
+.top { gap: 6px; }
+.top .icon-btn { width: 36px; font-size: 1.15rem; }

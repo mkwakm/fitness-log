@@ -3,6 +3,7 @@ import { tab, text, wait, addWorkout } from './lib.mjs';
 
 export default async function (t) {
   const page = await t.open();
+  await tab(page, 'meals');       // 앱은 운동 탭으로 열린다 (식단은 선택)
 
   // ── 식단 칼로리 자동 계산 ──
   const kcalOf = async (name, amount) => {

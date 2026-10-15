@@ -1,5 +1,5 @@
-// 운동 중 집중 모드: 세트 하나씩 → 완료 → 휴식 → 다음 세트, 그리고 휴대폰에서 탭이 다시 열려도 이어지는지
-import { tab, text, wait } from './lib.mjs';
+﻿// 운동 중 집중 모드: 세트 하나씩 → 완료 → 휴식 → 다음 세트, 그리고 휴대폰에서 탭이 다시 열려도 이어지는지
+import { tab, text, wait, openAllEx } from './lib.mjs';
 
 export default async function (t) {
   const page = await t.open();
@@ -109,6 +109,7 @@ export default async function (t) {
   t.ok(await page.locator('#focusSheet').isHidden(), '운동 끝내기 → 닫힘');
   t.ok(!(await page.evaluate(() => sessionOn())), '운동 시간도 멈춤');
   t.ok(await page.evaluate(() => day().sessionMin) >= 1, '운동 시간 기록');
+  await openAllEx(page);
   t.eq(await page.locator('#workoutList .set-row.done').count(), 6, '카드 화면에도 완료 6세트가 그대로');
 
   // ── 닫기·뒤로가기·겹쳐 열기 ──

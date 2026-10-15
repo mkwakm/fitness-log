@@ -1,8 +1,8 @@
-// 식단 사진으로 음식 알아보기 (vision.js): 처음 동의 → 모르는 음식은 이름 받기 → 다음엔 자동 입력,
+﻿// 식단 사진으로 음식 알아보기 (vision.js): 처음 동의 → 모르는 음식은 이름 받기 → 다음엔 자동 입력,
 // 틀렸으면 고치기, 애매하면 후보, 기본 분류기, 지난 사진 배우기, 지우면 배운 것도 지우기.
 // 진짜 AI 모델(50MB)은 받지 않는다. 사진 색으로 숫자를 만드는 가짜 엔진을 심는다:
 //  같은 색 = 같은 음식, 왼쪽·오른쪽 색이 다르면 두 음식이 섞인 애매한 사진.
-import { wait } from './lib.mjs';
+import { tab, wait } from './lib.mjs';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ROOT } from './lib.mjs';
@@ -79,6 +79,7 @@ async function addNamed(p, name, amount = '') {
 export default async function (t) {
   // ── 처음: 동의를 받고 나서야 모델을 부른다 ──
   const A = await t.open({ init: { fn: fake } });
+  await tab(A, 'meals');   // 앱은 운동 탭으로 열린다 (식단은 선택)
   t.ok(await A.locator('#visionBox').isHidden(), '처음엔 결과 칸이 숨어 있음');
   await pickPhoto(A, RED);
   t.ok(await until(A, 'ask'), '이름 없이 사진을 고르면 먼저 물어봄 (모델이 50MB라서)');
@@ -150,6 +151,7 @@ export default async function (t) {
 
   // ── 한 번 동의했으면 다시 안 묻는다 ──
   await A.reload();
+  await tab(A, 'meals');          // 새로 열면 다시 운동 탭이다
   await A.waitForSelector('#mealList', { state: 'attached' });
   await pickPhoto(A, GRAY);
   t.ok(await until(A, 'done'), '새로고침해도 동의는 그대로 (안 묻고 바로)');
@@ -179,6 +181,7 @@ export default async function (t) {
 
   // ── 안 받겠다고 하면 ──
   const B = await t.open({ init: { fn: fake } });
+  await tab(B, 'meals');   // 앱은 운동 탭으로 열린다 (식단은 선택)
   await pickPhoto(B, RED);
   await until(B, 'ask');
   await B.click('[data-vision="skip"]');
@@ -197,6 +200,7 @@ export default async function (t) {
 
   // ── 지난 사진 배우기: 모델을 켜기 전에 이름과 함께 넣은 사진들 ──
   const C = await t.open({ init: { fn: fake } });
+  await tab(C, 'meals');   // 앱은 운동 탭으로 열린다 (식단은 선택)
   await pickPhoto(C, RED);
   await until(C, 'ask');
   await C.click('[data-vision="skip"]');
@@ -215,6 +219,7 @@ export default async function (t) {
 
   // ── 기본 분류기 (AI Hub로 학습해 둘 표) ──
   const D = await t.open({ init: { fn: fake, arg: { head: true } } });
+  await tab(D, 'meals');   // 앱은 운동 탭으로 열린다 (식단은 선택)
   await pickPhoto(D, GREEN);
   await until(D, 'ask');
   t.ok((await D.textContent('#visionBox')).includes('한국지능정보사회진흥원의 사업결과인 AI 허브'), '기본 분류기를 쓰면 동의 화면에 AI Hub 데이터 출처를 밝힘 (이용정책)');

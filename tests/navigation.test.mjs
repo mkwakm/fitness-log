@@ -68,5 +68,37 @@ export default async function (t) {
   await page.click('#todayBtn');
   await wait(page, 450);
 
+  // ── 운동이 주, 식단은 선택 ──
+  t.eq(await page.evaluate(() => document.querySelector('.panel.active')?.id), 'workouts', '앱을 열면 운동 탭이 먼저');
+
+  // ── 접히는 운동 카드 ──
+  await page.evaluate(() => {
+    day().workouts = [{ id: 'c1', name: '스쿼트', sets: [1, 2, 3].map(() => ({ weight: 80, reps: 8, done: false })) }];
+    save(); render();
+  });
+  const head = page.locator('#workoutList .ex-head');
+  t.eq((await head.textContent()).replace(/\s+/g, ' ').trim(), '스쿼트 3세트 ›', '접힌 카드엔 종목과 세트 수만');
+  t.eq(await page.locator('#workoutList .set-row').count(), 0, '접혀 있으면 세트 표를 아예 안 그림');
+  await head.click();
+  await wait(page, 100);
+  t.eq(await page.locator('#workoutList .set-row:not(.head)').count(), 3, '카드를 누르면 세트 표가 열림');
+  t.ok(await page.locator('#workoutList [data-del-workout]').isVisible(), '삭제·순서 버튼도 열었을 때만');
+  await head.click();
+  await wait(page, 100);
+  t.eq(await page.locator('#workoutList .set-row').count(), 0, '다시 누르면 접힘');
+
+  // ── 도움말 ──
+  await page.click('#helpBtn');
+  t.ok(await page.locator('#helpSheet').isVisible(), '❓를 누르면 도움말이 열림');
+  t.ok((await text(page, '#helpBody')).includes('사진으로 기록'), '도움말에 식단 사진 설명이 들어 있음');
+  await page.keyboard.press('Escape');
+  await wait(page, 100);
+  t.ok(await page.locator('#helpSheet').isHidden(), 'ESC로 닫힘');
+  await page.click('#helpBtn');
+  await page.goBack();
+  await wait(page, 150);
+  t.ok(await page.locator('#helpSheet').isHidden(), '휴대폰 뒤로가기로도 닫힘 (앱이 꺼지지 않음)');
+  t.eq(await date(), today, '도움말을 닫아도 보고 있던 날짜 그대로');
+
   t.noErrors(page);
 }

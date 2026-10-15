@@ -19,11 +19,13 @@
     <button id="nextDay" class="icon-btn" aria-label="다음 날">›</button>
     <button id="todayBtn" class="today-btn" hidden>오늘</button>
     <button id="themeBtn" class="icon-btn" aria-label="밝기 전환" title="밝기 전환">🌙</button>
+    <button id="helpBtn" class="icon-btn" aria-label="도움말" title="도움말">❓</button>
   </header>
 
+  <!-- 운동이 주, 식단은 선택 (사용자 요구). 앱을 열면 운동 탭이 먼저 보인다 -->
   <nav class="tabs">
-    <button class="tab active" data-tab="meals">🍚 식단</button>
-    <button class="tab" data-tab="workouts">🏋️ 운동</button>
+    <button class="tab active" data-tab="workouts">🏋️ 운동</button>
+    <button class="tab" data-tab="meals">🍚 식단</button>
     <button class="tab" data-tab="history">📅 기록</button>
   </nav>
 
@@ -34,11 +36,17 @@
 
   <main>
     <!-- 식단 -->
-    <section id="meals" class="panel active">
+    <section id="meals" class="panel">
       <div class="summary" id="mealSummary"></div>
       <div class="card meter" id="proteinBar" hidden></div>
       <div class="card meter" id="waterRow"></div>
       <form id="mealForm" class="card form">
+        <!-- 사진이 가장 손이 덜 가는 길이라 맨 위에 크게 (사용자: 적는 게 귀찮아서 안 하게 된다) -->
+        <label class="file-btn photo-pick big">📷 사진으로 기록하기 <span id="photoName"></span>
+          <input type="file" id="mealPhoto" accept="image/*" hidden>
+        </label>
+        <!-- 사진으로 알아본 결과 (vision.js). 이름을 비워 두고 사진을 고르면 뜬다 -->
+        <div id="visionBox" class="vision-box" hidden aria-live="polite"></div>
         <select id="mealType">
           <option>아침</option><option>점심</option><option>저녁</option><option>간식</option>
         </select>
@@ -50,11 +58,6 @@
           <label>단백질(g)<input id="foodProtein" type="number" inputmode="decimal" min="0" step="0.1" placeholder="자동"></label>
         </div>
         <p class="hint" id="mealHint"></p>
-        <label class="file-btn photo-pick">📷 사진으로 넣기 <span id="photoName"></span>
-          <input type="file" id="mealPhoto" accept="image/*" hidden>
-        </label>
-        <!-- 사진으로 알아본 결과 (vision.js). 이름을 비워 두고 사진을 고르면 뜬다 -->
-        <div id="visionBox" class="vision-box" hidden aria-live="polite"></div>
         <button type="submit" class="primary">식단 추가</button>
       </form>
 
@@ -72,14 +75,13 @@
             <input id="proteinGoal" type="number" inputmode="numeric" min="0" step="5" placeholder="자동">
           </label>
         </div>
-        <p class="hint">정해두면 요약에 남은 칼로리가 같이 나와요. 소모 칼로리만큼 더 먹을 수 있게 계산합니다.</p>
         <p class="hint" id="proteinGoalHint"></p>
       </div>
       <div id="myFoods"></div>
     </section>
 
     <!-- 운동 -->
-    <section id="workouts" class="panel">
+    <section id="workouts" class="panel active">
       <div class="summary" id="workoutSummary"></div>
       <!-- 오늘의 운동: 분할 순서로 오늘 무슨 운동 차례인지, 지난번 그 날 뭘 했는지 (운동 전에 고르고 꺼내 온다) -->
       <div class="card split-card" id="splitCard" hidden></div>
@@ -133,12 +135,6 @@
           </label>
         </div>
         <p class="hint" id="weightHint"></p>
-        <details class="help">
-          <summary>계산 방식 보기</summary>
-          <p class="hint">운동 종류별 MET × 체중 × 운동 시간으로 계산한 추정치예요. 시간을 안 적으면 세트당 3분으로 추정합니다.<br>
-            MET(운동 강도)는 운동 이름으로 자동 추정하는데, 값이 안 맞으면 운동 카드에서 직접 고칠 수 있어요. 같은 이름의 운동에는 모두 적용됩니다.<br>
-            세트 번호를 눌러 완료 체크를 하면 <b>체크한 세트만</b> 계산에 들어가요. 하나도 체크 안 하면 전체를 계산합니다.</p>
-        </details>
       </div>
 
       <div class="card">
@@ -195,7 +191,6 @@
         <details class="help">
           <summary>주간 목표 세트 정하기</summary>
           <div class="goal-grid" id="partGoals"></div>
-          <p class="hint">최근 7일을 볼 때만 견줘요. 비워두면 목표 없이 세트 수만 봅니다.</p>
         </details>
       </div>
 
@@ -225,7 +220,6 @@
       <div class="card" id="syncCard"></div>
       <div class="card backup">
         <h3>백업</h3>
-        <p class="hint">데이터는 이 기기 브라우저에 저장돼요. 기기를 바꿀 땐 내보내기/가져오기를 쓰세요.</p>
         <ul class="safety" id="safetyStatus"></ul>
         <div class="row">
           <button id="exportBtn">내보내기 (JSON)</button>
@@ -235,7 +229,6 @@
           <button id="exportPhotoBtn">📷 사진까지 내보내기</button>
           <button id="prunePhotoBtn">🧹 안 쓰는 사진 정리</button>
         </div>
-        <p class="hint">사진은 이 기기에만 저장돼요. 다른 기기로 옮기려면 <b>사진까지 내보내기</b>로 받은 파일을 그쪽에서 <b>가져오기</b> 하세요. 평소 동기화에는 사진이 들어가지 않습니다(파일이 너무 무거워져서요).</p>
       </div>
     </section>
   </main>
@@ -260,6 +253,15 @@
       <button class="del" id="exSheetClose" aria-label="닫기">✕</button>
     </div>
     <div class="sheet-body" id="exSheetBody"></div>
+  </div>
+
+  <!-- 도움말. 화면에 길게 적는 대신 여기로 모은다 (좁은 화면에서 설명이 글 벽이 된다) -->
+  <div id="helpSheet" class="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+    <div class="sheet-head">
+      <h2 id="helpTitle">❓ 도움말</h2>
+      <button class="del" id="helpClose" aria-label="닫기">✕</button>
+    </div>
+    <div class="sheet-body" id="helpBody"></div>
   </div>
 
   <!-- 아래 고정 바들. 같이 떠도 겹치지 않게 한 곳에 모아 세로로 쌓는다 -->

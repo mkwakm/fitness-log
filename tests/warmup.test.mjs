@@ -1,6 +1,6 @@
-// 워밍업 세트 (set.warmup): 폼에서 세트 번호를 눌러 표시, 카드의 "+ 워밍업", 볼륨·세트 수·최고 기록·과부하에서 빠짐,
+﻿// 워밍업 세트 (set.warmup): 폼에서 세트 번호를 눌러 표시, 카드의 "+ 워밍업", 볼륨·세트 수·최고 기록·과부하에서 빠짐,
 // 시간(칼로리) 추정엔 들어감, 다음번엔 워밍업 모양 그대로(워밍업 무게는 안 올림), 집중 모드 표시.
-import { tab, text, wait } from './lib.mjs';
+import { tab, text, wait, openAllEx } from './lib.mjs';
 
 export default async function (t) {
   const page = await t.open();
@@ -56,6 +56,7 @@ export default async function (t) {
 
   // ── 카드: + 워밍업 ──
   await page.evaluate(() => { day().workouts = [{ id: 'd', name: '데드리프트', sets: [{ weight: 140, reps: 5, done: false }, { weight: 140, reps: 5, done: false }] }]; save(); render(); });
+  await openAllEx(page);
   await page.click('[data-add-warmup="d"]');
   w = await w0();
   t.eq(w.sets.map((s) => [s.weight, !!s.warmup]), [[70, true], [140, false], [140, false]], '+ 워밍업: 본 세트 앞에 절반 무게로');

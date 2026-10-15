@@ -1,6 +1,6 @@
-// 슈퍼세트 (w.ss): 카드 사이 버튼으로 묶기·풀기, 세 개 묶기, 순서 바꾸기·지우기 뒤 정리,
+﻿// 슈퍼세트 (w.ss): 카드 사이 버튼으로 묶기·풀기, 세 개 묶기, 순서 바꾸기·지우기 뒤 정리,
 // 휴식은 한 바퀴 뒤에, 집중 모드는 A1 → B1 → A2 순서, 루틴·지난 운동 불러오기, 완료한 세트 아래 드롭 버튼.
-import { tab, text, wait, addWorkout } from './lib.mjs';
+import { tab, text, wait, addWorkout, openAllEx } from './lib.mjs';
 
 export default async function (t) {
   const page = await t.open({ dialog: (d) => (d.type() === 'prompt' ? d.accept('등 가슴 슈퍼') : d.accept()) });
@@ -51,6 +51,7 @@ export default async function (t) {
     day().workouts = [mk('a', '벤치프레스', 60), mk('b', '바벨로우', 50)];
     stopRest(); save(); render();
   });
+  await openAllEx(page);
   await page.click('[data-toggle="a:0"]');
   t.eq(await page.evaluate(() => restEndAt), 0, 'A1을 끝내면 쉬지 않고 B1로');
   await page.click('[data-toggle="b:0"]');
@@ -99,6 +100,7 @@ export default async function (t) {
   // ── 드롭: 방금 완료한 세트 바로 아래에 버튼 ──
   await page.evaluate(() => { currentDate = todayStr(); day().workouts = [{ id: 'd', name: '덤벨컬', sets: [1, 2, 3].map(() => ({ weight: 15, reps: 10, done: false })) }]; stopRest(); save(); render(); });
   t.eq(await page.locator('.drop-inline').count(), 0, '완료한 세트가 없으면 세트 아래 드롭 버튼도 없음');
+  await openAllEx(page);
   await page.click('[data-toggle="d:1"]');
   t.eq(await page.locator('.drop-inline').count(), 1, '세트를 완료하면 그 세트 바로 아래에 드롭 버튼');
   const after = await page.evaluate(() => document.querySelector('.drop-inline').previousElementSibling.querySelector('[data-toggle]')?.dataset.toggle);

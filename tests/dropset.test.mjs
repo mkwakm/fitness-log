@@ -1,6 +1,6 @@
-// 드롭세트: 한 세트 안에 무게·횟수 여러 개 (set.drops). 카드·집중 모드에서 붙이고 고치고 지우기,
+﻿// 드롭세트: 한 세트 안에 무게·횟수 여러 개 (set.drops). 카드·집중 모드에서 붙이고 고치고 지우기,
 // 볼륨·세트 수·최고 기록, 다음번 자동 채움, 세트 추가·복사, 망가진 값, 휴대폰 화면.
-import { tab, text, wait, ago, addWorkout } from './lib.mjs';
+import { tab, text, wait, ago, addWorkout, openEx } from './lib.mjs';
 
 export default async function (t) {
   const page = await t.open({ dialog: (d) => d.accept() });
@@ -149,6 +149,7 @@ export default async function (t) {
     save(); render();
   });
   t.eq(await page.evaluate(() => volumeOf(day().workouts[0])), 200, '드롭이 망가져 있어도 볼륨은 멀쩡 (음수 무게는 0)');
+  await openEx(page);
   t.eq(await page.locator('#workoutList .set-row.drop').count(), 1, '이상한 값은 빼고 그림');
 
   // ── 동기화: 드롭이 다른 기기로 넘어감 ──

@@ -168,6 +168,9 @@ let range = 7;            // 통계 기간 (일)
 let liftPick = '';        // 중량 추이로 보고 있는 운동
 let volPart = '';         // 볼륨 추이로 보고 있는 부위
 let exSheetName = null;
+// 펼쳐 둔 운동 카드. 카드는 접힌 게 기본이고, 방금 추가한 운동만 펼쳐 둔다.
+// 이 기기 화면 상태라 기록에는 안 들어가고, 다시 그려도 유지돼야 해서 따로 기억한다.
+const exOpen = new Set();
 const exMetaOpen = new Set();   // 시간·MET를 펼쳐 둔 운동 (다시 그려도 그대로 — 안 그러면 고치는 도중에 접힌다)   // 상세를 열어 둔 운동 이름 (안 열었으면 null)
 let focusOn = false;      // 집중 모드가 열려 있는지
 let focusAt = null;       // 집중 모드에서 보고 있는 세트 { id, i } — null이면 다음에 할 세트
@@ -998,7 +1001,7 @@ function favoriteFoods(limit = 6) {
 function renderFavorites() {
   const favs = favoriteFoods();
   $('#favFoods').innerHTML = favs.length
-    ? `<h3>⭐ 자주 먹는 음식 <span class="hint">누르면 바로 추가돼요</span></h3>
+    ? `<h3>⭐ 자주 먹는 음식</h3>
        <div class="chips">${favs.map((f, i) => `<button class="chip" data-fav="${i}">
          ${esc(f.meal.name)} <span class="muted">${f.meal.kcal ? f.meal.kcal + 'kcal' : esc(f.meal.amount)}</span>
        </button>`).join('')}</div>`
@@ -1068,8 +1071,12 @@ function renderWorkouts() {
     const ssCls = ss ? ` ss ${run[0] === w ? 'ss-first' : ''} ${run.at(-1) === w ? 'ss-last' : ''}` : '';
     const next = workouts[idx + 1];
     const linked = next && runOf.get(next) === run && ss;
-    const linkRow = next ? `<div class="ss-link ${linked ? 'on' : ''}">
-      <button data-ss-link="${w.id}:${next.id}">${linked ? '🔗 슈퍼세트 · 풀기' : '🔗 아래 운동과 슈퍼세트로 묶기'}</button></div>` : '';
+    // 묶기 버튼은 카드 사이마다 있어서, 접힌 카드만 늘어선 화면에서는 그것대로 잡음이 된다.
+    // 둘 중 하나를 펼쳤을 때만 보여준다 (묶인 것은 카드 왼쪽 띠와 맨 위 태그로 이미 보인다).
+    const linkRow = next && (exOpen.has(w.id) || exOpen.has(next.id))
+      ? `<div class="ss-link ${linked ? 'on' : ''}">
+      <button data-ss-link="${w.id}:${next.id}">${linked ? '🔗 슈퍼세트 · 풀기' : '🔗 아래 운동과 슈퍼세트로 묶기'}</button></div>`
+      : '';
     const vol = volumeOf(w);
     const done = doneCount(w);
     const pr = personalBest(w.name);
@@ -1081,14 +1088,11 @@ function renderWorkouts() {
     const tip = overloadTip(w.name);
     const rest = avgRest(w);
     const todayRm = Math.max(0, ...countedSets(w).map((x) => oneRM(Number(x.weight) || 0, Number(x.reps) || 0)));
-    return `<div class="card${ssCls}">
-    ${ss && run[0] === w ? `<p class="ss-tag">🔗 슈퍼세트 ${run.length}종 · 번갈아 하고 한 바퀴 뒤에 쉬어요</p>` : ''}
-    <div class="item"><h3><button class="ex-title" data-ex-detail="${esc(w.name)}">${esc(w.name)} <span aria-hidden="true">›</span></button></h3>
-      <span class="order">
-        ${idx > 0 ? `<button data-move="${w.id}:-1" aria-label="위로" title="위로">↑</button>` : ''}
-        ${idx < workouts.length - 1 ? `<button data-move="${w.id}:1" aria-label="아래로" title="아래로">↓</button>` : ''}
-        <button class="del" data-del-workout="${w.id}" aria-label="삭제">✕</button>
-      </span></div>
+    // 접은 카드엔 이름과 세트 수만 (사용자: "주저리주저리 말고 종목·세트만, 누르면 열리게").
+    // 속은 펼쳤을 때만 그린다 — 운동이 많은 날 세트 표를 다 그리면 그만큼 느려진다.
+    const open = exOpen.has(w.id);
+    const setCount = workSets(w).length;
+    const body = !open ? '' : `<div class="ex-body">
     <details class="ex-meta" data-meta-id="${w.id}" ${exMetaOpen.has(w.id) ? 'open' : ''}>
       <summary>🔥 ${burnOf(w, weight)} kcal${isEstimated(w) ? ' (추정)' : ''} · ${minutesOf(w)}분 · MET ${metOf(w.name)}${customMet(w.name) ? ' (직접)' : ''} <span class="muted">시간·MET 고치기</span></summary>
       <div class="meta-inputs">
@@ -1138,6 +1142,22 @@ function renderWorkouts() {
       <span>${prText}</span>
       <span class="${isNewPr ? 'new-pr' : 'muted'}">${isNewPr ? '🎉 신기록!' : pr.date}</span>
     </div>` : ''}
+    <div class="ex-foot">
+      <button class="link-btn" data-ex-detail="${esc(w.name)}">📊 이 운동 기록 보기 ›</button>
+      <span class="order">
+        ${idx > 0 ? `<button data-move="${w.id}:-1" aria-label="위로" title="위로">↑</button>` : ''}
+        ${idx < workouts.length - 1 ? `<button data-move="${w.id}:1" aria-label="아래로" title="아래로">↓</button>` : ''}
+        <button class="del" data-del-workout="${w.id}" aria-label="삭제">✕</button>
+      </span>
+    </div>
+    </div>`;
+    return `<div class="card ex-card${ssCls}${open ? ' open' : ''}">
+    ${ss && run[0] === w ? `<p class="ss-tag">🔗 슈퍼세트 ${run.length}종</p>` : ''}
+    <button class="ex-head" data-ex-open="${w.id}" aria-expanded="${open}">
+      <span class="ex-name">${esc(w.name)}</span>
+      <span class="ex-count">${done ? `${done}/${setCount}` : setCount}세트</span>
+      <span class="chev" aria-hidden="true">${open ? '▾' : '›'}</span>
+    </button>${body}
   </div>${linkRow}`;
   }).join('');
 }
@@ -1332,7 +1352,8 @@ function layerClosed(name, fromPop) {
 window.addEventListener('popstate', () => {
   if (ownBacks > 0) { ownBacks -= 1; return; }
   const top = layers.at(-1);
-  if (top === 'ex') closeExSheet(true);
+  if (top === 'help') closeHelp(true);
+  else if (top === 'ex') closeExSheet(true);
   else if (top === 'focus') closeFocus(true);
 });
 
@@ -1348,6 +1369,45 @@ function closeExSheet(fromPop = false) {
   exSheetName = null;
   $('#exSheet').hidden = true;
   layerClosed('ex', fromPop);
+}
+
+// ---------- 도움말 ----------
+// 설명을 화면 곳곳에 적어 두면 글 벽이 된다(사용자: "주석 같은 게 많아 정돈이 안 돼 보인다").
+// 설명은 전부 여기 모으고, 화면에는 지금 눌러야 할 것만 남긴다. 기능을 더하면 이 표에 한 줄 적을 것.
+const HELP = [
+  ['🏋️ 운동 기록', `카드는 <b>종목과 세트 수만</b> 보이게 접혀 있어요. 카드를 누르면 열려서 세트별 중량·횟수를 적을 수 있어요.
+    <br>세트 번호를 누르면 완료 체크가 되고, 체크한 세트만 볼륨·소모 칼로리에 들어가요(하나도 안 하면 전체를 세요).
+    <br><b>W</b>는 워밍업 세트라 기록·볼륨에서 빠지고, <b>↘</b>는 무게를 내려 이어 한 드롭세트예요.
+    <br>🎯 집중 모드는 지금 할 세트 하나만 크게 띄우고 완료하면 휴식·다음 세트로 저절로 넘어가요.`],
+  ['🍚 식단은 선택이에요', `식단은 안 적어도 운동 기록과 통계는 그대로 돌아가요. 적고 싶은 날만 적으세요.
+    <br>가장 빠른 길은 <b>📷 사진으로 기록하기</b>예요. 이름을 비워 두고 사진을 고르면 무슨 음식인지 알아서 찾아 넣어요.
+    <br>사진은 이 기기 밖으로 나가지 않아요. 처음 한 번만 AI 모델(약 50MB)을 받아요.
+    <br>양은 사진으로 알 수 없어서 <b>지난번 먹은 양</b>으로 넣어요. 다르면 숫자만 고치면 돼요.
+    <br>⭐ 자주 먹는 음식 칩은 누르면 바로 들어가요.`],
+  ['🔥 소모 칼로리', `운동 종류별 MET × 체중 × 운동 시간으로 낸 <b>추정치</b>예요. 시간을 안 적으면 세트당 3분으로 봐요.
+    <br>MET(운동 강도)는 운동 이름으로 자동 추정해요. 안 맞으면 카드를 열어 직접 고칠 수 있고, 같은 이름의 운동에 모두 적용돼요.
+    <br>하루 목표 칼로리를 정해두면 <b>목표 + 소모 − 섭취 = 남은 칼로리</b>로 알려줘요.
+    <br>단백질 목표를 비워 두면 체중 × 1.6g으로 잡아요.`],
+  ['📅 기록·통계', `달력에서 날짜를 누르면 그 날 운동이 아래에 펼쳐져요. 🔍로 운동·음식·메모를 검색할 수 있어요.
+    <br>부위별 밸런스와 주간 목표 세트는 <b>최근 7일</b>을 볼 때만 견줘요. 비워두면 목표 없이 세트 수만 봐요.
+    <br>최고 기록과 중량 추이는 1RM(추정 1회 최대 중량)으로 견줘요. 100kg×1회와 90kg×8회를 바르게 비교하려고요.`],
+  ['💾 백업과 기기 옮기기', `기록은 <b>이 기기 브라우저 안에만</b> 있어요. 기기를 바꾸거나 앱을 지우면 사라져요.
+    <br>옮길 땐 <b>내보내기</b>로 받은 파일을 다른 기기에서 <b>가져오기</b> 하세요. 합쳐지니까 기록이 사라지지 않아요.
+    <br>사진은 평소 동기화·내보내기에 들어가지 않아요(파일이 너무 커져서요). <b>📷 사진까지 내보내기</b>를 따로 쓰세요.
+    <br>아이폰 사파리는 7일 동안 안 연 사이트의 저장 공간을 지워요. <b>홈 화면에 추가</b>해서 쓰는 걸 권해요.`],
+];
+function openHelp() {
+  $('#helpBody').innerHTML = HELP.map(([title, body], i) => `<details class="help" ${i === 0 ? 'open' : ''}>
+    <summary>${title}</summary>
+    <p class="hint">${body}</p>
+  </details>`).join('');
+  $('#helpSheet').hidden = false;
+  layerOpened('help');
+}
+function closeHelp(fromPop = false) {
+  if ($('#helpSheet').hidden) return;
+  $('#helpSheet').hidden = true;
+  layerClosed('help', fromPop);
 }
 
 // ---------- 집중 모드 ----------
@@ -3124,6 +3184,7 @@ $('#workoutForm').addEventListener('submit', (e) => {
     [main, ...more].forEach((w) => { w.ss = ss; });
   }
   day().workouts.push(main, ...more);
+  [main, ...more].forEach((w) => exOpen.add(w.id));   // 방금 넣은 운동은 펼쳐 둔다 (바로 기록하니까)
   partners = [];
   renderPartners();
   save();
@@ -3190,9 +3251,12 @@ $('#liftDetail').addEventListener('click', () => openExSheet(liftPick));
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   if (!$('#photoView').hidden) $('#photoView').hidden = true;
+  else if (layers.at(-1) === 'help') closeHelp();
   else if (layers.at(-1) === 'ex') closeExSheet();
   else if (layers.at(-1) === 'focus') closeFocus();
 });
+$('#helpBtn').addEventListener('click', openHelp);
+$('#helpClose').addEventListener('click', () => closeHelp());
 
 document.addEventListener('click', (e) => {
   const t = e.target.closest('button, .history-day');
@@ -3260,6 +3324,11 @@ document.addEventListener('click', (e) => {
   } else if (ds.routine) {
     loadRoutine(ds.routine);
     return;                          // loadRoutine이 알아서 저장·렌더링한다
+  } else if (ds.exOpen) {
+    if (exOpen.has(ds.exOpen)) exOpen.delete(ds.exOpen);
+    else exOpen.add(ds.exOpen);
+    renderWorkouts();
+    return;                          // 기록이 안 바뀌었으니 저장하지 않는다
   } else if (ds.move) {
     const [id, dir] = ds.move.split(':');
     const list = day().workouts;

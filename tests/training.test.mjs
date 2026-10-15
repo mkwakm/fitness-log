@@ -1,7 +1,9 @@
-// 운동을 이어가게 돕는 것들: 최고 기록·1RM, 과부하 제안, 휴식, 자동완성, 루틴·계획, 꾸준함, 주간 리포트, 밸런스
-import { tab, text, wait, ago } from './lib.mjs';
+﻿// 운동을 이어가게 돕는 것들: 최고 기록·1RM, 과부하 제안, 휴식, 자동완성, 루틴·계획, 꾸준함, 주간 리포트, 밸런스
+import { tab, text, wait, ago, openAllEx } from './lib.mjs';
 
-const seed = (page, days) => page.evaluate((days) => {
+// 카드는 접혀서 들어오므로 (지난 기록·신기록·세트가 속에 있다) 심은 뒤 모두 펼친다
+const seed = async (page, days) => {
+  await page.evaluate((days) => {
   state.days = {};
   for (const [off, workouts, extra] of days) {
     const d = shiftDate(todayStr(), off);
@@ -9,8 +11,10 @@ const seed = (page, days) => page.evaluate((days) => {
       workouts: workouts.map(([name, sets, minutes], i) => ({ id: `w${off}_${i}`, name, minutes: minutes ?? null,
         sets: sets.map(([weight, reps, done = true]) => ({ weight, reps, done })) })) };
   }
-  currentDate = todayStr(); save(); render();
-}, days);
+    currentDate = todayStr(); save(); render();
+  }, days);
+  await openAllEx(page);
+};
 
 export default async function (t) {
   let answer;   // prompt에 돌려줄 값 (undefined면 기본 제안 그대로)
@@ -95,6 +99,7 @@ export default async function (t) {
   // ── 오늘의 계획 진행 ──
   let items = await page.evaluate(() => planItems().map((i) => [i.name, i.done, i.target, i.hit]));
   t.eq(items, [['벤치프레스', 0, 4, false], ['인클라인덤벨프레스', 0, 3, false]], '계획: 처음엔 0/4, 0/3');
+  await openAllEx(page);          // 루틴으로 불러온 운동도 접혀서 들어온다
   for (let i = 0; i < 4; i++) await page.locator('.set-no').nth(i).click();
   await page.evaluate(() => stopRest());
   items = await page.evaluate(() => planItems().map((i) => [i.done, i.hit]));

@@ -1,10 +1,11 @@
-// 식단 사진: 줄여 담기, 표시, 지우기·되돌리기, 사진까지 내보내기·가져오기, 정리
+﻿// 식단 사진: 줄여 담기, 표시, 지우기·되돌리기, 사진까지 내보내기·가져오기, 정리
 import { tab, wait } from './lib.mjs';
 import { readFileSync, statSync } from 'node:fs';
 
 export default async function (t) {
   const alerts = [];
   const A = await t.open({ context: { acceptDownloads: true }, dialog: (d) => { alerts.push(d.message()); d.accept(); } });
+  await tab(A, 'meals');   // 앱은 운동 탭으로 열린다 (식단은 선택)
 
   // 폰 카메라 원본 흉내: 2400×1800 PNG (용량이 큼)
   const b64 = await A.evaluate(() => {
@@ -44,6 +45,7 @@ export default async function (t) {
   t.ok(await A.locator('#photoView').isHidden(), '다시 누르면 닫힘');
   t.ok(!(await A.evaluate(() => JSON.stringify(state))).includes('data:image'), '기록(JSON)엔 id만, 사진 데이터는 안 섞임');
   await A.reload();
+  await tab(A, 'meals');          // 새로 열면 다시 운동 탭이다
   await wait(A, 600);
   t.ok(await shown(A), '새로고침 뒤에도 사진이 남음');
 
@@ -81,6 +83,7 @@ export default async function (t) {
 
   // ── 다른 기기에서 가져오기 ──
   const B = await t.open({ dialog: (d) => { alerts.push(d.message()); d.accept(); } });
+  await tab(B, 'meals');   // 앱은 운동 탭으로 열린다 (식단은 선택)
   await B.setInputFiles('#importFile', path);
   await wait(B, 1200);
   t.eq(await count(B), 2, '다른 기기로 사진 2장이 옮겨감');

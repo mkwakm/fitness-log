@@ -81,6 +81,18 @@ export const tab = async (page, name) => { await page.click(`[data-tab="${name}"
 export const text = async (page, sel) => ((await page.textContent(sel)) ?? '').replace(/\s+/g, ' ').trim();
 export const wait = (page, ms) => page.waitForTimeout(ms);
 
+// 운동 카드는 종목·세트 수만 보이게 접혀 있는 게 기본이다(폼으로 방금 넣은 것만 펼쳐진다).
+// 세트 표·메모·기록처럼 속에 있는 것을 건드리려면 머리를 눌러 펼친다.
+export async function openEx(page, i = 0) {
+  const head = page.locator('#workoutList .ex-head').nth(i);
+  if ((await head.getAttribute('aria-expanded')) === 'false') await head.click();
+  await page.waitForTimeout(80);
+}
+export async function openAllEx(page) {
+  const n = await page.locator('#workoutList .ex-head').count();
+  for (let i = 0; i < n; i++) await openEx(page, i);
+}
+
 // 운동 폼으로 운동 하나 추가 (기본인 세트별 표를 쓴다). weight가 null이면 맨몸.
 export async function addWorkout(page, name, { sets = 3, weight = null, reps = 10 } = {}) {
   await page.fill('#exName', name);
