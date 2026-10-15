@@ -1,5 +1,5 @@
 // 운동별 메모와 운동 상세 화면
-import { tab, text, wait, ago } from './lib.mjs';
+import { tab, text, wait, ago, openEx } from './lib.mjs';
 
 export default async function (t) {
   const page = await t.open();
@@ -32,7 +32,49 @@ export default async function (t) {
   await page.fill('.ex-note', '발 고정');
   await page.locator('.ex-note').blur();
 
+  // ── 부위: 이름으로 짐작하되 직접 고른 게 이긴다 ──
+  t.eq(await page.evaluate(() => ['벤치프레스', '바벨컬', '케이블푸시다운', '레그컬', '풀오버'].map(autoPart)),
+    ['가슴', '이두', '삼두', '하체', '가슴'], '이름으로 짐작: 팔은 이두·삼두로 나뉘고, 레그컬은 하체');
+  await page.fill('#exName', '풀오버');
+  await wait(page, 80);
+  t.eq(await page.evaluate(() => [...document.querySelectorAll('#partPick .part-chip')].map((b) => b.textContent.trim())),
+    ['가슴', '등', '하체', '어깨', '이두', '삼두', '코어', '유산소'], '폼에 부위 버튼 8개');
+  t.eq(await page.evaluate(() => document.querySelector('#partPick .part-chip.on')?.textContent.trim()), '가슴', '안 고르면 짐작한 부위가 눌려 있음');
+  await page.click('[data-part-pick="등"]');
+  await page.click('#workoutForm button[type=submit]');
+  await wait(page, 100);
+  t.eq(await page.evaluate(() => partOf('풀오버')), '등', '직접 고른 부위로 저장 (풀오버는 가슴인지 등인지 앱이 모른다)');
+  t.eq(await page.evaluate(() => partOf('  풀오버 ')), '등', '표기가 조금 달라도 같은 운동으로 봄');
+  t.eq(await page.evaluate(() => state.profile.parts['풀오버']), '등', '이름에 붙여 기억 (다음에 또 안 골라도 됨)');
+  t.ok(await page.evaluate(() => dayParts(day()).includes('등')), '달력·밸런스에도 고른 부위로 들어감');
+  await page.evaluate(() => { $('#exName').value = '벤치프레스'; updateExHint(); });
+  await page.click('#workoutForm button[type=submit]');
+  await wait(page, 100);
+  t.eq(await page.evaluate(() => state.profile.parts['벤치프레스']), undefined, '짐작과 같은 부위를 고르면 굳이 저장하지 않음');
+
+  // 카드에서도 고칠 수 있고, 같은 걸 다시 누르면 자동으로 돌아간다
+  await page.evaluate(() => { day().workouts = [{ id: 'p', name: '풀오버', sets: [{ weight: 20, reps: 10 }] }]; save(); render(); });
+  await page.click('#workoutList .ex-head');
+  await wait(page, 100);
+  await page.click('#workoutList [data-meta-id] summary');
+  await page.click('#workoutList [data-set-part="풀오버"][data-part="등"]');
+  await wait(page, 100);
+  t.eq(await page.evaluate(() => partOf('풀오버')), '가슴', '카드에서 같은 부위를 다시 누르면 짐작한 값으로 되돌아감');
+
+  // 예전 기록의 '팔' 목표·부위는 이두·삼두로 옮겨진다
+  const moved = await page.evaluate(() => {
+    const p = { partGoals: { 팔: 12, 가슴: 10 }, parts: { 풀오버: '팔' } };
+    migrateArmParts(p);
+    return p;
+  });
+  t.eq(moved, { partGoals: { 가슴: 10, 이두: 6, 삼두: 6 }, parts: { 풀오버: '가슴' } }, "예전 '팔' 목표는 반씩 이두·삼두로");
+
   // ── 상세 열기 ──
+  await page.evaluate(() => {
+    day().workouts = [{ id: 'b', name: '벤치프레스', note: '발 고정', sets: [{ weight: 60, reps: 10, done: true }] }];
+    save(); render();
+  });
+  await openEx(page);
   await page.click('[data-ex-detail]');
   t.ok(await page.locator('#exSheet').isVisible(), '이름을 누르면 상세가 열림');
   t.eq(await text(page, '#exSheetTitle'), '벤치프레스', '제목');

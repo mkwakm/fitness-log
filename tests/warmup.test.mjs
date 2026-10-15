@@ -11,7 +11,10 @@ export default async function (t) {
   await page.fill('#exName', '스쿼트');
   await page.fill('#exSets', '4');
   await page.dispatchEvent('#exSets', 'input');
-  t.ok((await text(page, '#perSetBox')).includes('세트 번호 → 워밍업'), '폼에 워밍업·드롭 안내가 보임');
+  // 안내는 화면이 아니라 도움말에 있다 (설명은 한곳에 모은다)
+  t.ok(!(await text(page, '#perSetBox')).includes('워밍업'), '폼 표에는 설명을 안 적음');
+  t.ok(await page.evaluate(() => HELP.some(([, body]) => body.includes('워밍업') && body.includes('드롭세트'))),
+    '워밍업·드롭 설명은 도움말에 있음');
   await page.click('[data-psw="0"]');
   t.eq(await page.evaluate(() => [...document.querySelectorAll('#perSetBox .perset-no')].map((b) => b.textContent)),
     ['워밍업', '1세트', '2세트', '3세트'], '누르면 "워밍업"으로, 본 세트 번호는 1부터 다시');

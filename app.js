@@ -53,19 +53,39 @@ const PART_TABLE = [
   ['코어', /플랭크|복근|코어|크런치|윗몸|레그레이즈|브릿지|트위스트|앱롤러|할로우|사이드밴드/],
   ['하체', /스쿼트|데드리프트|런지|레그프레스|레그컬|레그익스텐션|힙쓰러스트|힙스러스트|카프|하체|둔근|스플릿|점프/],
   // 팔을 가슴·어깨보다 먼저 본다. "케이블푸시다운"이 케이블(가슴)로 먼저 걸리면 안 된다.
-  ['팔', /컬|삼두|이두|트라이셉|바이셉|킥백|푸시다운|딥스머신|암컬|프리처/],
+  // 삼두가 이두보다 먼저다 — 이두의 '컬'이 넓어서 "트라이셉컬"을 먼저 가져가면 안 된다.
+  ['삼두', /삼두|트라이셉|킥백|푸시다운|프레스다운|딥스머신|클로즈그립/],
+  ['이두', /이두|바이셉|암컬|프리처|해머컬|컬/],
   ['어깨', /숄더|어깨|레터럴|오버헤드|밀리터리|슈러그|아놀드|프론트레이즈|리어델트|후면삼각|측면삼각/],
   ['등', /풀업|턱걸이|철봉|로우|랫|등운동|시티드로|바벨로|백익스텐션|페이스풀|풀다운|친업|굿모닝/],
   ['가슴', /벤치|푸시업|팔굽혀펴기|가슴|체스트|플라이|펙덱|딥스|크로스오버|풀오버|덤벨프레스|머신프레스|인클라인|디클라인/],
   ['전신', /요가|필라테스|스트레칭|폼롤러|케틀벨|마운틴클라이머|점핑잭|trx|스내치|클린/],
 ];
-const PART_ORDER = ['가슴', '등', '하체', '어깨', '팔', '코어', '유산소', '전신', '기타'];
+const PART_ORDER = ['가슴', '등', '하체', '어깨', '이두', '삼두', '코어', '유산소', '전신', '기타'];
 // 계획을 세울 때 "빠진 곳"을 보려면 안 한 부위도 보여야 한다
-const MAIN_PARTS = ['가슴', '등', '하체', '어깨', '팔', '코어'];
-function partOf(name) {
+const MAIN_PARTS = ['가슴', '등', '하체', '어깨', '이두', '삼두', '코어'];
+// 운동을 넣을 때 직접 고르는 버튼 (사용자: "풀오버가 가슴인지 등인지는 앱이 모른다")
+const PICK_PARTS = ['가슴', '등', '하체', '어깨', '이두', '삼두', '코어', '유산소'];
+
+// 이름으로 짐작한 부위. 직접 고른 적이 있으면 그 값이 이긴다.
+function autoPart(name) {
   const n = metKey(name);
   for (const [part, re] of PART_TABLE) if (re.test(n)) return part;
   return '기타';
+}
+function customPart(name) {
+  const p = state.profile.parts?.[metKey(name)];
+  return PART_ORDER.includes(p) ? p : null;
+}
+// 부위는 MET과 같은 규칙이다: 한 번 고르면 같은 이름의 운동에 날짜 상관없이 모두 적용된다.
+function setCustomPart(name, part) {
+  if (!state.profile.parts) state.profile.parts = {};
+  const key = metKey(name);
+  if (part && PART_ORDER.includes(part)) state.profile.parts[key] = part;
+  else delete state.profile.parts[key];   // 지우면 이름으로 짐작한 값으로 돌아간다
+}
+function partOf(name) {
+  return customPart(name) ?? autoPart(name);
 }
 
 // 자동완성에 미리 넣어두는 흔한 운동들. 직접 쓴 이름이 먼저 오고 이게 뒤에 붙는다.
@@ -99,11 +119,25 @@ function load() {
   try {
     const raw = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
     const profile = raw.profile && typeof raw.profile === 'object' ? raw.profile : {};
+    migrateArmParts(profile);
     return { days: sanitizeDays(raw.days), profile: { ...DEFAULT_PROFILE, ...profile } };
   } catch {
     return { days: {}, profile: { ...DEFAULT_PROFILE } };
   }
 }
+// '팔'을 이두·삼두로 나눴다(2026-10-15). 예전에 정해 둔 주간 목표 세트와 직접 고른 부위를
+// 그대로 두면 어디에도 안 보이는 값이 되므로 둘로 옮긴다. 목표 세트는 반씩 나눈다.
+function migrateArmParts(profile) {
+  const goals = profile.partGoals;
+  if (goals && Object.hasOwn(goals, '팔')) {
+    const half = Math.round(Number(goals['팔']) / 2) || 0;
+    for (const p of ['이두', '삼두']) if (!goals[p] && half) goals[p] = half;
+    delete goals['팔'];
+  }
+  const parts = profile.parts;
+  if (parts) for (const [k, v] of Object.entries(parts)) if (v === '팔') parts[k] = autoPart(k);
+}
+
 // 기기 간 병합에 쓸 수정 시각. 바뀐 날짜에만 찍으려고 직전 내용과 비교한다.
 // (모든 수정 지점에 일일이 touch()를 넣는 것보다 빠뜨릴 일이 없다)
 let lastSeen = {};
@@ -172,6 +206,7 @@ let exSheetName = null;
 // 이 기기 화면 상태라 기록에는 안 들어가고, 다시 그려도 유지돼야 해서 따로 기억한다.
 const exOpen = new Set();
 const exMetaOpen = new Set();   // 시간·MET를 펼쳐 둔 운동 (다시 그려도 그대로 — 안 그러면 고치는 도중에 접힌다)   // 상세를 열어 둔 운동 이름 (안 열었으면 null)
+let partPick = null;      // 운동 폼에서 직접 고른 부위 (null이면 이름으로 짐작한 것을 쓴다)
 let focusOn = false;      // 집중 모드가 열려 있는지
 let focusAt = null;       // 집중 모드에서 보고 있는 세트 { id, i } — null이면 다음에 할 세트
 
@@ -1094,7 +1129,7 @@ function renderWorkouts() {
     const setCount = workSets(w).length;
     const body = !open ? '' : `<div class="ex-body">
     <details class="ex-meta" data-meta-id="${w.id}" ${exMetaOpen.has(w.id) ? 'open' : ''}>
-      <summary>🔥 ${burnOf(w, weight)} kcal${isEstimated(w) ? ' (추정)' : ''} · ${minutesOf(w)}분 · MET ${metOf(w.name)}${customMet(w.name) ? ' (직접)' : ''} <span class="muted">시간·MET 고치기</span></summary>
+      <summary>🔥 ${burnOf(w, weight)} kcal${isEstimated(w) ? ' (추정)' : ''} · ${minutesOf(w)}분 · MET ${metOf(w.name)}${customMet(w.name) ? ' (직접)' : ''} · ${partOf(w.name)} <span class="muted">시간·MET·부위 고치기</span></summary>
       <div class="meta-inputs">
         <label class="inline">시간
           <input type="number" inputmode="numeric" min="0" step="1" value="${w.minutes ?? ''}"
@@ -1105,6 +1140,10 @@ function renderWorkouts() {
                  class="${customMet(w.name) ? 'custom' : ''}" data-met="${esc(w.name)}">
         </label>
         ${customMet(w.name) ? `<button class="link-btn" data-reset-met="${esc(w.name)}" title="자동 추정값으로 되돌리기">↺ 자동(${autoMet(w.name)})</button>` : ''}
+      </div>
+      <div class="part-pick small">
+        ${PICK_PARTS.map((p) => `<button class="part-chip ${partOf(w.name) === p ? 'on' : ''}"
+          data-set-part="${esc(w.name)}" data-part="${p}">${p}</button>`).join('')}
       </div>
     </details>
     <input class="ex-note" type="text" placeholder="메모 (그립, 자세, 컨디션…)"
@@ -1375,7 +1414,11 @@ function closeExSheet(fromPop = false) {
 // 설명을 화면 곳곳에 적어 두면 글 벽이 된다(사용자: "주석 같은 게 많아 정돈이 안 돼 보인다").
 // 설명은 전부 여기 모으고, 화면에는 지금 눌러야 할 것만 남긴다. 기능을 더하면 이 표에 한 줄 적을 것.
 const HELP = [
-  ['🏋️ 운동 기록', `카드는 <b>종목과 세트 수만</b> 보이게 접혀 있어요. 카드를 누르면 열려서 세트별 중량·횟수를 적을 수 있어요.
+  ['🏋️ 운동 기록', `운동을 넣을 때 이름 아래 <b>부위 버튼 8개</b> 중 하나를 누르면 그 부위로 기록돼요.
+    안 누르면 이름으로 짐작한 부위가 쓰여요(풀오버처럼 가슴인지 등인지 애매한 건 직접 눌러 주세요).
+    한 번 고르면 같은 이름의 운동에 계속 적용되고, 카드를 열어 바꿀 수도 있어요.
+    <br>운동 폼에서 <b>세트 번호</b>를 누르면 워밍업 세트가 되고, <b>↘</b>를 누르면 그 세트에 무게를 내려 이어 한 드롭세트가 붙어요.
+    <br>카드는 <b>종목과 세트 수만</b> 보이게 접혀 있어요. 카드를 누르면 열려서 세트별 중량·횟수를 적을 수 있어요.
     <br>세트 번호를 누르면 완료 체크가 되고, 체크한 세트만 볼륨·소모 칼로리에 들어가요(하나도 안 하면 전체를 세요).
     <br><b>W</b>는 워밍업 세트라 기록·볼륨에서 빠지고, <b>↘</b>는 무게를 내려 이어 한 드롭세트예요.
     <br>🎯 집중 모드는 지금 할 세트 하나만 크게 띄우고 완료하면 휴식·다음 세트로 저절로 넘어가요.`],
@@ -2332,8 +2375,8 @@ function renderPerSet() {
   if (formUniform) return;
   // 치는 중엔 다시 그리지 않는다 — 입력칸만 (세트 번호 버튼까지 막으면 눌러도 안 바뀐 것처럼 보인다)
   if (document.activeElement?.matches?.('#perSetBox input')) return;
-  $('#perSetBox').innerHTML = setRowsHtml(perSet, { key: '', w: 'psw', v: 'ps', d: 'psd', dv: 'psdv', dx: 'psdx', label: '' }) +
-    '<p class="hint perset-tip">세트 번호 → 워밍업 · ↘ → 드롭세트 (그 세트에 무게를 내려 이어 한 것)</p>';
+  // 세트 번호(워밍업)·↘(드롭세트) 설명은 화면에 적지 않고 도움말에 모아 둔다
+  $('#perSetBox').innerHTML = setRowsHtml(perSet, { key: '', w: 'psw', v: 'ps', d: 'psd', dv: 'psdv', dx: 'psdx', label: '' });
 }
 // 세트 수가 바뀌면 표도 늘리고 줄인다 (늘릴 땐 마지막 세트를 따라)
 function resizePerSet() {
@@ -2403,8 +2446,18 @@ function perSetFromCommon() {
   return defaultPerSet(Number($('#exSets').value) || 1, weight, nonNeg($('#exReps').value));
 }
 
+// 운동 폼의 부위 버튼. 아무것도 안 눌렀으면 이름으로 짐작한 부위가 눌린 것처럼 보이고,
+// 직접 누르면 그 부위를 기억해 둔다(저장은 운동을 넣을 때).
+function renderPartPick() {
+  const name = $('#exName').value.trim();
+  const cur = partPick ?? (name ? partOf(name) : null);
+  $('#partPick').innerHTML = PICK_PARTS.map((p) =>
+    `<button type="button" class="part-chip ${p === cur ? 'on' : ''}" data-part-pick="${p}">${p}</button>`).join('');
+}
+
 function updateExHint() {
   const name = $('#exName').value.trim();
+  renderPartPick();
   const last = name ? lastRecord(name) : null;
   const tip = name ? overloadTip(name) : null;
   $('#exHint').innerHTML = last
@@ -3185,6 +3238,9 @@ $('#workoutForm').addEventListener('submit', (e) => {
   }
   day().workouts.push(main, ...more);
   [main, ...more].forEach((w) => exOpen.add(w.id));   // 방금 넣은 운동은 펼쳐 둔다 (바로 기록하니까)
+  // 직접 고른 부위는 이름에 붙여 기억한다 (MET과 같은 규칙). 짐작과 같으면 굳이 저장하지 않는다.
+  if (partPick) setCustomPart(main.name, partPick === autoPart(main.name) ? null : partPick);
+  partPick = null;
   partners = [];
   renderPartners();
   save();
@@ -3324,6 +3380,12 @@ document.addEventListener('click', (e) => {
   } else if (ds.routine) {
     loadRoutine(ds.routine);
     return;                          // loadRoutine이 알아서 저장·렌더링한다
+  } else if (ds.partPick) {
+    partPick = ds.partPick;
+    renderPartPick();
+    return;                          // 폼에서 고른 것일 뿐, 저장은 운동을 넣을 때
+  } else if (ds.setPart) {
+    setCustomPart(ds.setPart, customPart(ds.setPart) === ds.part ? null : ds.part);   // 같은 걸 또 누르면 자동으로 되돌림
   } else if (ds.exOpen) {
     if (exOpen.has(ds.exOpen)) exOpen.delete(ds.exOpen);
     else exOpen.add(ds.exOpen);

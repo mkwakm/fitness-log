@@ -1,4 +1,4 @@
-// 기록 탭 맨 위 운동 달력: 날짜 밑에 한 부위, 누르면 그 날 운동(숫자 4개·운동별 세트 칩·슈퍼세트·워밍업·드롭·신기록),
+﻿// 기록 탭 맨 위 운동 달력: 날짜 밑에 한 부위, 누르면 그 날 운동(숫자 4개·운동별 세트 칩·슈퍼세트·워밍업·드롭·신기록),
 // 달 넘기기, 이 날 열기·불러오기, 검색(🔍), 휴대폰 화면.
 import { tab, text, wait } from './lib.mjs';
 
@@ -34,7 +34,7 @@ export default async function (t) {
 
   // ── 날짜 밑엔 부위만 ──
   const under = (d) => page.$$eval(`[data-cal="${d}"] span`, (x) => x.map((e) => e.textContent));
-  t.eq(await under('2026-10-02'), ['팔', '가슴'], '세트 많은 부위부터 (팔 4세트, 가슴 3세트)');
+  t.eq(await under('2026-10-02'), ['삼두', '가슴'], '세트 많은 부위부터 (삼두 4세트, 가슴 3세트)');
   t.eq(await under('2026-10-05'), ['하체', '어깨+2'], '셋 이상이면 둘째 칸에 +N');
   t.eq(await under('2026-10-08'), ['운동'], '부위를 모르는 운동만 했으면 "운동"');
   t.eq(await under('2026-10-12'), ['하체'], '모르는 운동이 더 많아도 아는 부위가 있으면 그것만');
@@ -106,7 +106,7 @@ export default async function (t) {
   await page.fill('#historySearch', '바벨컬');
   await wait(page, 100);
   t.eq(await page.$$eval('#historyList .history-day', (x) => x.map((e) => e.dataset.calGo)), ['2026-10-15', '2026-10-05', '2026-09-22'], '찾은 날, 최근 순 (10-15는 방금 불러온 날)');
-  t.ok((await text(page, '#historyList')).includes('등·팔'), '결과에 부위');
+  t.ok((await text(page, '#historyList')).includes('등·이두'), '결과에 부위');
   await page.click('[data-cal-go="2026-09-22"]');
   t.eq(await page.evaluate(() => [calMonth, calPick]), ['2026-09', '2026-09-22'], '결과를 누르면 달력이 그 날로');
   await page.fill('#historySearch', '제육');

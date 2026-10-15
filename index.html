@@ -101,6 +101,8 @@
       <form id="workoutForm" class="card form">
         <input id="exName" list="exSuggestions" placeholder="운동 종류 (예: 스쿼트)" required autocomplete="off">
         <datalist id="exSuggestions"></datalist>
+        <!-- 부위는 이름으로 짐작하지만 풀오버·딥스처럼 애매한 건 앱이 모른다. 직접 누르면 그게 이긴다 -->
+        <div id="partPick" class="part-pick"></div>
         <div class="row">
           <label>세트<input id="exSets" type="number" inputmode="numeric" min="1" value="3" required></label>
           <label>중량(kg)<input id="exWeight" type="number" inputmode="decimal" min="0" step="0.5" placeholder="맨몸"></label>
