@@ -108,10 +108,16 @@
         <!-- 부위는 이름으로 짐작하지만 풀오버·딥스처럼 애매한 건 앱이 모른다. 직접 누르면 그게 이긴다 -->
         <div id="partPick" class="part-pick"></div>
         <div class="row">
-          <label>세트<input id="exSets" type="number" inputmode="numeric" min="1" value="3" required></label>
+          <!-- 세트 수는 −/+로. 숫자를 지우고 다시 치면 빈칸 순간에 표가 1세트로 줄어 적어 둔 세트가 날아갔다 -->
+          <label for="exSets">세트<span class="count-step">
+            <button type="button" data-sets-step="-1" aria-label="세트 줄이기">−</button>
+            <input id="exSets" type="number" inputmode="numeric" min="1" max="20" value="3" required>
+            <button type="button" data-sets-step="1" aria-label="세트 늘리기">+</button>
+          </span></label>
           <label>중량(kg)<input id="exWeight" type="number" inputmode="decimal" min="0" step="0.5" placeholder="맨몸"></label>
           <label>횟수<input id="exReps" type="number" inputmode="numeric" min="0" value="10" required></label>
-          <label>시간(분)<input id="exMinutes" type="number" inputmode="numeric" min="0" step="1" placeholder="선택"></label>
+          <!-- 운동 시간은 세트 수로 추정하므로 폼에서 뺐다(카드에서 고칠 수 있다). 대신 이 운동의 쉬는 시간 -->
+          <label>휴식<select id="exRest"></select></label>
         </div>
         <!-- 세트별 무게·횟수 표가 기본. "모든 세트 같게"를 누르면 위의 중량·횟수 한 칸씩으로 바뀐다 -->
         <div id="perSetBox" class="perset"></div>
@@ -136,7 +142,7 @@
           <label>중량 ± 단위
             <input id="weightStep" type="number" inputmode="decimal" min="0.5" max="20" step="0.5">
           </label>
-          <label>휴식 (초)
+          <label>기본 휴식 (초)
             <input id="restSec" type="number" inputmode="numeric" min="10" max="600" step="10">
           </label>
         </div>

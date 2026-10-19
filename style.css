@@ -185,6 +185,8 @@ label.inline input.custom { border-color: var(--accent); color: var(--accent); f
   bottom: calc(12px + env(safe-area-inset-bottom));
   display: flex; flex-direction: column-reverse; align-items: center; gap: 8px;
   z-index: 6; pointer-events: none;      /* 바 사이 빈 곳은 아래 화면을 그대로 누를 수 있게 */
+  /* left: 50%라 그냥 두면 화면 절반 폭에 맞춰 줄바꿈된다(휴식 바 글자가 세로로 쪼개졌다) */
+  width: max-content; max-width: calc(100vw - 24px);
 }
 .dock > * { pointer-events: auto; }
 .rest-bar {
@@ -194,7 +196,8 @@ label.inline input.custom { border-color: var(--accent); color: var(--accent); f
 }
 .rest-bar[hidden] { display: none; }
 .rest-bar strong { font-size: 1.15rem; min-width: 46px; text-align: center; color: var(--accent); }
-.rest-bar button { padding: 6px 10px; font-size: 0.8rem; }
+.rest-bar button { padding: 6px 12px; font-size: 0.85rem; min-height: 40px; white-space: nowrap; }
+.rest-label { white-space: nowrap; }
 .rest-label { font-size: 0.85rem; color: var(--muted); }
 .rest-bar.almost { border-color: var(--danger); }
 .rest-bar.almost strong { color: var(--danger); }
@@ -861,3 +864,16 @@ button.perset-no.warm { border-color: var(--accent); color: var(--accent); font-
 }
 .pick-row:active { background: var(--card-2); }
 .pick-own b { color: var(--accent); }
+
+/* 운동 폼: 세트 수 −/+ (숫자를 지웠다 치면 표가 날아가던 문제) */
+.count-step { display: flex; gap: 4px; }
+.count-step input { flex: 1 1 0; width: 0; min-width: 0; text-align: center; padding-left: 2px; padding-right: 2px; }
+.count-step button { flex: none; width: 40px; min-height: 40px; padding: 0; font-size: 1.1rem; }
+#exRest { width: 100%; min-height: 44px; }
+/* 카드의 세트 버튼 넷(+ 세트·+ 워밍업·↘ 드롭·⏱)은 한 줄에 */
+.set-btns { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.set-btns button { padding: 8px 2px; font-size: 0.85rem; white-space: nowrap; }
+.set-btns .rest-now { color: var(--accent); font-variant-numeric: tabular-nums; }
+.count-step input::-webkit-outer-spin-button,
+.count-step input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.count-step input { -moz-appearance: textfield; appearance: textfield; }

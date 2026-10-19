@@ -920,6 +920,43 @@ let restEndAt = 0;        // 끝나는 시각(ms). 1초씩 빼면 화면이 꺼�
 function restLeft() {
   return Math.max(0, Math.ceil((restEndAt - Date.now()) / 1000));
 }
+// ---------- 운동마다 쉬는 시간 ----------
+// 사용자: "시간 칸은 없어도 되고 쉬는 시간 타이머가 있으면 좋겠다". 스쿼트는 3분, 컬은 1분처럼 운동마다 다르니
+// 운동에 w.rest(초, 0 = 타이머 끄기)를 두고, 안 정했으면 그 운동을 마지막으로 했을 때 값 → 기본 휴식(profile.restSec).
+const REST_CHOICES = [0, 30, 45, 60, 75, 90, 105, 120, 150, 180, 240, 300];
+function restLabel(sec) {
+  if (!sec) return '끄기';
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return m ? `${m}분${s ? ` ${s}초` : ''}` : `${s}초`;
+}
+function validRest(v) {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.min(Math.round(v), 3600) : null;
+}
+// 이 운동을 마지막으로 했을 때 정한 휴식, 없으면 기본 휴식
+function restFor(name) {
+  const key = metKey(name);
+  if (key) {
+    for (const date of Object.keys(state.days).sort().reverse()) {
+      for (const w of state.days[date].workouts) {
+        const r = validRest(w.rest);
+        if (r != null && metKey(w.name) === key) return r;
+      }
+    }
+  }
+  return Number(state.profile.restSec) || DEFAULT_PROFILE.restSec;
+}
+function restOf(w) {
+  return validRest(w?.rest) ?? restFor(w?.name);
+}
+// 세트를 끝냈을 때: 그 운동의 휴식으로 (끄기면 켜지 않는다)
+function restAfter(w) {
+  const sec = restOf(w);
+  if (sec > 0) startRest(sec);
+}
+function restOptions(value) {
+  const list = [...new Set([...REST_CHOICES, value])].filter((v) => v != null).sort((a, b) => a - b);
+  return list.map((v) => `<option value="${v}" ${v === value ? 'selected' : ''}>${restLabel(v)}</option>`).join('');
+}
 function startRest(sec = Number(state.profile.restSec) || 90) {
   restEndAt = Date.now() + sec * 1000;
   saveUi();
@@ -1152,7 +1189,7 @@ function renderWorkouts() {
     const setCount = workSets(w).length;
     const body = !open ? '' : `<div class="ex-body">
     <details class="ex-meta" data-meta-id="${w.id}" ${exMetaOpen.has(w.id) ? 'open' : ''}>
-      <summary>🔥 ${burnOf(w, weight)} kcal${isEstimated(w) ? ' (추정)' : ''} · ${minutesOf(w)}분 · MET ${metOf(w.name)}${customMet(w.name) ? ' (직접)' : ''} · ${partOf(w.name)} <span class="muted">시간·MET·부위 고치기</span></summary>
+      <summary>🔥 ${burnOf(w, weight)} kcal${isEstimated(w) ? ' (추정)' : ''} · ${minutesOf(w)}분 · MET ${metOf(w.name)}${customMet(w.name) ? ' (직접)' : ''} · ${partOf(w.name)} <span class="muted">시간·휴식·MET·부위 고치기</span></summary>
       <div class="meta-inputs">
         <label class="inline">시간
           <input type="number" inputmode="numeric" min="0" step="1" value="${w.minutes ?? ''}"
@@ -1161,6 +1198,9 @@ function renderWorkouts() {
         <label class="inline" title="운동 강도. 직접 고치면 같은 이름의 운동에 모두 적용돼요.">MET
           <input type="number" inputmode="decimal" min="1" max="20" step="0.5" value="${metOf(w.name)}"
                  class="${customMet(w.name) ? 'custom' : ''}" data-met="${esc(w.name)}">
+        </label>
+        <label class="inline">휴식
+          <select data-rest-sel="${w.id}">${restOptions(restOf(w))}</select>
         </label>
         ${customMet(w.name) ? `<button class="link-btn" data-reset-met="${esc(w.name)}" title="자동 추정값으로 되돌리기">↺ 자동(${autoMet(w.name)})</button>` : ''}
       </div>
@@ -1192,6 +1232,7 @@ function renderWorkouts() {
       <button data-add-set="${w.id}">+ 세트</button>
       <button data-add-warmup="${w.id}" title="본 세트 앞에 가벼운 워밍업 세트를 넣어요 (볼륨·기록에서 빠져요)">+ 워밍업</button>
       <button data-drop-add="${w.id}" title="방금 완료한 세트에 무게를 내려 이어 한 것을 붙여요">↘ 드롭</button>
+      <button class="rest-now" data-rest-now="${w.id}" title="휴식 타이머를 지금 켜요 (세트를 완료하면 저절로 켜져요)">⏱ ${restOf(w) ? mmss(restOf(w)) : '휴식'}</button>
     </div>
     <p class="muted card-stats">${done ? `${done}/${workSets(w).length}세트 완료 · ` : ''}볼륨 ${vol.toLocaleString()} kg${
         todayRm ? ` · 오늘 1RM ${todayRm}kg` : ''}${rest ? ` · 휴식 ${mmss(rest)}` : ''}</p>
@@ -1543,6 +1584,9 @@ const HELP = [
     <br>카드는 <b>종목과 세트 수만</b> 보이게 접혀 있어요. 카드를 누르면 열려서 세트별 중량·횟수를 적을 수 있어요.
     <br>세트 번호를 누르면 완료 체크가 되고, 체크한 세트만 볼륨·소모 칼로리에 들어가요(하나도 안 하면 전체를 세요).
     <br><b>W</b>는 워밍업 세트라 기록·볼륨에서 빠지고, <b>↘</b>는 무게를 내려 이어 한 드롭세트예요.
+    <br>세트 수는 <b>−/+</b>로 바꿔요. 줄였다가 다시 늘리면 적어 둔 세트가 그대로 돌아와요.
+    <br><b>휴식</b>은 운동마다 정해요(스쿼트 3분, 컬 1분처럼). 세트 번호를 눌러 완료하면 그 시간만큼 휴식 타이머가 켜지고,
+    카드의 <b>⏱</b>를 누르면 바로 켜져요. 다음에 같은 운동을 넣으면 지난번 휴식으로 채워져요.
     <br>🎯 집중 모드는 지금 할 세트 하나만 크게 띄우고 완료하면 휴식·다음 세트로 저절로 넘어가요.`],
   ['🍚 식단은 선택이에요', `식단은 안 적어도 운동 기록과 통계는 그대로 돌아가요. 적고 싶은 날만 적으세요.
     <br>가장 빠른 길은 <b>📷 사진으로 기록하기</b>예요. 이름을 비워 두고 사진을 고르면 무슨 음식인지 알아서 찾아 넣어요.
@@ -1745,7 +1789,7 @@ function focusComplete() {
     const nx = nextPending(cur.q, cur.idx);
     focusAt = nx ? { id: nx.w.id, i: nx.i } : null;
     // 마지막 세트 뒤엔 쉴 이유가 없고, 슈퍼세트는 한 바퀴를 다 돌아야 쉰다
-    if (nx && !ssMoreInRound(cur.w, cur.i)) startRest();
+    if (nx && !ssMoreInRound(cur.w, cur.i)) restAfter(cur.w);
     else stopRest();
   }
   save();
@@ -2449,6 +2493,7 @@ function renderCalSearch() {
 // 표 아래 작은 링크로 켜는 보조 방식이고, 켜면 예전처럼 중량·횟수 한 칸씩을 쓴다.
 let perSet = defaultPerSet();
 let formUniform = false;
+let restTouched = false;       // 폼의 휴식을 직접 골랐으면 운동 이름을 바꿔도 그대로
 let perSetTouched = false;     // 표를 직접 만졌으면 운동 이름을 바꿔도 덮어쓰지 않는다
 // 폼에서 슈퍼세트로 같이 넣을 운동들 [{ name, sets: [{weight, reps, drops?}], touched }].
 // 사용자는 슈퍼세트를 처음부터 번갈아 하므로 하나씩 넣고 나중에 묶는 것보다 한 번에 넣는 게 순서에 맞다.
@@ -2500,15 +2545,28 @@ function renderPerSet() {
   // 세트 번호(워밍업)·↘(드롭세트) 설명은 화면에 적지 않고 도움말에 모아 둔다
   $('#perSetBox').innerHTML = setRowsHtml(perSet, { key: '', w: 'psw', v: 'ps', d: 'psd', dv: 'psdv', dx: 'psdx', label: '' });
 }
-// 세트 수가 바뀌면 표도 늘리고 줄인다 (늘릴 땐 마지막 세트를 따라)
+// 세트 칸에 적힌 수. 지우는 중(빈칸·0)이면 0 — 이때는 표를 건드리지 않는다.
+// (예전엔 빈칸을 1세트로 봐서, 4를 지우고 3을 치면 2~4세트가 날아가고 1세트 값으로 다시 채워졌다)
+function setCountInput() {
+  const v = Number($('#exSets').value);
+  return Number.isInteger(v) && v >= 1 ? Math.min(20, v) : 0;
+}
+// 세트 수가 바뀌면 표도 늘리고 줄인다. 줄일 때 빠진 세트는 perSetSpare에 두었다가 다시 늘리면 그대로 돌려준다
+// (사용자: "4로 적다가 3으로 줄이면 처음부터 다시 적어야 해서 귀찮다"). 그 밖에 늘리면 마지막 세트를 따른다.
+let perSetSpare = [];
+function growSets(sets, spare, n) {
+  while (sets.length > n) spare.push(sets.pop());
+  while (sets.length < n) {
+    if (spare.length) { sets.push(spare.pop()); continue; }
+    const { done, warmup, ...last } = copySet(sets.at(-1) ?? { weight: null, reps: 10 });   // 늘린 세트는 본 세트로
+    sets.push(last);
+  }
+}
 function resizePerSet() {
   if (formUniform) return;
-  const n = Math.max(1, Math.min(20, Number($('#exSets').value) || 1));
-  while (perSet.length < n) {
-    const { done, warmup, ...last } = copySet(perSet.at(-1));   // 늘린 세트는 본 세트로
-    perSet.push(last);
-  }
-  perSet.length = n;
+  const n = setCountInput();
+  if (!n) return;
+  growSets(perSet, perSetSpare, n);
   renderPerSet();
 }
 // ---------- 폼: 슈퍼세트로 같이 추가 ----------
@@ -2541,7 +2599,7 @@ function renderPartners() {
   $('#ssAdd').textContent = partners.length ? '+ 하나 더 (번갈아 할 운동)' : '🔗 슈퍼세트로 같이 추가';
 }
 function formSetCount() {
-  return Math.max(1, Math.min(20, Number($('#exSets').value) || 1));
+  return setCountInput() || perSet.length || 1;
 }
 function addPartner(name = '') {
   partners.push({ name, sets: partnerSets(name, formSetCount()), touched: false });
@@ -2550,11 +2608,9 @@ function addPartner(name = '') {
 }
 // 세트 수는 위 칸 하나로 같이 정한다 (보통 같은 세트 수로 번갈아 하니까)
 function resizePartners() {
-  const n = formSetCount();
-  partners.forEach((p) => {
-    while (p.sets.length < n) p.sets.push({ ...(p.sets.at(-1) ?? { weight: null, reps: 10 }) });
-    p.sets.length = n;
-  });
+  const n = setCountInput();
+  if (!n) return;
+  partners.forEach((p) => growSets(p.sets, (p.spare ??= []), n));
   renderPartners();
 }
 // 지난번에 이 운동을 슈퍼세트로 했으면 같이 했던 운동들
@@ -2599,7 +2655,9 @@ function updateExHint() {
       <button type="button" class="link-btn ss-suggest" data-ss-suggest="${esc(was.join('\n'))}">같이 추가</button>`);
   }
   // 지난번 세트 모양대로 표를 채운다 (다 채웠으면 한 단위씩 올려서). 직접 만진 표는 그대로.
+  if (!restTouched && document.activeElement !== $('#exRest')) $('#exRest').innerHTML = restOptions(restFor(name));
   if (!perSetTouched && !formUniform) {
+    perSetSpare = [];
     perSet = last
       ? setsLikeLast(name, 0, null, { progress: true }).map(({ done, ...x }) => x)
       : defaultPerSet(Number($('#exSets').value) || 3);
@@ -3163,6 +3221,7 @@ $('#exName').addEventListener('input', updateExHint);
 $('#perSetToggle').addEventListener('click', () => {
   if (formUniform) {
     perSet = perSetFromCommon();                      // 한 칸에 적던 값으로 표를 채운다
+    perSetSpare = [];
   } else {
     $('#exWeight').value = perSet[0]?.weight ?? '';   // 표의 1세트 값을 한 칸으로
     $('#exReps').value = perSet[0]?.reps ?? 10;
@@ -3172,6 +3231,17 @@ $('#perSetToggle').addEventListener('click', () => {
   renderPerSet();
 });
 $('#exSets').addEventListener('input', () => { resizePerSet(); resizePartners(); });
+// 빈칸으로 두고 나가면 지금 표의 세트 수로 되돌린다
+$('#exSets').addEventListener('change', () => { if (!setCountInput()) $('#exSets').value = formUniform ? 3 : perSet.length; });
+$('#workoutForm').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-sets-step]');
+  if (!b) return;
+  const n = Math.max(1, Math.min(20, (setCountInput() || (formUniform ? 3 : perSet.length)) + Number(b.dataset.setsStep)));
+  $('#exSets').value = n;
+  resizePerSet();
+  resizePartners();
+});
+$('#exRest').addEventListener('change', () => { restTouched = true; });
 $('#ssAdd').addEventListener('click', () => addPartner());
 $('#ssBox').addEventListener('input', (e) => {
   const ds = e.target.dataset;
@@ -3181,6 +3251,7 @@ $('#ssBox').addEventListener('input', (e) => {
     p.name = e.target.value;
     if (!p.touched) {
       p.sets = partnerSets(p.name.trim(), formSetCount());
+      p.spare = [];
       $(`#ssRows${ds.pn}`).innerHTML = partnerRowsHtml(p, Number(ds.pn));   // 이름 칸은 그대로 두고 표만 (치는 중이라)
     }
     $(`#ssHint${ds.pn}`).innerHTML = partnerHint(p.name.trim());
@@ -3348,18 +3419,21 @@ $('#workoutForm').addEventListener('submit', (e) => {
   const n = Math.max(1, Number($('#exSets').value) || 1);
   const reps = nonNeg($('#exReps').value);
   const weight = $('#exWeight').value ? nonNeg($('#exWeight').value) : null;
-  const minutes = Number($('#exMinutes').value) > 0 ? Number($('#exMinutes').value) : null;
+  const minutes = null;                 // 시간은 세트 수로 추정 (카드에서 고칠 수 있다)
+  const rest = validRest(Number($('#exRest').value)) ?? restFor($('#exName').value);
   const fromRows = (rows) => rows.map((x) => ({ ...copySet(x), weight: Number(x.weight) > 0 ? nonNeg(x.weight) : null, reps: nonNeg(x.reps) }));
   const main = {
     id: uid(),
     name: $('#exName').value.trim(),
     minutes,
+    rest,
     sets: formUniform
       ? Array.from({ length: n }, () => ({ reps, weight, done: false }))
       : fromRows(perSet),
   };
   // 슈퍼세트로 같이 넣은 운동: 이름을 적은 것만, 처음부터 한 묶음으로
-  const more = partners.filter((p) => p.name.trim()).map((p) => ({ id: uid(), name: p.name.trim(), minutes: null, sets: fromRows(p.sets) }));
+  // 슈퍼세트는 한 바퀴를 돌고 쉬므로 같이 넣은 운동도 같은 휴식
+  const more = partners.filter((p) => p.name.trim()).map((p) => ({ id: uid(), name: p.name.trim(), minutes: null, rest, sets: fromRows(p.sets) }));
   if (more.length) {
     const ss = uid();
     [main, ...more].forEach((w) => { w.ss = ss; });
@@ -3372,7 +3446,10 @@ $('#workoutForm').addEventListener('submit', (e) => {
   partners = [];
   renderPartners();
   save();
-  $('#exName').value = $('#exMinutes').value = '';
+  $('#exName').value = '';
+  restTouched = false;
+  $('#exRest').innerHTML = restOptions(restFor(''));
+  perSetSpare = [];
   // 다음 운동은 다시 기본(세트별 표)으로
   formUniform = false;
   perSetTouched = false;
@@ -3483,7 +3560,7 @@ document.addEventListener('click', (e) => {
     set.done = !set.done;
     set.doneAt = set.done ? Date.now() : null;   // 세트 사이 쉰 시간을 재는 기준
     const w = findWorkout(id);
-    if (set.done && !ssMoreInRound(w, Number(i))) startRest();   // 세트를 끝냈으니 휴식 (슈퍼세트는 한 바퀴 뒤에)
+    if (set.done && !ssMoreInRound(w, Number(i))) restAfter(w);   // 세트를 끝냈으니 그 운동의 휴식 (슈퍼세트는 한 바퀴 뒤에)
     else if (set.done) stopRest();
   } else if (ds.step) {
     const [id, i, field, dir] = ds.step.split(':');
@@ -3624,15 +3701,20 @@ document.addEventListener('click', (e) => {
     const [a, b] = ds.ssLink.split(':');
     ssToggle(a, b);
   } else if (ds.dropAdd) {
-    const set = ds.dropAdd === 'last' ? lastDoneSet()?.s : (() => {
+    let w, set;
+    if (ds.dropAdd === 'last') {
+      const last = lastDoneSet();
+      w = last?.w;
+      set = last?.s;
+    } else {
       const [id, at] = ds.dropAdd.split(':');
-      const w = findWorkout(id);
-      return w?.sets[at != null ? Number(at) : dropTarget(w)];
-    })();
+      w = findWorkout(id);
+      set = w?.sets[at != null ? Number(at) : dropTarget(w)];
+    }
     if (!set) return;
     set.drops = [...dropsOf(set), nextDrop(segsOf(set).at(-1))];
     // 세트를 완료하고 나서 드롭을 이어 했으면 쉬는 시간은 드롭이 끝난 지금부터다
-    if (set.done) { set.doneAt = Date.now(); startRest(); }
+    if (set.done) { set.doneAt = Date.now(); restAfter(w); }
   } else if (ds.dropDel) {
     const [id, i, k] = ds.dropDel.split(':');
     const set = findWorkout(id)?.sets[i];
@@ -3698,6 +3780,10 @@ document.addEventListener('click', (e) => {
     renderCalendar();
     $('#calDetail').scrollIntoView({ block: 'nearest', behavior: reduceMotion() ? 'auto' : 'smooth' });
     return;
+  } else if (ds.restNow) {
+    // 세트 완료를 안 눌러도 쉬는 시간을 잴 수 있게. 이 운동이 "끄기"면 기본 휴식으로
+    startRest(restOf(findWorkout(ds.restNow)) || Number(state.profile.restSec) || DEFAULT_PROFILE.restSec);
+    return;
   } else if (ds.goto) {
     closeExSheet();                // 상세에서 날짜를 눌렀으면 상세는 닫고 그 날로 간다
     currentDate = ds.goto;
@@ -3721,6 +3807,10 @@ document.addEventListener('change', (e) => {
     if (!w) return;
     const v = Number(e.target.value);
     w.minutes = v > 0 ? v : null;
+  } else if (ds.restSel) {
+    const w = findWorkout(ds.restSel);
+    if (!w) return;
+    w.rest = validRest(Number(e.target.value)) ?? null;   // 다음에 이 운동을 넣을 때도 이 값으로 (restFor)
   } else if (ds.met) {
     const v = Number(e.target.value);
     setCustomMet(ds.met, v > 0 ? Math.min(20, Math.max(1, v)) : 0);   // 0이면 자동 추정으로 복귀
