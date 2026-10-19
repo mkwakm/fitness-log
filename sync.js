@@ -86,7 +86,7 @@ function mergeState(remote) {
     }
   }
   if ((remote.profile?.updatedAt || 0) > (state.profile.updatedAt || 0)) {
-    state.profile = { ...DEFAULT_PROFILE, ...remote.profile };
+    state.profile = migrateProfile({ ...DEFAULT_PROFILE, ...remote.profile });   // 예전 모양의 profile일 수도 있다
   }
   return changed;
 }

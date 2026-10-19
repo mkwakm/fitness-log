@@ -70,6 +70,8 @@ const PICK_PARTS = ['가슴', '등', '하체', '어깨', '이두', '삼두', '�
 // 이름으로 짐작한 부위. 직접 고른 적이 있으면 그 값이 이긴다.
 function autoPart(name) {
   const n = metKey(name);
+  const known = EX_INFO.get(n)?.part;          // 운동 목록에 있으면 그 부위 (이름 규칙보다 먼저)
+  if (known) return known;
   for (const [part, re] of PART_TABLE) if (re.test(n)) return part;
   return '기타';
 }
@@ -88,19 +90,9 @@ function partOf(name) {
   return customPart(name) ?? autoPart(name);
 }
 
-// 자동완성에 미리 넣어두는 흔한 운동들. 직접 쓴 이름이 먼저 오고 이게 뒤에 붙는다.
-// 표기가 흔들리면(벤치프레스 / 벤치 프레스) 같은 운동으로 안 묶여서 최고기록·추이가 갈린다.
-const COMMON_EX = [
-  '벤치프레스', '인클라인벤치프레스', '덤벨프레스', '인클라인덤벨프레스', '체스트프레스',
-  '케이블크로스오버', '펙덱플라이', '덤벨플라이', '딥스', '푸시업',
-  '랫풀다운', '풀업', '바벨로우', '덤벨로우', '시티드로우', '티바로우', '페이스풀', '백익스텐션',
-  '스쿼트', '핵스쿼트', '레그프레스', '레그컬', '레그익스텐션', '런지', '힙쓰러스트', '카프레이즈',
-  '데드리프트', '루마니안데드리프트',
-  '오버헤드프레스', '숄더프레스', '아놀드프레스', '사이드레터럴레이즈', '프론트레이즈', '리어델트', '슈러그',
-  '바벨컬', '덤벨컬', '해머컬', '프리처컬', '트라이셉익스텐션', '케이블푸시다운', '킥백',
-  '플랭크', '크런치', '레그레이즈', '러시안트위스트', '앱롤러',
-  '런닝머신', '사이클', '로잉머신', '일립티컬', '스텝퍼', '줄넘기', '버피',
-];
+// 자동완성·"📋 운동 고르기"에 넣는 운동들은 exercise-db.js의 EXERCISES(부위별, 많이 하는 순).
+// 직접 쓴 이름이 먼저 오고 이게 뒤에 붙는다.
+const COMMON_EX = EXERCISES.map(([name]) => name);
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -119,10 +111,28 @@ function load() {
   try {
     const raw = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
     const profile = raw.profile && typeof raw.profile === 'object' ? raw.profile : {};
-    migrateArmParts(profile);
+    migrateProfile(profile);
     return { days: sanitizeDays(raw.days), profile: { ...DEFAULT_PROFILE, ...profile } };
   } catch {
     return { days: {}, profile: { ...DEFAULT_PROFILE } };
+  }
+}
+// 저장된 profile을 지금 모양으로 고친다. 읽을 때(load)와 다른 기기의 profile을 받을 때(sync.js) 부른다.
+function migrateProfile(profile) {
+  migrateArmParts(profile);
+  migrateExKeys(profile);
+  return profile;
+}
+// 운동 이름 키가 바뀌었다(2026-10-15: 띄어쓰기 무시, 다른 이름 → 정식 이름). 예전 키로 저장된
+// 직접 정한 MET·부위를 새 키로 옮긴다. 같은 키로 모이는 값이 여럿이면 이미 새 키에 있던 값을 남긴다.
+function migrateExKeys(profile) {
+  for (const field of ['mets', 'parts']) {
+    const old = profile[field];
+    if (!old || typeof old !== 'object') continue;
+    const out = {};
+    for (const [k, v] of Object.entries(old)) if (metKey(k) === k) out[k] = v;
+    for (const [k, v] of Object.entries(old)) if (!Object.hasOwn(out, metKey(k))) out[metKey(k)] = v;
+    profile[field] = out;
   }
 }
 // '팔'을 이두·삼두로 나눴다(2026-10-15). 예전에 정해 둔 주간 목표 세트와 직접 고른 부위를
@@ -413,8 +423,17 @@ function weightEntries() {
     .map((date) => ({ date, weight: Number(state.days[date].weight) }));
 }
 // 운동 이름별로 직접 지정한 MET. 이름이 같으면 모든 날짜에 함께 적용된다.
+// 같은 운동인지 보는 키. 대소문자·띄어쓰기를 무시하고("벤치 프레스" = "벤치프레스"),
+// 운동 목록의 다른 이름은 정식 이름으로 바꾼다("사레레" = "사이드레터럴레이즈").
+// 그래서 어느 이름으로 적어도 지난 기록·최고 기록·추이·직접 정한 MET·부위가 하나로 이어진다.
+// 적은 이름은 그대로 둔다(보이는 이름을 바꾸지 않는다). 키가 바뀌면 profile의 저장 키도 옮길 것(migrateExKeys).
 function metKey(name) {
-  return String(name ?? '').trim().toLowerCase();
+  const k = exKey(name);
+  return EX_ALIAS.get(k) ?? k;
+}
+// 운동 목록에서 부르는 정식 이름 (목록에 없으면 null)
+function exCanon(name) {
+  return EX_INFO.get(metKey(name))?.name ?? null;
 }
 function customMet(name) {
   const v = Number(state.profile.mets?.[metKey(name)]);
@@ -429,10 +448,14 @@ function setCustomMet(name, value) {
 function metOf(name) {
   return customMet(name) ?? autoMet(name);
 }
+// 운동 목록에 있는데 이름 규칙이 못 잡는 운동은 부위로 (데드버그·팔로프프레스가 5.0이면 크런치 3.8보다 세게 잡힌다)
+const PART_MET = { 코어: 3.8, 유산소: 7.0 };
 function autoMet(name) {
   const n = metKey(name);
+  const info = EX_INFO.get(n);
+  if (info?.met) return info.met;              // 이름 규칙이 못 잡는 것(유산소·올림픽 리프트)만 목록에 적혀 있다
   for (const [re, met] of MET_TABLE) if (re.test(n)) return met;
-  return DEFAULT_MET;
+  return PART_MET[info?.part] ?? DEFAULT_MET;
 }
 // 시간을 직접 적었으면 그 값이 사실이므로 그대로 쓰고, 안 적었으면 완료한 세트 수로 추정한다.
 function minutesOf(w) {
@@ -1392,6 +1415,7 @@ window.addEventListener('popstate', () => {
   if (ownBacks > 0) { ownBacks -= 1; return; }
   const top = layers.at(-1);
   if (top === 'help') closeHelp(true);
+  else if (top === 'pick') closePicker(true);
   else if (top === 'ex') closeExSheet(true);
   else if (top === 'focus') closeFocus(true);
 });
@@ -1410,11 +1434,109 @@ function closeExSheet(fromPop = false) {
   layerClosed('ex', fromPop);
 }
 
+// ---------- 운동 고르기 ----------
+// 운동이 200가지가 넘어서 자동완성만으론 뭐가 있는지 모른다(사용자: "운동 종류가 워낙 많다").
+// 운동 폼 이름 칸 옆 "📋 목록"으로 열고, 부위별로 훑거나 이름(다른 이름 포함)으로 찾아 누르면 칸에 들어간다.
+const PICK_TABS = ['최근', '가슴', '등', '하체', '어깨', '이두', '삼두', '코어', '유산소', '전신'];
+let pickTarget = null;    // 'main'(운동 폼) 또는 슈퍼세트 칸 번호
+let pickTab = null;       // 보고 있는 탭. 다시 열면 그대로
+// 내가 한 운동: 같은 운동(metKey)끼리 묶어 가장 최근에 적은 이름으로, 최근 순
+function myExercises() {
+  const seen = new Map();
+  for (const date of Object.keys(state.days).sort().reverse()) {
+    for (const w of state.days[date].workouts) {
+      const key = metKey(w.name);
+      if (key && !seen.has(key)) seen.set(key, { key, name: String(w.name).trim(), date, w });
+    }
+  }
+  return [...seen.values()];
+}
+// 검색어가 이름·정식 이름·다른 이름 중 어디에 걸리는지. 다른 이름으로 걸리면 그 이름을 돌려준다(화면에 보여 주려고)
+function pickMatch(name, q) {
+  if (exKey(name).includes(q) || metKey(name).includes(q)) return { hit: true, alias: null };
+  const alias = EX_INFO.get(metKey(name))?.aliases.find((a) => exKey(a).includes(q));
+  return alias ? { hit: true, alias } : { hit: false };
+}
+function openPicker(target) {
+  pickTarget = target;
+  if (target === 'main' && partPick) pickTab = partPick;          // 부위를 먼저 눌렀으면 그 부위부터
+  pickTab ??= myExercises().length ? '최근' : '가슴';
+  $('#pickSearch').value = '';
+  $('#pickSheet').hidden = false;
+  layerOpened('pick');
+  renderPicker();
+  $('#pickList').scrollTop = 0;
+}
+function closePicker(fromPop = false) {
+  if ($('#pickSheet').hidden) return;
+  $('#pickSheet').hidden = true;
+  pickTarget = null;
+  layerClosed('pick', fromPop);
+}
+function pickRowHtml({ name, mine, alias }, showPart) {
+  const sub = alias ? `"${esc(alias)}"` : (mine ? `${fmtDate(mine.date)} · ${esc(setsText(mine.w))}` : '');
+  return `<button type="button" class="pick-row" data-pick-name="${esc(name)}">
+    <b>${esc(name)}</b>${showPart ? `<em>${partOf(name)}</em>` : ''}
+    ${sub ? `<span>${sub}</span>` : ''}
+  </button>`;
+}
+function renderPicker() {
+  const raw = $('#pickSearch').value.trim();
+  const q = exKey(raw);
+  $('#pickTabs').innerHTML = PICK_TABS.map((p) =>
+    `<button type="button" class="part-chip ${!q && p === pickTab ? 'on' : ''}" data-pick-tab="${p}">${p}</button>`).join('');
+  const mine = myExercises();
+  const mineKeys = new Set(mine.map((m) => m.key));
+  let html;
+  if (q) {
+    // 찾기: 내가 한 운동 먼저, 그다음 목록 순서. 부위가 섞이니 부위를 같이 적는다
+    const rows = [];
+    for (const m of mine) { const r = pickMatch(m.name, q); if (r.hit) rows.push({ name: m.name, mine: m, alias: r.alias }); }
+    for (const [name] of EXERCISES) {
+      if (mineKeys.has(metKey(name))) continue;
+      const r = pickMatch(name, q);
+      if (r.hit) rows.push({ name, alias: r.alias });
+    }
+    const exact = rows.some((r) => metKey(r.name) === metKey(raw));
+    html = rows.map((r) => pickRowHtml(r, true)).join('')
+      + (exact ? '' : `<button type="button" class="pick-row pick-own" data-pick-name="${esc(raw)}"><b>"${esc(raw)}" 그대로 쓰기</b>
+          <span>${rows.length ? '목록에 없는 이름으로 적어요' : '목록에 없어요. 이 이름으로 적어요'}</span></button>`);
+  } else if (pickTab === '최근') {
+    html = mine.length ? mine.slice(0, 60).map((m) => pickRowHtml({ name: m.name, mine: m }, true)).join('')
+      : '<p class="cal-empty">아직 한 운동이 없어요. 위에서 부위를 골라 보세요.</p>';
+  } else {
+    // 부위: 내가 한 운동 먼저(직접 고른 부위도 따른다), 그다음 목록에서 안 해 본 운동
+    const done = mine.filter((m) => partOf(m.name) === pickTab);
+    const rest = EXERCISES.filter(([name]) => partOf(name) === pickTab && !mineKeys.has(metKey(name)));
+    html = (done.length ? `<h4 class="pick-sec">내가 한 운동</h4>${done.map((m) => pickRowHtml({ name: m.name, mine: m })).join('')}` : '')
+      + (rest.length ? `${done.length ? '<h4 class="pick-sec">다른 운동</h4>' : ''}${rest.map(([name]) => pickRowHtml({ name })).join('')}` : '');
+  }
+  $('#pickList').innerHTML = html;
+}
+function pickExercise(name) {
+  if (pickTarget === 'main') {
+    $('#exName').value = name;
+    partPick = null;              // 앞 운동에 눌러 둔 부위가 새 운동에 묻어가지 않게
+    updateExHint();
+  } else {
+    const input = $(`[data-pn="${pickTarget}"]`);
+    if (input) {
+      input.value = name;
+      input.dispatchEvent(new Event('input', { bubbles: true }));   // 슈퍼세트 칸은 input 이벤트로 표·안내를 채운다
+    }
+  }
+  closePicker();
+}
+
 // ---------- 도움말 ----------
 // 설명을 화면 곳곳에 적어 두면 글 벽이 된다(사용자: "주석 같은 게 많아 정돈이 안 돼 보인다").
 // 설명은 전부 여기 모으고, 화면에는 지금 눌러야 할 것만 남긴다. 기능을 더하면 이 표에 한 줄 적을 것.
 const HELP = [
-  ['🏋️ 운동 기록', `운동을 넣을 때 이름 아래 <b>부위 버튼 8개</b> 중 하나를 누르면 그 부위로 기록돼요.
+  ['🏋️ 운동 기록', `운동 이름 칸 옆 <b>📋 목록</b>을 누르면 운동 200여 가지를 부위별로 볼 수 있어요. 내가 한 운동이 위에 오고,
+    "사레레"·"렛풀"처럼 줄임말로도 찾을 수 있어요.
+    <br>이름을 조금 다르게 적어도(사레레 = 사이드레터럴레이즈, 벤치 프레스 = 벤치프레스) <b>같은 운동으로 묶여서</b>
+    지난 기록·최고 기록·그래프가 이어져요. 적은 이름은 그대로 보여요.
+    <br>운동을 넣을 때 이름 아래 <b>부위 버튼 8개</b> 중 하나를 누르면 그 부위로 기록돼요.
     안 누르면 이름으로 짐작한 부위가 쓰여요(풀오버처럼 가슴인지 등인지 애매한 건 직접 눌러 주세요).
     한 번 고르면 같은 이름의 운동에 계속 적용되고, 카드를 열어 바꿀 수도 있어요.
     <br>운동 폼에서 <b>세트 번호</b>를 누르면 워밍업 세트가 되고, <b>↘</b>를 누르면 그 세트에 무게를 내려 이어 한 드롭세트가 붙어요.
@@ -2409,7 +2531,10 @@ function renderPartners() {
     <div class="ss-partner">
       <div class="ss-partner-head"><span>🔗 슈퍼세트 ${k + 2}번째 운동</span>
         <button type="button" class="del" data-pdel="${k}" aria-label="이 운동 빼기">✕</button></div>
-      <input list="exSuggestions" placeholder="운동 종류 (예: 바벨로우)" autocomplete="off" value="${esc(p.name)}" data-pn="${k}">
+      <div class="ex-name-row">
+        <input list="exSuggestions" placeholder="운동 종류 (예: 바벨로우)" autocomplete="off" value="${esc(p.name)}" data-pn="${k}">
+        <button type="button" class="ex-pick-btn" data-ex-pick="${k}" aria-label="목록에서 운동 고르기">📋 목록</button>
+      </div>
       <div class="perset" id="ssRows${k}">${partnerRowsHtml(p, k)}</div>
       <p class="hint" id="ssHint${k}">${partnerHint(p.name)}</p>
     </div>`).join('');
@@ -2460,11 +2585,14 @@ function updateExHint() {
   renderPartPick();
   const last = name ? lastRecord(name) : null;
   const tip = name ? overloadTip(name) : null;
-  $('#exHint').innerHTML = last
+  // 다른 이름(사레레, 렛풀다운…)으로 적었으면 어느 운동으로 묶이는지 한 줄 (적은 이름은 그대로 둔다)
+  const canon = name ? exCanon(name) : null;
+  const same = canon && exKey(canon) !== exKey(name) ? `<span class="muted">= ${esc(canon)}</span><br>` : '';
+  $('#exHint').innerHTML = same + (last
     ? `↩ 지난번 ${fmtDate(last.date)}: ${esc(setsText(last.workout))}` +
       (last.workout.note ? `<br>📝 ${esc(last.workout.note)}` : '') +
       (tip ? `<br><span class="tip">${overloadText(tip)}</span>` : '')
-    : (name ? '처음 하는 운동이에요.' : '');
+    : (name ? '처음 하는 운동이에요.' : ''));
   const was = lastPartners(name).filter((n) => !partners.some((p) => metKey(p.name) === metKey(n)));
   if (was.length) {
     $('#exHint').insertAdjacentHTML('beforeend', `<br><span class="tip">🔗 지난번엔 ${esc(was.join(' · '))}와(과) 슈퍼세트</span>
@@ -3308,10 +3436,26 @@ document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   if (!$('#photoView').hidden) $('#photoView').hidden = true;
   else if (layers.at(-1) === 'help') closeHelp();
+  else if (layers.at(-1) === 'pick') closePicker();
   else if (layers.at(-1) === 'ex') closeExSheet();
   else if (layers.at(-1) === 'focus') closeFocus();
 });
 $('#helpBtn').addEventListener('click', openHelp);
+// 운동 고르기 (보기만 하는 창이라 저장·다시 그리기는 고른 뒤 이름 칸이 알아서 한다)
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-ex-pick], [data-pick-tab], [data-pick-name]');
+  if (!b) return;
+  const ds = b.dataset;
+  if (ds.exPick != null) openPicker(ds.exPick === 'main' ? 'main' : Number(ds.exPick));
+  else if (ds.pickTab) {
+    pickTab = ds.pickTab;
+    $('#pickSearch').value = '';
+    renderPicker();
+    $('#pickList').scrollTop = 0;
+  } else if (ds.pickName != null) pickExercise(ds.pickName);
+});
+$('#pickSearch').addEventListener('input', renderPicker);
+$('#pickClose').addEventListener('click', () => closePicker());
 $('#helpClose').addEventListener('click', () => closeHelp());
 
 document.addEventListener('click', (e) => {

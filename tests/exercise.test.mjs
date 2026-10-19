@@ -45,7 +45,7 @@ export default async function (t) {
   await wait(page, 100);
   t.eq(await page.evaluate(() => partOf('풀오버')), '등', '직접 고른 부위로 저장 (풀오버는 가슴인지 등인지 앱이 모른다)');
   t.eq(await page.evaluate(() => partOf('  풀오버 ')), '등', '표기가 조금 달라도 같은 운동으로 봄');
-  t.eq(await page.evaluate(() => state.profile.parts['풀오버']), '등', '이름에 붙여 기억 (다음에 또 안 골라도 됨)');
+  t.eq(await page.evaluate(() => state.profile.parts['덤벨풀오버']), '등', '이름에 붙여 기억 (다음에 또 안 골라도 됨). 풀오버는 덤벨풀오버의 다른 이름이라 정식 이름 키로');
   t.ok(await page.evaluate(() => dayParts(day()).includes('등')), '달력·밸런스에도 고른 부위로 들어감');
   await page.evaluate(() => { $('#exName').value = '벤치프레스'; updateExHint(); });
   await page.click('#workoutForm button[type=submit]');

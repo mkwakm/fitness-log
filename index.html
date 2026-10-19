@@ -99,7 +99,11 @@
       <div class="card" id="planCard" hidden></div>
       <div id="workoutList"></div>
       <form id="workoutForm" class="card form">
-        <input id="exName" list="exSuggestions" placeholder="운동 종류 (예: 스쿼트)" required autocomplete="off">
+        <!-- 운동이 200가지가 넘어서 자동완성만으론 뭐가 있는지 모른다. 📋로 부위별 목록을 연다 -->
+        <div class="ex-name-row">
+          <input id="exName" list="exSuggestions" placeholder="운동 종류 (예: 스쿼트)" required autocomplete="off">
+          <button type="button" class="ex-pick-btn" data-ex-pick="main" aria-label="목록에서 운동 고르기">📋 목록</button>
+        </div>
         <datalist id="exSuggestions"></datalist>
         <!-- 부위는 이름으로 짐작하지만 풀오버·딥스처럼 애매한 건 앱이 모른다. 직접 누르면 그게 이긴다 -->
         <div id="partPick" class="part-pick"></div>
@@ -257,6 +261,19 @@
     <div class="sheet-body" id="exSheetBody"></div>
   </div>
 
+  <!-- 운동 고르기: 부위별 목록 + 검색. 누르면 운동 폼의 이름 칸에 들어간다 -->
+  <div id="pickSheet" class="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="pickTitle">
+    <div class="sheet-head">
+      <h2 id="pickTitle">운동 고르기</h2>
+      <button class="del" id="pickClose" aria-label="닫기">✕</button>
+    </div>
+    <div class="pick-top">
+      <input id="pickSearch" type="search" placeholder="이름으로 찾기 (예: 사레레, 렛풀)" autocomplete="off" aria-label="운동 이름 검색">
+      <div class="part-pick pick-tabs" id="pickTabs"></div>
+    </div>
+    <div class="sheet-body pick-list" id="pickList"></div>
+  </div>
+
   <!-- 도움말. 화면에 길게 적는 대신 여기로 모은다 (좁은 화면에서 설명이 글 벽이 된다) -->
   <div id="helpSheet" class="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="helpTitle">
     <div class="sheet-head">
@@ -281,6 +298,7 @@
   </div>
 
   <script src="food-db.js"></script>
+  <script src="exercise-db.js"></script>
   <script src="photos.js"></script>
   <script src="sync.js"></script>
   <script src="app.js"></script>

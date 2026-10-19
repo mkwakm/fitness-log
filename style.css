@@ -833,3 +833,31 @@ button.perset-no.warm { border-color: var(--accent); color: var(--accent); font-
 .part-chip.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 700; }
 .part-pick.small { margin-top: 8px; }
 .part-pick.small .part-chip { min-height: 40px; font-size: 0.75rem; }
+
+/* 운동 이름 칸 + 📋 목록 */
+.ex-name-row { display: flex; gap: 6px; }
+.ex-name-row input { flex: 1 1 0; width: 0; min-width: 0; }   /* 폼이 grid라 본래 너비(약 180px)가 최소 너비가 되어 320px에서 넘쳤다 */
+.ex-pick-btn { flex: none; min-height: 40px; padding: 8px 10px; font-size: 0.85rem; white-space: nowrap; }
+
+/* 운동 고르기 창 */
+.pick-top { display: grid; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--card); }
+#pickSearch { width: 100%; }
+.pick-tabs .part-chip { flex: 1 1 calc(20% - 4px); }
+.pick-list { padding-top: 4px; }
+.pick-sec { margin: 14px 2px 2px; font-size: 0.78rem; font-weight: 600; color: var(--muted); }
+.pick-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 8px;
+  width: 100%; min-height: 52px; padding: 10px 4px; text-align: left;
+  background: none; border: none; border-bottom: 1px solid var(--line); border-radius: 0;
+}
+.pick-row b { font-weight: 600; font-size: 0.98rem; overflow-wrap: anywhere; }
+.pick-row em {
+  grid-column: 2; grid-row: 1 / span 2; font-style: normal; font-size: 0.72rem; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px;
+}
+.pick-row span {
+  grid-column: 1; font-size: 0.78rem; color: var(--muted); margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pick-row:active { background: var(--card-2); }
+.pick-own b { color: var(--accent); }
