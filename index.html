@@ -291,6 +291,9 @@
 
   <!-- 아래 고정 바들. 같이 떠도 겹치지 않게 한 곳에 모아 세로로 쌓는다 -->
   <div class="dock">
+    <!-- 휴식 타이머 버튼: 운동한 날 운동 탭에서 늘 화면 아래에 (사용자: "타이머가 어딨는지 모르겠다").
+         누르면 아래 휴식 바(카운트다운)로 바뀐다 -->
+    <button id="restFab" class="rest-fab" hidden aria-label="휴식 타이머 시작">⏱ 휴식 <b id="restFabTime">1:30</b></button>
     <div id="restBar" class="rest-bar" hidden>
       <span class="rest-label">⏱ 휴식</span>
       <strong id="restTime">0:00</strong>

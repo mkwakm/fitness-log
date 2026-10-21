@@ -948,6 +948,25 @@ function restFor(name) {
 function restOf(w) {
   return validRest(w?.rest) ?? restFor(w?.name);
 }
+// 화면 아래 ⏱ 버튼이 쓸 운동: 방금 완료한 세트의 운동 → 아직 다 안 한 첫 운동 → 마지막 운동
+function restTarget(d = day()) {
+  return lastDoneSet(d)?.w ?? d.workouts.find((w) => w.sets.some((s) => !s.done)) ?? d.workouts.at(-1) ?? null;
+}
+// 사용자: "타이머가 어딨는지 모르겠다". 세트 완료(카드 속 세트 번호)로만 켜지면 모르고 지나간다.
+// 오늘 운동이 있으면 운동 탭 화면 아래에 늘 ⏱ 버튼을 띄우고, 누르면 휴식 바(카운트다운)로 바뀐다.
+function renderRestFab() {
+  const fab = $('#restFab');
+  const running = !!restEndAt;
+  const show = !running && currentDate === todayStr() && day().workouts.length > 0
+    && $('#workouts').classList.contains('active');
+  fab.hidden = !show;
+  document.body.classList.toggle('has-dock', show || running);   // 아래 바에 가려지는 만큼 화면 아래를 띄운다
+  if (!show) return;
+  const w = restTarget();
+  const sec = (w && restOf(w)) || Number(state.profile.restSec) || DEFAULT_PROFILE.restSec;
+  fab.dataset.sec = sec;
+  $('#restFabTime').textContent = mmss(sec);
+}
 // 세트를 끝냈을 때: 그 운동의 휴식으로 (끄기면 켜지 않는다)
 function restAfter(w) {
   const sec = restOf(w);
@@ -961,6 +980,7 @@ function startRest(sec = Number(state.profile.restSec) || 90) {
   restEndAt = Date.now() + sec * 1000;
   saveUi();
   $('#restBar').hidden = false;
+  renderRestFab();
   drawRest();
   clearInterval(restTimer);
   restTimer = setInterval(() => {
@@ -974,6 +994,7 @@ function stopRest() {
   restEndAt = 0;
   $('#restBar').hidden = true;
   saveUi();
+  renderRestFab();
   renderFocus();                  // 쉬는 화면에서 다음 세트 화면으로
 }
 function drawRest() {
@@ -1018,6 +1039,7 @@ function render() {
   renderSession();
   renderSync();
   updateExHint();
+  renderRestFab();
   const note = $('#dayNote');
   if (document.activeElement !== note) note.value = day().note ?? '';
   renderFocusBtn();
@@ -1585,8 +1607,8 @@ const HELP = [
     <br>세트 번호를 누르면 완료 체크가 되고, 체크한 세트만 볼륨·소모 칼로리에 들어가요(하나도 안 하면 전체를 세요).
     <br><b>W</b>는 워밍업 세트라 기록·볼륨에서 빠지고, <b>↘</b>는 무게를 내려 이어 한 드롭세트예요.
     <br>세트 수는 <b>−/+</b>로 바꿔요. 줄였다가 다시 늘리면 적어 둔 세트가 그대로 돌아와요.
-    <br><b>휴식</b>은 운동마다 정해요(스쿼트 3분, 컬 1분처럼). 세트 번호를 눌러 완료하면 그 시간만큼 휴식 타이머가 켜지고,
-    카드의 <b>⏱</b>를 누르면 바로 켜져요. 다음에 같은 운동을 넣으면 지난번 휴식으로 채워져요.
+    <br><b>휴식 타이머</b>는 운동한 날 화면 아래 <b>⏱ 휴식</b> 버튼이에요. 누르면 바로 켜지고, 세트 번호를 눌러 완료해도 저절로 켜져요.
+    <b>휴식</b> 시간은 운동마다 정해요(스쿼트 3분, 컬 1분처럼). 다음에 같은 운동을 넣으면 지난번 휴식으로 채워져요.
     <br>🎯 집중 모드는 지금 할 세트 하나만 크게 띄우고 완료하면 휴식·다음 세트로 저절로 넘어가요.`],
   ['🍚 식단은 선택이에요', `식단은 안 적어도 운동 기록과 통계는 그대로 돌아가요. 적고 싶은 날만 적으세요.
     <br>가장 빠른 길은 <b>📷 사진으로 기록하기</b>예요. 이름을 비워 두고 사진을 고르면 무슨 음식인지 알아서 찾아 넣어요.
@@ -3120,6 +3142,7 @@ document.querySelectorAll('.tab').forEach((btn) => btn.addEventListener('click',
 function showTab(name) {
   document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
   document.querySelectorAll('.panel').forEach((p) => p.classList.toggle('active', p.id === name));
+  renderRestFab();
 }
 
 $('#date').addEventListener('change', (e) => {
@@ -3352,6 +3375,7 @@ $('#restSec').addEventListener('input', (e) => {
 });
 $('#sessionBtn').addEventListener('click', toggleSession);
 $('#restStop').addEventListener('click', stopRest);
+$('#restFab').addEventListener('click', () => startRest(Number($('#restFab').dataset.sec) || Number(state.profile.restSec) || DEFAULT_PROFILE.restSec));
 $('#restPlus').addEventListener('click', () => { restEndAt += 30000; saveUi(); drawRest(); });
 
 $('#mealPhoto').addEventListener('change', async (e) => {

@@ -877,3 +877,14 @@ button.perset-no.warm { border-color: var(--accent); color: var(--accent); font-
 .count-step input::-webkit-outer-spin-button,
 .count-step input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .count-step input { -moz-appearance: textfield; appearance: textfield; }
+
+/* 화면 아래 휴식 타이머 버튼 (운동한 날 운동 탭에서 늘) */
+.rest-fab {
+  display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 10px 22px;
+  border-radius: 999px; border: 1px solid var(--accent); background: var(--accent); color: #0d1412;
+  font-weight: 700; font-size: 1rem; white-space: nowrap; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+.rest-fab[hidden] { display: none; }
+.rest-fab b { font-variant-numeric: tabular-nums; font-size: 1.1rem; }
+/* 아래 바가 떠 있으면 마지막 버튼(운동 추가 등)이 가려지지 않게 화면 아래를 띄운다 */
+body.has-dock main { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }

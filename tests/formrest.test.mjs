@@ -147,8 +147,42 @@ export default async function (t) {
   t.eq(await page.evaluate(() => [restOf({ name: '스쿼트', rest: '30' }), restOf({ name: '스쿼트', rest: -5 }), restOf({ name: '없는운동' })]), [150, 150, 90],
     '숫자가 아니거나 음수인 휴식은 무시하고 그 운동의 지난 값·기본값');
 
+  // ── 화면 아래 ⏱ 버튼 (사용자: "타이머가 어딨는지 모르겠다") ──
+  const fab = () => page.evaluate(() => ({ shown: !$('#restFab').hidden, text: $('#restFab').textContent.replace(/\s+/g, ' ').trim(), bar: !$('#restBar').hidden }));
+  await page.evaluate(() => { stopRest(); day().workouts.forEach((w) => w.sets.forEach((s) => { s.done = false; s.doneAt = null; })); save(); render(); });
+  t.eq(await fab(), { shown: true, text: '⏱ 휴식 2:30', bar: false }, '오늘 운동이 있으면 운동 탭 아래에 ⏱ 버튼 (아직 다 안 한 첫 운동 스쿼트의 휴식)');
+  await tab(page, 'meals');
+  t.eq((await fab()).shown, false, '다른 탭에선 안 보임');
+  await tab(page, 'workouts');
+  await page.click('#restFab');
+  t.eq([await left(), (await fab()).shown, (await fab()).bar], [150, false, true], '누르면 휴식 바(카운트다운)로 바뀜');
+  t.ok(await page.evaluate(() => document.body.classList.contains('has-dock')), '아래 바가 있으면 화면 아래를 띄움 (마지막 버튼이 안 가려지게)');
+  await page.click('#restStop');
+  t.eq([(await fab()).shown, (await fab()).bar], [true, false], '정지하면 다시 ⏱ 버튼');
+  await openEx(page, 2);
+  await page.click('[data-toggle="z:0"]');
+  await page.evaluate(() => stopRest());
+  t.eq((await fab()).text, '⏱ 휴식 1:30', '방금 세트를 끝낸 운동(레그컬, 기본 휴식)의 휴식으로');
+  await page.evaluate(() => {
+    const y = shiftDate(todayStr(), -1);
+    state.days[y] = { meals: [], note: '', workouts: [{ id: 'old', name: '벤치프레스', sets: [{ weight: 60, reps: 10 }] }] };
+    currentDate = y; render();
+  });
+  t.eq((await fab()).shown, false, '지난 날짜를 볼 땐 (운동이 있어도) 안 보임');
+  await page.evaluate(() => { currentDate = todayStr(); day().workouts = []; save(); render(); });
+  t.eq([(await fab()).shown, await page.evaluate(() => document.body.classList.contains('has-dock'))], [false, false], '운동이 없는 날엔 안 보임');
+  await page.evaluate(() => {
+    day().workouts = [{ id: 'x', name: '스쿼트', rest: 150, sets: [{ weight: 100, reps: 5 }, { weight: 100, reps: 5 }] }];
+    save(); render();
+  });
+
   // ── 휴대폰 화면 ──
-  await page.click('[data-rest-now="x"]');
+  for (const vw of [375, 320]) {
+    await page.setViewportSize({ width: vw, height: 700 });
+    const r = await page.evaluate(() => { const b = $('#restFab').getBoundingClientRect(); return { h: b.height, inside: b.left >= 0 && b.right <= innerWidth && b.bottom <= innerHeight }; });
+    t.ok(r.h >= 44 && r.inside, `${vw}px ⏱ 버튼이 화면 안, 누르기 쉬운 크기 (${Math.round(r.h)}px)`);
+  }
+  await page.click('[data-rest-now="x"]').catch(async () => { await openEx(page, 0); await page.click('[data-rest-now="x"]'); });
   for (const vw of [375, 320]) {
     await page.setViewportSize({ width: vw, height: 800 });
     await openEx(page, 0);
