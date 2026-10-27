@@ -62,10 +62,13 @@ export default async function (t) {
   await openAllEx(page);
   await page.click('[data-add-warmup="d"]');
   w = await w0();
-  t.eq(w.sets.map((s) => [s.weight, !!s.warmup]), [[70, true], [140, false], [140, false]], '+ 워밍업: 본 세트 앞에 절반 무게로');
+  t.eq(w.sets.map((s) => [s.weight, s.reps, !!s.warmup]), [[20, 10, true], [55, 5, true], [85, 3, true], [112.5, 2, true], [140, 5, false], [140, 5, false]],
+    '+ 워밍업 (처음): 바벨이라 빈 바×10 → 40%×5 → 60%×3 → 80%×2를 한 번에 (± 단위로 맞춤)');
   await page.click('[data-add-warmup="d"]');
   w = await w0();
-  t.eq(w.sets.map((s) => [s.weight, !!s.warmup]), [[70, true], [105, true], [140, false], [140, false]], '한 번 더: 직전 워밍업과 본 세트의 가운데, 본 세트 바로 앞에');
+  t.eq(w.sets.map((s) => [s.weight, !!s.warmup]).slice(3), [[112.5, true], [127.5, true], [140, false], [140, false]], '한 번 더: 직전 워밍업과 본 세트의 가운데, 본 세트 바로 앞에');
+  t.eq(await page.evaluate(() => [warmupRamp('레그프레스', 200), warmupRamp('바벨컬', 30), warmupRamp('스쿼트', 20), warmupRamp('스쿼트', 0)].map((r) => r.map((x) => `${x.weight}x${x.reps}`))),
+    [['100x10', '150x5'], ['20x10', '25x2'], [], []], '바벨이 아니면 50%×10 → 75%×5, 가벼우면 겹치는 단계는 건너뜀, 빈 바 무게 이하·무게 없으면 안 짬');
   await page.click('[data-add-set="d"]');
   t.eq(!!(await w0()).sets.at(-1).warmup, false, '+ 세트 추가는 본 세트로');
 
@@ -73,10 +76,10 @@ export default async function (t) {
   await page.evaluate(() => stopRest());
   await page.click('#focusBtn');
   t.ok((await text(page, '#focusSheet .focus-set')).startsWith('워밍업'), '집중 모드에 "워밍업"으로 보임');
-  await page.click('#focusSheet [data-focus-done]');
-  await page.click('#focusSheet [data-focus-rest="skip"]').catch(() => {});
-  await page.click('#focusSheet [data-focus-done]');
-  await page.click('#focusSheet [data-focus-rest="skip"]').catch(() => {});
+  for (let k = 0; k < 10 && (await text(page, '#focusSheet .focus-set')).startsWith('워밍업'); k++) {
+    await page.click('#focusSheet [data-focus-done]');
+    await page.click('#focusSheet [data-focus-rest="skip"]').catch(() => {});
+  }
   t.ok((await text(page, '#focusSheet .focus-set')).startsWith('1세트'), '워밍업 다음은 "1세트"');
   await page.click('#focusClose');
 

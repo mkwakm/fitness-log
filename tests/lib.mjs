@@ -16,8 +16,11 @@ function findChromium() {
   const base = '/opt/pw-browsers';
   if (existsSync(base)) {
     for (const d of readdirSync(base).filter((n) => n.startsWith('chromium-')).sort().reverse()) {
-      const p = join(base, d, 'chrome-linux', 'chrome');
-      if (existsSync(p)) return { executablePath: p };
+      // 클라우드 이미지에 따라 폴더 이름이 chrome-linux 또는 chrome-linux64
+      for (const sub of ['chrome-linux', 'chrome-linux64']) {
+        const p = join(base, d, sub, 'chrome');
+        if (existsSync(p)) return { executablePath: p };
+      }
     }
   }
   return null;

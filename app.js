@@ -27,6 +27,7 @@ const DEFAULT_PROFILE = {
   routines: {},      // 저장해둔 루틴 { 이름: [{name, reps, sets, minutes}] }
   partGoals: {},     // 부위별 주간 목표 세트 수 { 가슴: 12, ... } — 안 정하면 비교 안 함
   volGoals: {},      // 부위별 주간 목표 볼륨(kg) { 가슴: 6000, ... } — 안 정하면 비교 안 함
+  plates: null,      // 원판 계산기 { bar: 20, sizes: [20, 15, 10, 5, 2.5, 1.25] } — 안 정하면 DEFAULT_PLATES
   split: null,       // 분할 { days: ['가슴·삼두', '등·이두', '하체·어깨'], rest: [0, 3] (쉬는 요일, 0=일) } — 안 정하면 null
 };
 
@@ -1250,6 +1251,7 @@ function renderWorkouts() {
         <button class="del" data-del-set="${w.id}:${i}" aria-label="세트 삭제">✕</button>
       </div>${dropRowsHtml(w, i, s)}${justDone?.s === s ? `<button class="drop-inline" data-drop-add="${w.id}:${i}">↘ 무게 내려 이어 했으면 드롭 추가</button>` : ''}`).join('')}
     </div>
+    ${plateLineHtml(w)}
     <div class="set-btns">
       <button data-add-set="${w.id}">+ 세트</button>
       <button data-add-warmup="${w.id}" title="본 세트 앞에 가벼운 워밍업 세트를 넣어요 (볼륨·기록에서 빠져요)">+ 워밍업</button>
@@ -1479,6 +1481,7 @@ window.addEventListener('popstate', () => {
   const top = layers.at(-1);
   if (top === 'help') closeHelp(true);
   else if (top === 'pick') closePicker(true);
+  else if (top === 'plate') closePlates(true);
   else if (top === 'ex') closeExSheet(true);
   else if (top === 'focus') closeFocus(true);
 });
@@ -1495,6 +1498,111 @@ function closeExSheet(fromPop = false) {
   exSheetName = null;
   $('#exSheet').hidden = true;
   layerClosed('ex', fromPop);
+}
+
+// ---------- 원판 계산기 ----------
+// 바벨 무게를 보면 한쪽에 무슨 원판을 끼울지 바로 알려 준다(카드의 다음 세트 아래 한 줄, 집중 모드의 무게 아래).
+// 누르면 계산기 창: 무게를 바꿔 보고, 바 무게·있는 원판을 정한다(헬스장마다 달라서 profile.plates).
+const PLATE_SIZES = [25, 20, 15, 10, 5, 2.5, 1.25, 0.5];
+const DEFAULT_PLATES = { bar: 20, sizes: [20, 15, 10, 5, 2.5, 1.25] };   // 25kg은 없는 헬스장이 많아 기본은 끔
+const BAR_CHOICES = [20, 15, 10, 7.5];
+let plateKg = 60;
+function plateCfg() {
+  const p = state.profile.plates;
+  const bar = Number(p?.bar);
+  const sizes = Array.isArray(p?.sizes) ? PLATE_SIZES.filter((x) => p.sizes.map(Number).includes(x)) : [];
+  return { bar: bar >= 0 && bar <= 50 ? bar : DEFAULT_PLATES.bar, sizes: sizes.length ? sizes : [...DEFAULT_PLATES.sizes] };
+}
+function isBarbell(name) {
+  const k = metKey(name);
+  return BARBELL.has(k) || k.includes('바벨');
+}
+// 한쪽에 끼울 원판(큰 것부터). 있는 원판으로 딱 못 맞추면 그보다 가벼운 가장 가까운 무게(actual)
+function platesFor(total, cfg = plateCfg()) {
+  const t = Number(total) || 0;
+  if (t < cfg.bar) return { under: true, plates: [], actual: t };
+  let side = Math.round((t - cfg.bar) / 2 * 1000) / 1000;
+  const plates = [];
+  for (const p of cfg.sizes) {
+    while (side >= p - 1e-9) { plates.push(p); side = Math.round((side - p) * 1000) / 1000; }
+  }
+  return { under: false, plates, actual: cfg.bar + 2 * plates.reduce((a, b) => a + b, 0) };
+}
+function plateText(total) {
+  const r = platesFor(total);
+  if (r.under) return `바(${plateCfg().bar}kg)보다 가벼워요`;
+  if (!r.plates.length) return '빈 바';
+  return `한쪽 ${r.plates.join(' · ')}${r.actual !== Number(total) ? ` (= ${r.actual}kg)` : ''}`;
+}
+// 카드: 아직 안 한 다음 세트 무게의 원판 한 줄 (바벨 운동만)
+function plateLineHtml(w) {
+  if (!isBarbell(w.name)) return '';
+  const kg = Number(w.sets.find((s) => !s.done)?.weight) || 0;
+  return kg > 0 ? `<button class="plate-line" data-plates="${kg}">🏋️ ${kg}kg · ${plateText(kg)}</button>` : '';
+}
+function openPlates(kg) {
+  if (Number(kg) > 0) plateKg = Number(kg);
+  $('#plateSheet').hidden = false;
+  layerOpened('plate');
+  renderPlates();
+}
+function closePlates(fromPop = false) {
+  if ($('#plateSheet').hidden) return;
+  $('#plateSheet').hidden = true;
+  layerClosed('plate', fromPop);
+}
+function plateResultHtml() {
+  const cfg = plateCfg();
+  const r = platesFor(plateKg, cfg);
+  if (r.under) return `<p class="plate-msg">바(${cfg.bar}kg)보다 가벼워요.</p>`;
+  const max = Math.max(...PLATE_SIZES);
+  // 한쪽 그림: 바 끝 → 큰 원판부터 바깥으로. 높이가 원판 크기
+  const viz = `<div class="plate-viz" aria-hidden="true"><span class="plate-bar"></span>${r.plates.map((p) =>
+    `<span class="plate" style="height:${Math.round(34 + 66 * Math.sqrt(p / max))}%">${p}</span>`).join('')}<span class="plate-end"></span></div>`;
+  return `${viz}
+    <p class="plate-msg"><b>${r.plates.length ? `한쪽 ${r.plates.join(' · ')}` : '빈 바'}</b>
+      <span class="muted">바 ${cfg.bar}kg${r.plates.length ? ` + 양쪽 ${r.plates.reduce((a, b) => a + b, 0)}kg씩` : ''}</span></p>
+    ${r.actual !== plateKg ? `<p class="plate-msg muted">있는 원판으론 ${plateKg}kg을 딱 못 맞춰요. 이렇게 끼우면 ${r.actual}kg이에요.</p>` : ''}`;
+}
+function renderPlates() {
+  const cfg = plateCfg();
+  $('#plateBody').innerHTML = `
+    <div class="plate-kg">
+      <button type="button" data-plate-step="-1" aria-label="무게 줄이기">−</button>
+      <label><input id="plateKg" type="number" inputmode="decimal" min="0" step="0.5" value="${plateKg}" aria-label="바벨 전체 무게"><span>kg</span></label>
+      <button type="button" data-plate-step="1" aria-label="무게 늘리기">+</button>
+    </div>
+    <div id="plateResult">${plateResultHtml()}</div>
+    <h4>바 무게</h4>
+    <div class="part-pick">${BAR_CHOICES.map((b) => `<button type="button" class="part-chip ${b === cfg.bar ? 'on' : ''}" data-plate-bar="${b}">${b}kg</button>`).join('')}</div>
+    <h4>헬스장에 있는 원판</h4>
+    <div class="part-pick">${PLATE_SIZES.map((p) => `<button type="button" class="part-chip ${cfg.sizes.includes(p) ? 'on' : ''}" data-plate-size="${p}" aria-pressed="${cfg.sizes.includes(p)}">${p}</button>`).join('')}</div>`;
+}
+function setPlateCfg(change) {
+  const cfg = { ...plateCfg(), ...change };
+  state.profile.plates = { bar: cfg.bar, sizes: cfg.sizes };
+  save();
+  renderPlates();
+  render();                       // 카드·집중 모드의 원판 줄도 바뀐다
+}
+
+// 워밍업 자동: 첫 본 세트 무게를 보고 가벼운 것부터 몇 세트를 한 번에 짠다.
+// 바벨이면 빈 바×10 → 40%×5 → 60%×3 → 80%×2, 아니면 50%×10 → 75%×5 (흔히 쓰는 짜임).
+// 무게는 ± 단위로 맞추고, 바보다 가볍거나 앞 세트와 같아지는 단계는 건너뛴다.
+function warmupRamp(name, work) {
+  const W = Number(work) || 0;
+  if (!(W > 0)) return [];
+  const step = Number(state.profile.weightStep) || 2.5;
+  const round = (x) => Math.round(Math.round(x / step) * step * 100) / 100;
+  const bar = isBarbell(name) ? plateCfg().bar : 0;
+  const plan = bar ? [[bar, 10], [W * 0.4, 5], [W * 0.6, 3], [W * 0.8, 2]] : [[W * 0.5, 10], [W * 0.75, 5]];
+  const out = [];
+  for (const [raw, reps] of plan) {
+    const kg = raw === bar ? bar : round(raw);
+    if (kg <= 0 || kg >= W || kg < bar || kg <= (out.at(-1)?.weight ?? 0)) continue;
+    out.push({ weight: kg, reps, warmup: true });
+  }
+  return out;
 }
 
 // ---------- 운동 고르기 ----------
@@ -1609,6 +1717,8 @@ const HELP = [
     <br>세트 수는 <b>−/+</b>로 바꿔요. 줄였다가 다시 늘리면 적어 둔 세트가 그대로 돌아와요.
     <br><b>휴식 타이머</b>는 운동한 날 화면 아래 <b>⏱ 휴식</b> 버튼이에요. 누르면 바로 켜지고, 세트 번호를 눌러 완료해도 저절로 켜져요.
     <b>휴식</b> 시간은 운동마다 정해요(스쿼트 3분, 컬 1분처럼). 다음에 같은 운동을 넣으면 지난번 휴식으로 채워져요.
+    <br><b>🏋️ 원판</b>: 바벨 운동은 다음 세트 무게를 "한쪽 20 · 10"처럼 알려줘요. 누르면 계산기가 열리고, 바 무게와 헬스장에 있는 원판을 정할 수 있어요.
+    <br><b>🔥 워밍업 자동</b>(운동 폼)이나 카드의 첫 <b>+ 워밍업</b>은 1세트 무게를 보고 워밍업을 한 번에 짜요(바벨은 빈 바 → 40% → 60% → 80%).
     <br>🎯 집중 모드는 지금 할 세트 하나만 크게 띄우고 완료하면 휴식·다음 세트로 저절로 넘어가요.`],
   ['🍚 식단은 선택이에요', `식단은 안 적어도 운동 기록과 통계는 그대로 돌아가요. 적고 싶은 날만 적으세요.
     <br>가장 빠른 길은 <b>📷 사진으로 기록하기</b>예요. 이름을 비워 두고 사진을 고르면 무슨 음식인지 알아서 찾아 넣어요.
@@ -1734,6 +1844,7 @@ function focusSetHtml({ w, i, s, idx, q }) {
       <span class="focus-dots">${w.sets.map((x, k) => `<i class="${x.done ? 'on' : ''} ${k === i ? 'cur' : ''}"></i>`).join('')}</span>
     </div>
     ${field('weight', '중량', 'kg', 'inputmode="decimal" min="0" step="0.5" placeholder="맨몸"')}
+    ${isBarbell(w.name) && Number(s.weight) > 0 ? `<button class="plate-line focus-plates" data-plates="${s.weight}">🏋️ ${plateText(s.weight)}</button>` : ''}
     ${field('reps', '횟수', '회', 'inputmode="numeric" min="0" step="1"')}
     ${dropsOf(s).length ? `<div class="set-table focus-drops">${dropRowsHtml(w, i, s)}</div>` : ''}
     <button class="link-btn focus-drop" data-drop-add="${w.id}:${i}">↘ 드롭 추가 (무게 내려 이어서)</button>
@@ -3538,6 +3649,7 @@ document.addEventListener('keydown', (e) => {
   if (!$('#photoView').hidden) $('#photoView').hidden = true;
   else if (layers.at(-1) === 'help') closeHelp();
   else if (layers.at(-1) === 'pick') closePicker();
+  else if (layers.at(-1) === 'plate') closePlates();
   else if (layers.at(-1) === 'ex') closeExSheet();
   else if (layers.at(-1) === 'focus') closeFocus();
 });
@@ -3556,6 +3668,51 @@ document.addEventListener('click', (e) => {
   } else if (ds.pickName != null) pickExercise(ds.pickName);
 });
 $('#pickSearch').addEventListener('input', renderPicker);
+// 원판 계산기
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-plates]');
+  if (b) openPlates(b.dataset.plates);
+});
+$('#plateClose').addEventListener('click', () => closePlates());
+$('#plateBody').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  const ds = b.dataset;
+  if (ds.plateStep) {
+    const step = Number(state.profile.weightStep) || 2.5;
+    plateKg = Math.max(0, Math.round((plateKg + step * Number(ds.plateStep)) * 100) / 100);
+    document.getElementById('plateKg').value = plateKg;
+    document.getElementById('plateResult').innerHTML = plateResultHtml();
+  } else if (ds.plateBar) {
+    setPlateCfg({ bar: Number(ds.plateBar) });
+  } else if (ds.plateSize) {
+    const p = Number(ds.plateSize);
+    const sizes = plateCfg().sizes;
+    const next = sizes.includes(p) ? sizes.filter((x) => x !== p) : [...sizes, p];
+    if (next.length) setPlateCfg({ sizes: PLATE_SIZES.filter((x) => next.includes(x)) });   // 하나는 남긴다
+  }
+});
+$('#plateBody').addEventListener('input', (e) => {
+  if (e.target.id !== 'plateKg') return;
+  plateKg = Math.max(0, Number(e.target.value) || 0);
+  document.getElementById('plateResult').innerHTML = plateResultHtml();       // 치는 칸은 그대로 두고 결과만
+});
+// 폼: 워밍업 자동 — 1세트(첫 본 세트) 무게로 짜서 표 맨 앞에. 이미 있던 워밍업은 바꾼다.
+$('#warmupAuto').addEventListener('click', () => {
+  const name = $('#exName').value.trim();
+  const work = perSet.filter((s) => !s.warmup);
+  const ramp = warmupRamp(name, work[0]?.weight);
+  if (!ramp.length) {
+    $('#exHint').innerHTML = '🔥 1세트 무게를 먼저 적어 주세요. 그 무게를 보고 워밍업을 짜요.';
+    return;
+  }
+  perSet = [...ramp, ...work];
+  perSetSpare = [];
+  perSetTouched = true;
+  $('#exSets').value = perSet.length;
+  renderPerSet();
+  resizePartners();
+});
 $('#pickClose').addEventListener('click', () => closePicker());
 $('#helpClose').addEventListener('click', () => closeHelp());
 
@@ -3751,7 +3908,9 @@ document.addEventListener('click', (e) => {
     const w = findWorkout(ds.addWarmup);
     if (!w) return;
     const at = w.sets.filter((x) => x.warmup).length;   // 워밍업 끝, 본 세트 바로 앞에
-    w.sets.splice(at, 0, nextWarmup(w));
+    const ramp = at ? [] : warmupRamp(w.name, workSets(w)[0]?.weight);
+    if (ramp.length) w.sets.splice(0, 0, ...ramp.map((x) => ({ ...x, done: false })));   // 처음이면 한 번에 짠다
+    else w.sets.splice(at, 0, nextWarmup(w));
   } else if (ds.addSet) {
     const w = findWorkout(ds.addSet);
     if (!w) return;

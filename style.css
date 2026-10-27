@@ -672,7 +672,7 @@ body.sheet-open { overflow: hidden; }
 
 /* 운동 폼: 세트마다 다르게 */
 /* "모든 세트 같게"는 보조라 표 아래 오른쪽에 작은 알약 버튼으로 (누르는 자리는 40px 유지) */
-.perset-toggle-row { display: flex; justify-content: flex-end; margin: -2px 0 8px; }
+.perset-toggle-row { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; margin: -2px 0 8px; }
 .perset-toggle {
   min-height: 40px; padding: 0 14px; border-radius: 999px;
   font-size: 0.8rem; color: var(--muted); background: transparent;
@@ -875,8 +875,10 @@ button.perset-no.warm { border-color: var(--accent); color: var(--accent); font-
 .set-btns button { padding: 8px 2px; font-size: 0.85rem; white-space: nowrap; }
 .set-btns .rest-now { color: var(--accent); font-variant-numeric: tabular-nums; }
 .count-step input::-webkit-outer-spin-button,
-.count-step input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-.count-step input { -moz-appearance: textfield; appearance: textfield; }
+.count-step input::-webkit-inner-spin-button,
+.plate-kg input::-webkit-outer-spin-button,
+.plate-kg input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.count-step input, .plate-kg input { -moz-appearance: textfield; appearance: textfield; }
 
 /* 화면 아래 휴식 타이머 버튼 (운동한 날 운동 탭에서 늘) */
 .rest-fab {
@@ -888,3 +890,31 @@ button.perset-no.warm { border-color: var(--accent); color: var(--accent); font-
 .rest-fab b { font-variant-numeric: tabular-nums; font-size: 1.1rem; }
 /* 아래 바가 떠 있으면 마지막 버튼(운동 추가 등)이 가려지지 않게 화면 아래를 띄운다 */
 body.has-dock main { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+
+/* 원판: 카드·집중 모드의 한 줄 */
+.plate-line {
+  display: block; width: 100%; min-height: 40px; margin: 8px 0 4px; padding: 8px 10px; text-align: left;
+  background: var(--card-2); border: 1px dashed var(--line); border-radius: 10px;
+  font-size: 0.85rem; color: var(--text); font-variant-numeric: tabular-nums;
+}
+.focus-plates { text-align: center; margin: -4px 0 10px; }
+/* 원판 계산기 창 */
+.plate-kg { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 4px 0 14px; }
+.plate-kg button { width: 52px; min-height: 52px; font-size: 1.4rem; padding: 0; }
+.plate-kg label { display: flex; align-items: baseline; gap: 6px; color: var(--muted); font-size: 1rem; }
+.plate-kg input { width: 120px; text-align: center; font-size: 1.8rem; font-weight: 700; padding: 8px; }
+.plate-viz {
+  display: flex; align-items: center; height: 120px; margin: 8px auto 10px; padding: 0 8px;
+  justify-content: center; gap: 3px;
+}
+.plate-bar { width: 70px; height: 10px; border-radius: 3px; background: var(--muted); }
+.plate-end { width: 22px; height: 14px; border-radius: 3px; background: var(--muted); }
+.plate {
+  display: flex; align-items: center; justify-content: center; width: 30px; border-radius: 5px;
+  background: var(--accent-soft); border: 2px solid var(--accent); color: var(--accent);
+  font-size: 0.72rem; font-weight: 700; writing-mode: vertical-rl;
+}
+.plate-msg { text-align: center; margin: 4px 0; }
+.plate-msg b { font-size: 1.15rem; display: block; margin-bottom: 2px; }
+#plateBody h4 { margin: 20px 0 8px; }
+#plateBody .part-chip { flex: 1 1 calc(25% - 4px); }

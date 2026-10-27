@@ -121,7 +121,7 @@
         </div>
         <!-- 세트별 무게·횟수 표가 기본. "모든 세트 같게"를 누르면 위의 중량·횟수 한 칸씩으로 바뀐다 -->
         <div id="perSetBox" class="perset"></div>
-        <div class="perset-toggle-row"><button type="button" class="perset-toggle" id="perSetToggle">모든 세트 같게</button></div>
+        <div class="perset-toggle-row"><button type="button" class="perset-toggle" id="warmupAuto">🔥 워밍업 자동</button><button type="button" class="perset-toggle" id="perSetToggle">모든 세트 같게</button></div>
         <p class="hint" id="exHint"></p>
         <!-- 슈퍼세트로 같이 넣을 운동들 (운동 순서가 처음부터 번갈아라 한 번에 넣는다) -->
         <div id="ssBox" class="ss-box"></div>
@@ -265,6 +265,15 @@
       <button class="del" id="exSheetClose" aria-label="닫기">✕</button>
     </div>
     <div class="sheet-body" id="exSheetBody"></div>
+  </div>
+
+  <!-- 원판 계산기: 바벨 무게 → 한쪽에 끼울 원판. 바 무게·있는 원판은 여기서 정한다 -->
+  <div id="plateSheet" class="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="plateTitle">
+    <div class="sheet-head">
+      <h2 id="plateTitle">🏋️ 원판 계산기</h2>
+      <button class="del" id="plateClose" aria-label="닫기">✕</button>
+    </div>
+    <div class="sheet-body" id="plateBody"></div>
   </div>
 
   <!-- 운동 고르기: 부위별 목록 + 검색. 누르면 운동 폼의 이름 칸에 들어간다 -->
