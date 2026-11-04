@@ -143,5 +143,12 @@ export default async function (t) {
     t.ok(r.over <= 0 && r.out === 0, `${vw}px 가로 넘침 없음`);
     t.eq(r.small, 0, `${vw}px 날짜 칸·버튼 누르기 충분히 큼`);
   }
+  // 다른 달을 볼 땐 머리 줄에 "이번 달"까지 뜬다 — 날짜와 상관없이 그 상태도 본다 (11월에 처음 걸렸다)
+  const head = await page.evaluate(() => {
+    calMonth = shiftMonth(todayStr().slice(0, 7), -1); calPick = null; renderCalendar();
+    return { today: !!document.querySelector('[data-cal-nav="0"]'),
+      out: [...document.querySelectorAll('#calTop *')].filter((x) => x.getBoundingClientRect().right > innerWidth + 0.5).length };
+  });
+  t.eq(head, { today: true, out: 0 }, '320px 다른 달(이번 달 버튼까지)에도 머리 줄이 안 넘침');
   t.noErrors(page);
 }

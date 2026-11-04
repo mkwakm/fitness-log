@@ -52,9 +52,11 @@ export function makeT(browser, name) {
       t.ok(same, same ? msg : `${msg} — 기대 ${JSON.stringify(expected)}, 실제 ${JSON.stringify(actual)}`);
     },
     // 새 컨텍스트(= 빈 localStorage)에서 앱을 연다. 기기 두 대를 흉내 낼 땐 두 번 부르면 된다.
-    async open({ url = APP, viewport = { width: 375, height: 812 }, init, context = {}, dialog } = {}) {
+    // clock: { time } 이면 그 시각에서 시작하는 가짜 시계 (page.clock.fastForward로 시간을 넘긴다)
+    async open({ url = APP, viewport = { width: 375, height: 812 }, init, context = {}, dialog, clock } = {}) {
       const ctx = await browser.newContext({ viewport, ...context });
       const page = await ctx.newPage();
+      if (clock) await page.clock.install(clock);
       page.errors = [];
       page.on('pageerror', (e) => page.errors.push(e.message));
       page.on('console', (m) => {

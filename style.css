@@ -251,7 +251,7 @@ h3 .hint { display: inline; font-weight: 400; }
 .cal-find { font-size: 1rem; margin-left: auto; }
 .cal-today + .cal-find { margin-left: 0; }
 .cal-find.on { color: var(--accent); }
-.cal-count { margin-left: auto; font-size: 0.8rem; color: var(--muted); white-space: nowrap; }
+.cal-count { margin-left: auto; font-size: 0.8rem; color: var(--muted); white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }   /* 320px에서 "이번 달"까지 뜨면 머리 줄이 넘쳤다 — 이 글만 줄어든다 */
 .cal-count b { color: var(--accent); font-size: 0.95rem; }
 .cal-count:empty { display: none; }
 .cal-count:empty + .cal-today { margin-left: auto; }

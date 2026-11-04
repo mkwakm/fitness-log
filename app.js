@@ -958,8 +958,11 @@ function restTarget(d = day()) {
 function renderRestFab() {
   const fab = $('#restFab');
   const running = !!restEndAt;
-  const show = !running && currentDate === todayStr() && day().workouts.length > 0
-    && $('#workouts').classList.contains('active');
+  // 오늘, 또는 자정을 넘겨 아직 운동 중인 날(운동 시간 재는 중·3시간 안에 세트를 끝냄)
+  const d = day();
+  const active = currentDate === todayStr() || sessionOn()
+    || d.workouts.some((w) => w.sets.some((s) => Number(s.doneAt) > Date.now() - 3 * 3600000));
+  const show = !running && active && d.workouts.length > 0 && $('#workouts').classList.contains('active');
   fab.hidden = !show;
   document.body.classList.toggle('has-dock', show || running);   // 아래 바에 가려지는 만큼 화면 아래를 띄운다
   if (!show) return;
@@ -3177,6 +3180,27 @@ function dateLabel(date) {
     : date === shiftDate(todayStr(), 1) ? ' · 내일' : '';
   return `${d.getMonth() + 1}월 ${d.getDate()}일 (${w})${rel}`;
 }
+// ---------- 날짜가 바뀌면 오늘로 ----------
+// 휴대폰은 앱을 닫지 않고 두었다가 다음 날 다시 여는 일이 잦다. 그러면 화면이 어제에 머물러
+// **오늘 운동이 어제 날짜로 들어가고**, "오늘"에만 뜨는 ⏱ 휴식 버튼도 운동을 넣는 순간 사라졌다
+// (사용자: "쉬는 시간 타이머가 없어진 것 같다"). 앱으로 돌아올 때 날이 바뀌었으면 오늘로 옮긴다.
+// 일부러 지난 날짜를 보고 있었으면 그대로 두고, 자정을 넘겨 운동하는 중(운동 시간 재는 중·휴식 중·집중 모드)이면
+// 이번엔 건너뛰고 다음에 돌아올 때 다시 본다.
+let openedToday = todayStr();
+function followToday() {
+  const t = todayStr();
+  if (t === openedToday) return;
+  if (currentDate !== openedToday) { openedToday = t; return; }   // 다른 날을 보고 있었다
+  if (sessionOn() || restEndAt || focusOn) return;
+  openedToday = t;
+  currentDate = t;
+  render();
+  showDatePill();
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) followToday(); });
+window.addEventListener('pageshow', followToday);
+window.addEventListener('focus', followToday);
+
 function showDatePill() {
   const el = $('#datePill');
   el.textContent = dateLabel(currentDate);
