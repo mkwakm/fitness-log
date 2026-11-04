@@ -918,3 +918,18 @@ body.has-dock main { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
 .plate-msg b { font-size: 1.15rem; display: block; margin-bottom: 2px; }
 #plateBody h4 { margin: 20px 0 8px; }
 #plateBody .part-chip { flex: 1 1 calc(25% - 4px); }
+
+/* 카드 아래 줄: 기록 보기·날짜 옮기기 | 순서·삭제 (좁으면 두 줄) */
+.ex-foot { flex-wrap: wrap; }
+.ex-links { display: flex; flex-wrap: wrap; gap: 0 12px; }
+/* 식단 줄의 📅 */
+.item .move-btn { font-size: 0.95rem; padding: 4px 6px; }
+/* 다른 날로 옮기기 창 */
+.move-what { margin: 0 0 14px; line-height: 1.6; }
+.move-quick { display: grid; gap: 8px; }
+.move-quick button { min-height: 48px; font-size: 1rem; text-align: left; padding: 10px 14px; }
+.move-chip { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.move-pick { margin-top: 18px; font-size: 0.85rem; }
+.move-pick .row { margin-top: 6px; }
+.move-pick input { flex: 1 1 0; min-width: 0; }
+.move-pick button { flex: none; min-height: 44px; }

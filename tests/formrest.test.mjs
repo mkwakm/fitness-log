@@ -152,7 +152,7 @@ export default async function (t) {
   await page.evaluate(() => { stopRest(); day().workouts.forEach((w) => w.sets.forEach((s) => { s.done = false; s.doneAt = null; })); save(); render(); });
   t.eq(await fab(), { shown: true, text: '⏱ 휴식 2:30', bar: false }, '오늘 운동이 있으면 운동 탭 아래에 ⏱ 버튼 (아직 다 안 한 첫 운동 스쿼트의 휴식)');
   await tab(page, 'meals');
-  t.eq((await fab()).shown, false, '다른 탭에선 안 보임');
+  t.eq((await fab()).shown, true, '다른 탭에서도 보임 (사용자: "타이머는 항시 있는 걸로")');
   await tab(page, 'workouts');
   await page.click('#restFab');
   t.eq([await left(), (await fab()).shown, (await fab()).bar], [150, false, true], '누르면 휴식 바(카운트다운)로 바뀜');
@@ -168,9 +168,9 @@ export default async function (t) {
     state.days[y] = { meals: [], note: '', workouts: [{ id: 'old', name: '벤치프레스', sets: [{ weight: 60, reps: 10 }] }] };
     currentDate = y; render();
   });
-  t.eq((await fab()).shown, false, '지난 날짜를 볼 땐 (운동이 있어도) 안 보임');
+  t.eq((await fab()).text, `⏱ 휴식 ${await page.evaluate(() => mmss(restOf(restTarget())))}`, '지난 날짜에서도 보임 (그 날 운동의 휴식)');
   await page.evaluate(() => { currentDate = todayStr(); day().workouts = []; save(); render(); });
-  t.eq([(await fab()).shown, await page.evaluate(() => document.body.classList.contains('has-dock'))], [false, false], '운동이 없는 날엔 안 보임');
+  t.eq([(await fab()).shown, (await fab()).text, await page.evaluate(() => document.body.classList.contains('has-dock'))], [true, '⏱ 휴식 1:30', true], '운동을 넣기 전에도 보임 (기본 휴식)');
   await page.evaluate(() => {
     day().workouts = [{ id: 'x', name: '스쿼트', rest: 150, sets: [{ weight: 100, reps: 5 }, { weight: 100, reps: 5 }] }];
     save(); render();

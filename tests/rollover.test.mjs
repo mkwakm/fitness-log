@@ -49,7 +49,7 @@ export default async function (t) {
   t.ok(await page.evaluate(() => !$('#restFab').hidden), '운동 시간을 끝내도 3시간 안에 세트를 끝낸 날이면 ⏱ 버튼');
   await page.clock.fastForward('03:10:00');
   await page.evaluate(() => render());
-  t.ok(await page.evaluate(() => $('#restFab').hidden), '3시간이 지나면 지난 날의 ⏱ 버튼은 안 보임');
+  t.ok(await page.evaluate(() => !$('#restFab').hidden), '⏱ 버튼은 늘 보임');
   await resume(page);
   t.eq(await page.evaluate(() => currentDate), '2026-11-04', '운동이 끝난 뒤 돌아오면 오늘로');
 

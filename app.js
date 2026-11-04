@@ -954,18 +954,15 @@ function restTarget(d = day()) {
   return lastDoneSet(d)?.w ?? d.workouts.find((w) => w.sets.some((s) => !s.done)) ?? d.workouts.at(-1) ?? null;
 }
 // 사용자: "타이머가 어딨는지 모르겠다". 세트 완료(카드 속 세트 번호)로만 켜지면 모르고 지나간다.
-// 오늘 운동이 있으면 운동 탭 화면 아래에 늘 ⏱ 버튼을 띄우고, 누르면 휴식 바(카운트다운)로 바뀐다.
+// 화면 아래에 늘 ⏱ 버튼을 띄우고, 누르면 휴식 바(카운트다운)로 바뀐다. 운동이 없으면 기본 휴식.
 function renderRestFab() {
   const fab = $('#restFab');
   const running = !!restEndAt;
-  // 오늘, 또는 자정을 넘겨 아직 운동 중인 날(운동 시간 재는 중·3시간 안에 세트를 끝냄)
-  const d = day();
-  const active = currentDate === todayStr() || sessionOn()
-    || d.workouts.some((w) => w.sets.some((s) => Number(s.doneAt) > Date.now() - 3 * 3600000));
-  const show = !running && active && d.workouts.length > 0 && $('#workouts').classList.contains('active');
-  fab.hidden = !show;
-  document.body.classList.toggle('has-dock', show || running);   // 아래 바에 가려지는 만큼 화면 아래를 띄운다
-  if (!show) return;
+  // 사용자: "타이머는 항시 있는 걸로". 운동을 넣기 전·다른 탭·지난 날짜에서도 늘 띄운다
+  // (예전엔 오늘·운동 탭·운동이 있을 때만 띄워서, 운동을 넣기 전이나 날짜가 어긋나면 "없어졌다").
+  fab.hidden = running;
+  document.body.classList.add('has-dock');   // 아래 바에 가려지는 만큼 화면 아래를 띄운다
+  if (running) return;
   const w = restTarget();
   const sec = (w && restOf(w)) || Number(state.profile.restSec) || DEFAULT_PROFILE.restSec;
   fab.dataset.sec = sec;
@@ -1096,6 +1093,7 @@ function renderMeals() {
       ${list.map((m) => `<div class="item">
         ${m.photo ? `<span class="photo-wrap"><img data-photo="${esc(m.photo)}" alt="" loading="lazy"></span>` : ''}
         <div class="grow">${esc(m.name)} <span class="muted">${esc(m.amount)}${m.kcal ? ' · ' + m.kcal + ' kcal' : ''}${m.protein ? ' · 단백질 ' + m.protein + 'g' : ''}</span></div>
+        <button class="del move-btn" data-move-meal="${m.id}" aria-label="다른 날로 옮기기" title="다른 날로 옮기기">📅</button>
         <button class="del" data-del-meal="${m.id}" aria-label="삭제">✕</button>
       </div>`).join('')}</div>`;
   }).join('');
@@ -1273,7 +1271,10 @@ function renderWorkouts() {
       <span class="${isNewPr ? 'new-pr' : 'muted'}">${isNewPr ? '🎉 신기록!' : pr.date}</span>
     </div>` : ''}
     <div class="ex-foot">
-      <button class="link-btn" data-ex-detail="${esc(w.name)}">📊 이 운동 기록 보기 ›</button>
+      <span class="ex-links">
+        <button class="link-btn" data-ex-detail="${esc(w.name)}">📊 기록 보기</button>
+        <button class="link-btn" data-move-ex="${w.id}">📅 날짜 옮기기</button>
+      </span>
       <span class="order">
         ${idx > 0 ? `<button data-move="${w.id}:-1" aria-label="위로" title="위로">↑</button>` : ''}
         ${idx < workouts.length - 1 ? `<button data-move="${w.id}:1" aria-label="아래로" title="아래로">↓</button>` : ''}
@@ -1485,6 +1486,7 @@ window.addEventListener('popstate', () => {
   if (top === 'help') closeHelp(true);
   else if (top === 'pick') closePicker(true);
   else if (top === 'plate') closePlates(true);
+  else if (top === 'move') closeMove(true);
   else if (top === 'ex') closeExSheet(true);
   else if (top === 'focus') closeFocus(true);
 });
@@ -1501,6 +1503,69 @@ function closeExSheet(fromPop = false) {
   exSheetName = null;
   $('#exSheet').hidden = true;
   layerClosed('ex', fromPop);
+}
+
+// ---------- 다른 날로 옮기기 ----------
+// 사용자: "다른 날짜로 옮기는 기능을 만들어야 한다". 앱을 열어 둔 채 날이 바뀌어 오늘 운동이 어제로 들어간 일이 있었다.
+// 운동 카드 하나(슈퍼세트면 묶음째), 식단 하나, 달력의 하루치 운동을 옮긴다.
+// 옮긴 항목은 **새 id**로 넣고 원래 날엔 지운 id를 남긴다(markDeleted). 같은 id를 쓰면 다시 원래 날로
+// 옮겼을 때 그 날의 지운 목록에 걸려 다른 기기와 합칠 때 사라진다.
+let moving = null;   // { from, workouts: [id], meals: [id], whole, what }
+function openMove(m) {
+  if (!m.workouts.length && !m.meals.length) return;
+  moving = m;
+  $('#moveSheet').hidden = false;
+  layerOpened('move');
+  renderMove();
+}
+function closeMove(fromPop = false) {
+  if ($('#moveSheet').hidden) return;
+  $('#moveSheet').hidden = true;
+  moving = null;
+  layerClosed('move', fromPop);
+}
+function renderMove() {
+  const m = moving;
+  const today = todayStr();
+  const quick = [today, shiftDate(today, -1), shiftDate(today, -2), shiftDate(today, 1)].filter((d) => d !== m.from).slice(0, 3);
+  $('#moveBody').innerHTML = `
+    <p class="move-what"><b>${esc(m.what)}</b><br><span class="muted">${dateLabel(m.from)}에서</span></p>
+    <div class="move-quick">${quick.map((d) => `<button type="button" class="move-chip" data-move-to="${d}">${dateLabel(d)}로</button>`).join('')}</div>
+    <label class="move-pick">다른 날
+      <span class="row"><input type="date" id="moveDate" value="${m.from}"><button type="button" data-move-to="pick">이 날로 옮기기</button></span>
+    </label>`;
+}
+function moveItems(to) {
+  const m = moving;
+  if (!m || !/^\d{4}-\d{2}-\d{2}$/.test(to) || to === m.from) return false;
+  pushUndo(`${m.what}을(를) ${fmtDate(to)}로 옮겼어요`);
+  const src = day(m.from), dst = day(to);
+  const ss = ssRemap();                       // 옮겨 간 날의 슈퍼세트 표시와 안 섞이게
+  for (const w of src.workouts.filter((x) => m.workouts.includes(x.id))) {
+    const copy = structuredClone(w);
+    copy.id = uid();
+    if (w.ss) copy.ss = ss(w.ss);
+    dst.workouts.push(copy);
+    markDeleted(w.id, m.from);
+  }
+  for (const x of src.meals.filter((y) => m.meals.includes(y.id))) {
+    dst.meals.push({ ...structuredClone(x), id: uid() });   // 사진은 id로 이어져 있어서 그대로 따라간다
+    markDeleted(x.id, m.from);
+  }
+  src.workouts = src.workouts.filter((x) => !m.workouts.includes(x.id));
+  src.meals = src.meals.filter((x) => !m.meals.includes(x.id));
+  ssNormalize(src.workouts);
+  ssNormalize(dst.workouts);
+  if (m.whole) {
+    // 하루치를 옮기면 그 날의 분할 이름과 운동 시간도 같이
+    if (src.split && !dst.split) dst.split = src.split;
+    delete src.split;
+    if (Number(src.sessionMin) > 0) { dst.sessionMin = (Number(dst.sessionMin) || 0) + Number(src.sessionMin); delete src.sessionMin; }
+  }
+  closeMove();
+  save();
+  render();
+  return true;
 }
 
 // ---------- 원판 계산기 ----------
@@ -1718,10 +1783,11 @@ const HELP = [
     <br>세트 번호를 누르면 완료 체크가 되고, 체크한 세트만 볼륨·소모 칼로리에 들어가요(하나도 안 하면 전체를 세요).
     <br><b>W</b>는 워밍업 세트라 기록·볼륨에서 빠지고, <b>↘</b>는 무게를 내려 이어 한 드롭세트예요.
     <br>세트 수는 <b>−/+</b>로 바꿔요. 줄였다가 다시 늘리면 적어 둔 세트가 그대로 돌아와요.
-    <br><b>휴식 타이머</b>는 운동한 날 화면 아래 <b>⏱ 휴식</b> 버튼이에요. 누르면 바로 켜지고, 세트 번호를 눌러 완료해도 저절로 켜져요.
+    <br><b>휴식 타이머</b>는 화면 아래 늘 떠 있는 <b>⏱ 휴식</b> 버튼이에요. 누르면 바로 켜지고, 세트 번호를 눌러 완료해도 저절로 켜져요.
     <b>휴식</b> 시간은 운동마다 정해요(스쿼트 3분, 컬 1분처럼). 다음에 같은 운동을 넣으면 지난번 휴식으로 채워져요.
     <br><b>🏋️ 원판</b>: 바벨 운동은 다음 세트 무게를 "한쪽 20 · 10"처럼 알려줘요. 누르면 계산기가 열리고, 바 무게와 헬스장에 있는 원판을 정할 수 있어요.
     <br><b>🔥 워밍업 자동</b>(운동 폼)이나 카드의 첫 <b>+ 워밍업</b>은 1세트 무게를 보고 워밍업을 한 번에 짜요(바벨은 빈 바 → 40% → 60% → 80%).
+    <br><b>📅 날짜 옮기기</b>: 다른 날에 잘못 적었으면 카드 아래 <b>📅 날짜 옮기기</b>(슈퍼세트는 묶음째), 식단 줄의 📅, 기록 탭 달력의 <b>다른 날로 옮기기</b>(그 날 운동 전부)로 옮겨요.
     <br>🎯 집중 모드는 지금 할 세트 하나만 크게 띄우고 완료하면 휴식·다음 세트로 저절로 넘어가요.`],
   ['🍚 식단은 선택이에요', `식단은 안 적어도 운동 기록과 통계는 그대로 돌아가요. 적고 싶은 날만 적으세요.
     <br>가장 빠른 길은 <b>📷 사진으로 기록하기</b>예요. 이름을 비워 두고 사진을 고르면 무슨 음식인지 알아서 찾아 넣어요.
@@ -2557,6 +2623,7 @@ function calDetailHtml(date) {
     <div class="cal-exs">${runs}</div>${extra}
     <div class="cal-actions">
       ${date !== currentDate ? `<button type="button" data-copy-day="${date}">↩ ${into} 운동으로 불러오기</button>` : ''}
+      <button type="button" data-move-day="${date}">📅 다른 날로 옮기기</button>
       <button type="button" data-goto="${date}">이 날 열기</button>
     </div>`;
 }
@@ -3674,6 +3741,7 @@ document.addEventListener('keydown', (e) => {
   else if (layers.at(-1) === 'help') closeHelp();
   else if (layers.at(-1) === 'pick') closePicker();
   else if (layers.at(-1) === 'plate') closePlates();
+  else if (layers.at(-1) === 'move') closeMove();
   else if (layers.at(-1) === 'ex') closeExSheet();
   else if (layers.at(-1) === 'focus') closeFocus();
 });
@@ -3692,6 +3760,34 @@ document.addEventListener('click', (e) => {
   } else if (ds.pickName != null) pickExercise(ds.pickName);
 });
 $('#pickSearch').addEventListener('input', renderPicker);
+// 다른 날로 옮기기
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-move-ex], [data-move-meal], [data-move-day]');
+  if (!b) return;
+  const ds = b.dataset;
+  if (ds.moveEx) {
+    const w = findWorkout(ds.moveEx);
+    if (!w) return;
+    const run = ssRunOf(w);                   // 슈퍼세트는 묶음째 (같이 한 운동이라)
+    openMove({ from: currentDate, workouts: run.map((x) => x.id), meals: [],
+      what: run.length > 1 ? `${run.map((x) => x.name).join(' · ')} (슈퍼세트)` : `${w.name} · ${workSets(w).length}세트` });
+  } else if (ds.moveMeal) {
+    const meal = day().meals.find((x) => x.id === ds.moveMeal);
+    if (meal) openMove({ from: currentDate, workouts: [], meals: [meal.id], what: `${meal.type} · ${meal.name}` });
+  } else if (ds.moveDay) {
+    const d = state.days[ds.moveDay];
+    if (d?.workouts.length) openMove({ from: ds.moveDay, workouts: d.workouts.map((x) => x.id), meals: [], whole: true, what: `운동 ${d.workouts.length}종` });
+  }
+});
+$('#moveClose').addEventListener('click', () => closeMove());
+$('#moveBody').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-move-to]');
+  if (!b) return;
+  const to = b.dataset.moveTo === 'pick' ? document.getElementById('moveDate')?.value : b.dataset.moveTo;
+  const whole = moving?.whole;
+  // 달력에서 하루치를 옮겼으면 달력이 옮겨 간 날을 보여 준다
+  if (moveItems(to) && whole) { calMonth = to.slice(0, 7); calPick = to; renderCalendar(); }
+});
 // 원판 계산기
 document.addEventListener('click', (e) => {
   const b = e.target.closest('[data-plates]');
