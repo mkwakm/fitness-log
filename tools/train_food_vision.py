@@ -323,7 +323,7 @@ def train(zip_path, per_class, out=OUT, seed=0, extra=None):
     W, b = softmax_train(unit(X, mean), y, len(labels), scale)
     head = {
         'model': MODEL_ID,
-        'source': 'AI Hub 한국 이미지(음식)',
+        'source': 'AI Hub 한국 이미지(음식)' + (' + 음식 이미지 및 영양정보 텍스트' if extra else ''),
         'trained': time.strftime('%Y-%m-%d'),
         'images': int(len(y)),
         'valAccuracy': round(float(ok.mean()), 4),
@@ -355,4 +355,4 @@ if __name__ == '__main__':
     ap.add_argument('--extra', nargs='?', const=os.path.join(WORK, 'f74', 'img'), default=None,
                     help='74번 데이터 사진 폴더도 함께 학습 (기본: tools/aihub/f74/img)')
     a = ap.parse_args()
-    download() if a.step == 'download' else train(a.zip, a.per_class, a.out)
+    download() if a.step == 'download' else train(a.zip, a.per_class, a.out, extra=a.extra)
