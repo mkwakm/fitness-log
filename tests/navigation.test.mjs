@@ -88,12 +88,15 @@ export default async function (t) {
   t.eq(await page.locator('#workoutList .set-row').count(), 0, '다시 누르면 접힘');
 
   // ── 도움말 ──
+  await page.click('#menuBtn');
   await page.click('#helpBtn');
-  t.ok(await page.locator('#helpSheet').isVisible(), '❓를 누르면 도움말이 열림');
+  t.ok(await page.locator('#helpSheet').isVisible(), '三 메뉴 → 도움말이 열림');
+  t.ok(await page.locator('#menuSheet').isHidden(), '항목을 고르면 메뉴는 닫힘');
   t.ok((await text(page, '#helpBody')).includes('사진으로 기록'), '도움말에 식단 사진 설명이 들어 있음');
   await page.keyboard.press('Escape');
   await wait(page, 100);
   t.ok(await page.locator('#helpSheet').isHidden(), 'ESC로 닫힘');
+  await page.click('#menuBtn');
   await page.click('#helpBtn');
   await page.goBack();
   await wait(page, 150);

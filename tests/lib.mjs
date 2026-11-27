@@ -141,3 +141,10 @@ export function ago(n) {
   const off = d.getTimezoneOffset() * 60000;
   return new Date(d - off).toISOString().slice(0, 10);
 }
+
+// 운동 시간 창 열기 (三 메뉴 → 운동 시간). 운동 탭의 카드에서 메뉴로 옮겼다.
+export async function openTimer(page) {
+  await page.click('#menuBtn');
+  await page.click('#timerOpen');
+  await page.waitForTimeout(100);
+}

@@ -318,7 +318,7 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('online', () => { if (sync.driveUrl) drivePush({ quiet: true }); });
 
 async function connectDrive() {
-  const url = (prompt('구글 Apps Script 웹 앱 주소를 붙여넣으세요.\n(…/exec 로 끝나는 주소 — 만드는 법은 ❓ 도움말의 "Claude 연결")', sync.driveUrl || '') || '').trim();
+  const url = (prompt('구글 Apps Script 웹 앱 주소를 붙여넣으세요.\n(…/exec 로 끝나는 주소 — 만드는 법은 三 메뉴 → 도움말의 "Claude 연결")', sync.driveUrl || '') || '').trim();
   if (!url) return;
   if (!DRIVE_URL_RE.test(url)) {
     toastSync('⚠️ 주소 모양이 달라요. https://script.google.com/macros/s/…/exec 이어야 해요.');

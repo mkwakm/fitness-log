@@ -266,7 +266,8 @@ function fmtDate(str) {
 function applyTheme() {
   const dark = state.profile.theme !== 'light';
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-  $('#themeBtn').textContent = dark ? '🌙' : '☀️';
+  $('#themeIc').textContent = dark ? '☀️' : '🌙';                 // 메뉴에는 "누르면 바뀌는 쪽"을 적는다
+  $('#themeTx').textContent = dark ? '밝은 화면으로' : '어두운 화면으로';
   $('#themeColor').content = dark ? '#15191b' : '#f4f6f5';
 }
 
@@ -724,12 +725,6 @@ function setsText(w) {
   // 드롭세트는 "60kg×10↘50×8↘40×6"처럼 한 세트로 이어 쓴다
   return w.sets.map((s, i) => (s.warmup ? 'W' : '') + [one(s, i === 0), ...dropsOf(s).map((d) => one(d, false))].join('↘')).join(', ');
 }
-// 운동이 있는 가장 최근 이전 날짜 (루틴 불러오기용)
-function lastWorkoutDate(before = currentDate) {
-  return Object.keys(state.days)
-    .filter((d) => d < before && state.days[d].workouts.length)
-    .sort().reverse()[0] || null;
-}
 
 function dayBurn(date) {
   const d = state.days[date];
@@ -903,24 +898,103 @@ function renderFocusBtn() {
   const left = q.filter((x) => !x.s.done).length;
   btn.innerHTML = left ? `🎯 집중 모드로 운동하기 <span>남은 ${left}세트</span>` : '🎯 집중 모드 <span>오늘 세트를 다 했어요</span>';
 }
+// 운동 시간은 三 메뉴의 "운동 시간" 창에서 잰다(운동 탭에 카드로 두니 자리만 먹었다 — 사용자 요구).
+// 창을 닫아도 계속 재고, 도는 동안은 三 버튼에 점을 찍는다(10/12처럼 끄는 걸 잊지 않게).
+function sessionSeconds(d = state.days[currentDate]) {
+  const done = (Number(d?.sessionMin) || 0) * 60;
+  const live = Number(d?.sessionStart) > 0 ? Math.max(0, Math.floor((Date.now() - d.sessionStart) / 1000)) : 0;
+  return done + live;
+}
+function clockText(sec) {
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
 function renderSession() {
   const d = state.days[currentDate];
-  const done = Number(d?.sessionMin) || 0;
   const running = Number(d?.sessionStart) > 0;
-  const live = running ? Math.floor((Date.now() - d.sessionStart) / 60000) : 0;
-  const total = done + live;
-
-  $('#sessionBtn').textContent = running ? '⏹ 운동 끝내기' : '▶️ 운동 시작';
-  // 운동이 있으면 집중 모드 버튼이 주인공이다 (그걸 누르면 시간도 같이 잰다). 초록 버튼 둘이 겹치지 않게.
-  $('#sessionBtn').classList.toggle('primary', !running && !day().workouts.length);
-  $('#sessionBtn').classList.toggle('running', running);
-  $('#sessionText').innerHTML = running
-    ? `진행 중 · ${total}분${wakeLock ? ' · <span class="tip">🔆 화면 안 꺼짐</span>' : ''}`
-    : (total ? `오늘 ${total}분 운동` : '눌러서 시간을 재요');
+  const total = Math.floor(sessionSeconds(d) / 60);
+  $('#menuDot').hidden = !running;
+  $('#menuTimerText').textContent = running ? `재는 중 · ${total}분` : (total ? `${fmtDate(currentDate)} ${total}분` : '');
+  renderTimer();
 
   clearInterval(sessionTicker);
   if (running) sessionTicker = setInterval(renderSession, 20000);
   else if (wakeLock && !sessionOn()) keepScreenOn(false);
+}
+
+// 시계: 바깥 호 = 한 시간 중 몇 분째, 바늘 = 초. 읽는 건 아래 숫자로 (시계는 한눈에 "돌고 있다"를 보여 주는 용도)
+let timerTick = null;
+function buildDial() {
+  const svg = $('#timerDial');
+  if (svg.childElementCount) return;
+  const ticks = Array.from({ length: 60 }, (_, i) => {
+    const major = i % 5 === 0;
+    return `<line class="${major ? 'dial-tick major' : 'dial-tick'}" x1="120" y1="${major ? 24 : 28}" x2="120" y2="34" transform="rotate(${i * 6} 120 120)"/>`;
+  }).join('');
+  const nums = [[0, '60'], [15, '15'], [30, '30'], [45, '45']].map(([m, t]) => {
+    const a = (m * 6 - 90) * Math.PI / 180;
+    return `<text class="dial-num" x="${(120 + 70 * Math.cos(a)).toFixed(1)}" y="${(120 + 70 * Math.sin(a)).toFixed(1)}">${t}</text>`;
+  }).join('');
+  svg.innerHTML = `<circle class="dial-face" cx="120" cy="120" r="112"/>
+    <circle class="dial-track" cx="120" cy="120" r="104"/>
+    <circle class="dial-arc" id="dialArc" cx="120" cy="120" r="104" pathLength="60" stroke-dasharray="0 60" transform="rotate(-90 120 120)"/>
+    ${ticks}${nums}
+    <g id="dialHand"><line class="dial-hand" x1="120" y1="136" x2="120" y2="40"/></g>
+    <circle class="dial-pin" cx="120" cy="120" r="7"/><circle class="dial-pin-in" cx="120" cy="120" r="2.5"/>`;
+}
+function renderTimer() {
+  if ($('#timerSheet').hidden) return;
+  buildDial();
+  const d = state.days[currentDate];
+  const running = Number(d?.sessionStart) > 0;
+  const sec = sessionSeconds(d);
+  document.getElementById('dialHand').setAttribute('transform', `rotate(${(sec % 60) * 6} 120 120)`);
+  document.getElementById('dialArc').setAttribute('stroke-dasharray', `${((sec / 60) % 60).toFixed(2)} 60`);
+  $('#timerSheet').classList.toggle('running', running);
+  $('#timerClock').textContent = clockText(sec);
+  const btn = $('#sessionBtn');
+  btn.textContent = running ? '⏹ 운동 끝내기' : (sec ? '▶️ 이어서 재기' : '▶️ 운동 시작');
+  btn.classList.toggle('primary', !running);
+  btn.classList.toggle('running', running);
+  const when = currentDate === todayStr() ? '오늘' : fmtDate(currentDate);
+  $('#sessionText').innerHTML = running
+    ? `${when} 운동 중${wakeLock ? ' · <span class="tip">🔆 화면 안 꺼짐</span>' : ''}`
+    : (sec ? `${when} ${Math.floor(sec / 60)}분 운동했어요` : '시작을 누르면 시간을 재요');
+  clearInterval(timerTick);
+  if (running) timerTick = setInterval(renderTimer, 1000);   // 창이 열려 있고 도는 동안만 1초마다
+}
+function openMenu() {
+  renderSession();
+  $('#menuSheet').hidden = false;
+  layerOpened('menu');
+}
+function closeMenu(fromPop = false) {
+  if ($('#menuSheet').hidden) return;
+  $('#menuSheet').hidden = true;
+  layerClosed('menu', fromPop);
+}
+// 메뉴에서 항목을 고르면 메뉴가 쓰던 history 칸을 그 창이 이어 쓴다.
+// 닫으며 back()을 부르고 바로 push하면 back이 나중에 돌아 새 칸을 지워 버려, 다음 뒤로가기에 앱이 꺼졌다.
+function menuTo(name) {
+  if ($('#menuSheet').hidden) return;
+  $('#menuSheet').hidden = true;
+  const at = layers.indexOf('menu');
+  if (at < 0) return;
+  layers[at] = name;                 // 뒤이어 부르는 layerOpened(name)은 이미 있으니 그냥 지나간다
+  try { history.replaceState({ layer: name }, ''); } catch { /* file:// 등 */ }
+}
+function openTimer() {
+  $('#timerSheet').hidden = false;
+  layerOpened('timer');
+  renderTimer();
+}
+function closeTimer(fromPop = false) {
+  if ($('#timerSheet').hidden) return;
+  $('#timerSheet').hidden = true;
+  clearInterval(timerTick);
+  layerClosed('timer', fromPop);
 }
 
 // ---------- 휴식 타이머 ----------
@@ -1042,7 +1116,6 @@ function render() {
   renderWorkouts();
   renderHistory();
   renderSuggestions();
-  renderRoutineBtn();
   renderSplit();
   renderPlan();
   renderRoutines();
@@ -1329,11 +1402,14 @@ function renderBurn(workouts, weight, burn) {
     const el = $(sel);
     if (document.activeElement !== el) el.value = state.profile[key];
   });
+  // 그 날 적은 체중이 없으면 마지막으로 적은 체중을 그대로 보여 준다("안 적으면 ○kg으로 계산해요" 안내 대신 — 사용자).
+  // 계산도 그 값으로 한다(bodyWeight). 한 번도 안 적었으면 빈칸.
   const wEl = $('#bodyWeight');
-  if (document.activeElement !== wEl) wEl.value = state.days[currentDate]?.weight ?? '';
-  $('#weightHint').textContent = state.days[currentDate]?.weight
-    ? ''
-    : `안 적으면 ${bodyWeight()} kg으로 계산해요.`;
+  if (document.activeElement !== wEl) {
+    const own = Number(state.days[currentDate]?.weight);
+    const ever = weightEntries().length > 0 || Number(state.profile.weight) !== DEFAULT_WEIGHT;
+    wEl.value = own > 0 ? own : (ever ? bodyWeight() : '');
+  }
 }
 
 // 최근 7일 섭취·소모. 같은 단위(kcal)라 축 하나에 두 계열을 나란히 둔다.
@@ -1493,6 +1569,8 @@ window.addEventListener('popstate', () => {
   if (ownBacks > 0) { ownBacks -= 1; return; }
   const top = layers.at(-1);
   if (top === 'help') closeHelp(true);
+  else if (top === 'menu') closeMenu(true);
+  else if (top === 'timer') closeTimer(true);
   else if (top === 'pick') closePicker(true);
   else if (top === 'plate') closePlates(true);
   else if (top === 'move') closeMove(true);
@@ -1797,7 +1875,9 @@ const HELP = [
     <br><b>🏋️ 원판</b>: 바벨 운동은 다음 세트 무게를 "한쪽 20 · 10"처럼 알려줘요. 누르면 계산기가 열리고, 바 무게와 헬스장에 있는 원판을 정할 수 있어요.
     <br><b>🔥 워밍업 자동</b>(운동 폼)이나 카드의 첫 <b>+ 워밍업</b>은 1세트 무게를 보고 워밍업을 한 번에 짜요(바벨은 빈 바 → 40% → 60% → 80%).
     <br><b>📅 날짜 옮기기</b>: 다른 날에 잘못 적었으면 카드 아래 <b>📅 날짜 옮기기</b>(슈퍼세트는 묶음째), 식단 줄의 📅, 기록 탭 달력의 <b>다른 날로 옮기기</b>(그 날 운동 전부)로 옮겨요.
-    <br>🎯 집중 모드는 지금 할 세트 하나만 크게 띄우고 완료하면 휴식·다음 세트로 저절로 넘어가요.`],
+    <br>🎯 집중 모드는 지금 할 세트 하나만 크게 띄우고 완료하면 휴식·다음 세트로 저절로 넘어가요.
+    <br>지난 운동을 통째로 가져오려면 <b>기록</b> 탭 달력에서 그 날을 누르고 <b>↩ 오늘 운동으로 불러오기</b>.
+    <br><b>⏱ 운동 시간</b>은 왼쪽 위 <b>三 메뉴</b>에 있어요. 시작하면 창을 닫아도 계속 재고, 도는 동안은 三에 점이 떠요(끝내기를 잊지 않게). 밝기 바꾸기·도움말도 거기 있어요.`],
   ['🍚 식단은 선택이에요', `식단은 안 적어도 운동 기록과 통계는 그대로 돌아가요. 적고 싶은 날만 적으세요.
     <br>가장 빠른 길은 <b>📷 사진으로 기록하기</b>예요. 이름을 비워 두고 사진을 고르면 무슨 음식인지 알아서 찾아 넣어요.
     <br>사진은 이 기기 밖으로 나가지 않아요. 처음 한 번만 AI 모델(약 50MB)을 받아요.
@@ -1806,6 +1886,7 @@ const HELP = [
   ['🔥 소모 칼로리', `운동 종류별 MET × 체중 × 운동 시간으로 낸 <b>추정치</b>예요. 시간을 안 적으면 세트당 3분으로 봐요.
     <br>MET(운동 강도)는 운동 이름으로 자동 추정해요. 안 맞으면 카드를 열어 직접 고칠 수 있고, 같은 이름의 운동에 모두 적용돼요.
     <br>하루 목표 칼로리를 정해두면 <b>목표 + 소모 − 섭취 = 남은 칼로리</b>로 알려줘요.
+    <br>체중 칸엔 마지막으로 적은 체중이 들어가 있어요. 바뀌었을 때만 고치면 그 날 체중으로 기록돼요.
     <br>단백질 목표를 비워 두면 체중 × 1.6g으로 잡아요.`],
   ['📅 기록·통계', `달력에서 날짜를 누르면 그 날 운동이 아래에 펼쳐져요. 🔍로 운동·음식·메모를 검색할 수 있어요.
     <br>부위별 밸런스와 주간 목표 세트는 <b>최근 7일</b>을 볼 때만 견줘요. 비워두면 목표 없이 세트 수만 봐요.
@@ -2892,16 +2973,6 @@ function updateExHint() {
   }
 }
 
-function renderRoutineBtn() {
-  const btn = $('#loadRoutine');
-  const date = lastWorkoutDate();
-  if (!date) { btn.hidden = true; return; }
-  const n = state.days[date].workouts.length;
-  btn.hidden = false;
-  btn.textContent = `↩ ${fmtDate(date)} 운동 ${n}종 그대로 불러오기`;
-  btn.dataset.routine = date;
-}
-
 // ---------- 루틴 ----------
 // 루틴은 "무슨 운동을 몇 세트 몇 회" 까지만 담는다. 중량은 저장하지 않고 불러올 때
 // 그 운동의 최근 기록에서 가져온다. 안 그러면 석 달 전 무게가 그대로 따라온다.
@@ -3181,24 +3252,6 @@ function renderRoutines() {
       </div>`).join('')
       : '<p class="hint">자주 하는 운동을 루틴으로 저장해두면 한 번에 불러올 수 있어요.</p>'}
     ${hasToday ? '<button id="saveRoutineBtn" class="wide-btn">💾 오늘 운동을 루틴으로 저장</button>' : ''}`;
-}
-
-// 지난 운동을 오늘로 복사한다. 완료 체크는 풀고 기록만 가져온다.
-function loadRoutine(date) {
-  const src = state.days[date];
-  if (!src || !confirm(`${fmtDate(date)} 운동 ${src.workouts.length}종을 그대로 불러올까요?`)) return;
-  const ss = ssRemap();
-  src.workouts.forEach((w) => {
-    day().workouts.push({
-      id: uid(),
-      name: w.name,
-      minutes: w.minutes,
-      ...(w.ss ? { ss: ss(w.ss) } : {}),
-      sets: w.sets.map(copySet),
-    });
-  });
-  save();
-  render();
 }
 
 function renderSuggestions() {
@@ -3756,13 +3809,20 @@ document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   if (!$('#photoView').hidden) $('#photoView').hidden = true;
   else if (layers.at(-1) === 'help') closeHelp();
+  else if (layers.at(-1) === 'menu') closeMenu();
+  else if (layers.at(-1) === 'timer') closeTimer();
   else if (layers.at(-1) === 'pick') closePicker();
   else if (layers.at(-1) === 'plate') closePlates();
   else if (layers.at(-1) === 'move') closeMove();
   else if (layers.at(-1) === 'ex') closeExSheet();
   else if (layers.at(-1) === 'focus') closeFocus();
 });
-$('#helpBtn').addEventListener('click', openHelp);
+// 三 메뉴: 항목을 고르면 메뉴는 닫고 그 창을 연다 (밝기는 바로 바뀌는 게 보이게 메뉴를 그대로 둔다)
+$('#menuBtn').addEventListener('click', openMenu);
+$('#menuSheet').addEventListener('click', (e) => { if (e.target.closest('[data-menu-close]')) closeMenu(); });
+$('#timerOpen').addEventListener('click', () => { menuTo('timer'); openTimer(); });
+$('#timerClose').addEventListener('click', () => closeTimer());
+$('#helpBtn').addEventListener('click', () => { menuTo('help'); openHelp(); });
 // 운동 고르기 (보기만 하는 창이라 저장·다시 그리기는 고른 뒤 이름 칸이 알아서 한다)
 document.addEventListener('click', (e) => {
   const b = e.target.closest('[data-ex-pick], [data-pick-tab], [data-pick-name]');
@@ -3916,9 +3976,6 @@ document.addEventListener('click', (e) => {
   } else if (t.id === 'saveRoutineBtn') {
     saveRoutine();
     return;
-  } else if (ds.routine) {
-    loadRoutine(ds.routine);
-    return;                          // loadRoutine이 알아서 저장·렌더링한다
   } else if (ds.partPick) {
     partPick = ds.partPick;
     renderPartPick();

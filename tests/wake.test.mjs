@@ -1,5 +1,5 @@
 // 운동 중 화면 꺼짐 방지 (Wake Lock). 헤드리스에선 실제로 안 붙어서 흉내 낸다.
-import { tab, text, wait } from './lib.mjs';
+import { tab, text, wait, openTimer } from './lib.mjs';
 
 export default async function (t) {
   const page = await t.open({ init: () => {
@@ -11,6 +11,7 @@ export default async function (t) {
     } } });
   } });
   await tab(page, 'workouts');
+  await openTimer(page);
   const locks = () => page.evaluate(() => window.__locks);
   t.eq(await locks(), 0, '시작 전엔 안 잡음');
   await page.click('#sessionBtn');

@@ -1,5 +1,5 @@
 // 기록하는 기본 흐름: 식단 칼로리, 세트 기록표, 완료 세트 집계, 소모 칼로리, 체중·물·세션, 되돌리기, 새로고침
-import { tab, text, wait, addWorkout } from './lib.mjs';
+import { tab, text, wait, addWorkout, openTimer } from './lib.mjs';
 
 export default async function (t) {
   const page = await t.open();
@@ -128,8 +128,9 @@ export default async function (t) {
   t.eq(await page.evaluate(() => day().water), 2, '물 +3 −1 = 2잔');
   t.eq(await page.locator('.cup.on').count(), 2, '채워진 잔 2개');
 
-  // ── 운동 전체 시간 ──
+  // ── 운동 전체 시간 (三 메뉴 → 운동 시간) ──
   await tab(page, 'workouts');
+  await openTimer(page);
   await page.click('#sessionBtn');
   t.ok(await page.evaluate(() => sessionOn()), '시작 누르면 진행 중');
   await page.evaluate(() => { day().sessionStart = Date.now() - 47 * 60000; });
@@ -158,6 +159,8 @@ export default async function (t) {
     safeDay({ sessionStart: Date.now() - 30 * 3600000 }).sessionStart > 0, safeDay({ sessionStart: Date.now() - 3600000 }).sessionStart > 0]),
     [null, 90, false, true], '이미 쌓인 말이 안 되는 운동 시간(하루 넘음)은 읽을 때 버림');
   await page.evaluate(() => { day().workouts = window.keptWorkouts; day().sessionMin = 57; save(); render(); });
+  await page.keyboard.press('Escape');
+  await wait(page, 100);
 
   // ── 휴식 타이머는 벽시계 기준 ──
   const left = await page.evaluate(() => { startRest(90); restEndAt = Date.now() + 5000; return restLeft(); });
@@ -175,8 +178,12 @@ export default async function (t) {
 
   // ── 테마 ──
   t.eq(await page.getAttribute('html', 'data-theme'), 'dark', '기본은 어두운 테마');
+  await page.click('#menuBtn');
+  t.eq(await text(page, '#themeBtn'), '☀️밝은 화면으로', '메뉴엔 누르면 바뀌는 쪽을 적음');
   await page.click('#themeBtn');
-  t.eq(await page.getAttribute('html', 'data-theme'), 'light', '버튼으로 밝은 테마');
+  t.eq(await page.getAttribute('html', 'data-theme'), 'light', '三 메뉴에서 밝은 테마');
+  t.eq(await text(page, '#themeBtn'), '🌙어두운 화면으로', '바뀐 뒤엔 반대쪽');
+  await page.keyboard.press('Escape');
 
   // ── 새로고침 뒤에도 전부 남나 ──
   await page.evaluate(() => flushSave?.());
