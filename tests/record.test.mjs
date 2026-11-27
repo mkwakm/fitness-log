@@ -139,6 +139,25 @@ export default async function (t) {
   await page.evaluate(() => { day().sessionStart = Date.now() - 10 * 60000; });
   await page.click('#sessionBtn');
   t.eq(await page.evaluate(() => day().sessionMin), 57, '한 번 더 하면 누적 57분');
+  // 끝내기를 잊었다가 한참 뒤에 누르면: 그 날 마지막 세트까지만, 세트 기록도 없으면 안 더함
+  await page.click('#sessionBtn');
+  await page.evaluate(() => {
+    const d = day();
+    window.keptWorkouts = d.workouts;
+    d.sessionStart = Date.now() - 46 * 86400000;
+    d.workouts = [{ id: uid(), name: '스쿼트', sets: [{ weight: 60, reps: 5, done: true, doneAt: d.sessionStart + 50 * 60000 }] }];
+  });
+  await page.click('#sessionBtn');
+  t.eq(await page.evaluate(() => day().sessionMin), 107, '끝내기를 잊었으면 마지막 세트까지만 (57 + 50분)');
+  await page.click('#sessionBtn');
+  await page.evaluate(() => { day().workouts = []; day().sessionStart = Date.now() - 9 * 3600000; });
+  await page.click('#sessionBtn');
+  t.eq(await page.evaluate(() => day().sessionMin), 107, '세트 기록도 없으면 잊은 시간은 안 더함');
+  t.ok(!(await page.evaluate(() => sessionOn())), '그래도 타이머는 꺼짐');
+  t.eq(await page.evaluate(() => [safeDay({ sessionMin: 66399 }).sessionMin, safeDay({ sessionMin: 90 }).sessionMin,
+    safeDay({ sessionStart: Date.now() - 30 * 3600000 }).sessionStart > 0, safeDay({ sessionStart: Date.now() - 3600000 }).sessionStart > 0]),
+    [null, 90, false, true], '이미 쌓인 말이 안 되는 운동 시간(하루 넘음)은 읽을 때 버림');
+  await page.evaluate(() => { day().workouts = window.keptWorkouts; day().sessionMin = 57; save(); render(); });
 
   // ── 휴식 타이머는 벽시계 기준 ──
   const left = await page.evaluate(() => { startRest(90); restEndAt = Date.now() + 5000; return restLeft(); });

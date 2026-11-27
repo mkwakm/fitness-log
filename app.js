@@ -873,11 +873,19 @@ let sessionTicker = null;
 function sessionOn() {
   return Number(day().sessionStart) > 0;
 }
+// 운동 한 번이 이보다 길면 "끝내기"를 잊은 것으로 본다. 실제로 10/12에 시작만 누르고 46일 뒤에 끝내서 66,399분이 쌓였다.
+const MAX_SESSION_MIN = 4 * 60;
 function toggleSession() {
   const d = day();
   if (sessionOn()) {
-    const mins = Math.max(1, Math.round((Date.now() - d.sessionStart) / 60000));
-    d.sessionMin = (Number(d.sessionMin) || 0) + mins;
+    let mins = Math.max(1, Math.round((Date.now() - d.sessionStart) / 60000));
+    if (mins > MAX_SESSION_MIN) {
+      // 잊었으면 그 날 마지막으로 끝낸 세트까지만 센다. 그것도 없거나 이상하면 안 더한다(시간은 세트 수로 추정된다).
+      const lastSet = Math.max(0, ...d.workouts.flatMap((w) => w.sets.map((s) => Number(s.doneAt) || 0)));
+      const upto = Math.round((lastSet - d.sessionStart) / 60000);
+      mins = upto > 0 && upto <= MAX_SESSION_MIN ? upto : 0;
+    }
+    if (mins) d.sessionMin = (Number(d.sessionMin) || 0) + mins;
     d.sessionStart = null;
     keepScreenOn(false);
   } else {

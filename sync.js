@@ -48,6 +48,9 @@ function safeDay(d) {
     workouts: Array.isArray(d.workouts) ? d.workouts.filter((x) => x && x.id && Array.isArray(x.sets)) : [],
     note: typeof d.note === 'string' ? d.note : '',
     ...(Array.isArray(d.deleted) && d.deleted.length ? { deleted: d.deleted } : {}),
+    // 운동 시간: 하루(1,440분)를 넘는 값, 하루 넘게 켜져 있던 타이머는 "끝내기"를 잊은 흔적이라 버린다
+    ...(Number(d.sessionMin) > 1440 ? { sessionMin: null } : {}),
+    ...(Number(d.sessionStart) > 0 && Date.now() - Number(d.sessionStart) > 86400000 ? { sessionStart: null } : {}),
   };
 }
 

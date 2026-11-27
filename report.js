@@ -58,15 +58,19 @@ function rpExercises(dates) {
   for (const date of dates) {
     for (const w of state.days[date].workouts) {
       const key = metKey(w.name);
-      if (!ex.has(key)) ex.set(key, { name: w.name, part: partOf(w.name), days: [], sets: 0, best: null, bestDate: null, records: new Set() });
+      if (!ex.has(key)) ex.set(key, { name: w.name, part: partOf(w.name), days: [], sets: 0, best: null, bestDate: null, before: null, records: new Set() });
       const e = ex.get(key);
       e.name = w.name;                       // 최근에 쓴 이름으로 부른다
-      if (e.days.at(-1)?.date !== date) e.days.push({ date, ws: [] });
+      if (e.days.at(-1)?.date !== date) {
+        e.days.push({ date, ws: [] });
+        e.before = e.best;                   // 그 전 날짜까지의 최고 — 같은 날 앞 세트를 넘긴 건 신기록이 아니다
+      }
       e.days.at(-1).ws.push(w);
       e.sets += countedSets(w).length;
       const top = rpTop(w);
+      // 예전 기록을 넘긴 날만 (처음 해 본 날은 비교할 게 없다)
+      if (e.before && rpBetter(top, e.before)) e.records.add(date);
       if (rpBetter(top, e.best)) {
-        if (e.best) e.records.add(date);     // 예전 기록을 넘긴 날만 (처음 해 본 날은 비교할 게 없다)
         e.best = top;
         e.bestDate = date;
       }
