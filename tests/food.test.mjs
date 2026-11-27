@@ -39,6 +39,13 @@ export default async function (t) {
   for (const n of dishes) { const e = await est(n, ''); if (!e || e.key !== n || e.generic) miss2.push(n); }
   t.eq(miss2, [], `흔한 외식 ${dishes.length}가지가 제 이름으로 있음`);
 
+  // ── 사진 인식이 아는데 식약처 표엔 없던 음식 (2026-11-28에 ①에 더했다) ──
+  const added = ['과메기', '떡꼬치', '멍게', '산낙지', '수정과', '젓갈', '편육', '한과', '쥐치채'];
+  const miss3 = [];
+  for (const n of added) { const e = await est(n, '1인분'); if (!e || e.key !== n || e.generic) miss3.push(n); }
+  t.eq(miss3, [], `표에 없던 음식 ${added.length}가지가 제 이름으로 들어감 (분류기 이름은 모두 칼로리가 나와야 한다)`);
+  t.ok((await est('돼지머리편육', '1인분'))?.key === '편육', '"편육"으로 끝나는 이름도 따라 잡힌다');
+
   // ── 이름 끝으로 찾기 ──
   t.eq((await est('엄마표부대찌개', '1그릇'))?.key, '부대찌개', '"엄마표부대찌개" → 부대찌개');
   t.eq((await est('할머니손맛김치', '50g'))?.key, '김치', '"○○김치" → 김치');

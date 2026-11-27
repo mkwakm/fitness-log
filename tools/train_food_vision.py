@@ -42,9 +42,20 @@ LABEL_MAP = {
     '북엇국': '북어국', '소세지볶음': '소시지볶음', '시래기국': '시래기 된장국',
     # 두 음식을 한 폴더에 묶어 두었다 (밑줄 이름이 화면에 그대로 뜬다)
     '곰탕_설렁탕': '설렁탕', '떡국_만두국': '떡국',
-    # 표에 없는 음식
-    '과메기': None, '닭계장': None, '떡꼬치': None, '멍게': None, '산낙지': None,
-    '수정과': None, '젓갈': None, '편육': None, '한과': None,
+    # 표에 이름이 다르게 있다 (예전엔 None으로 뺐던 것 — 2026-11-28에 food-db.js ①에 9종을 더했다)
+    '닭계장': '닭고기육개장',
+}
+
+# 74번(400종) 음식 이름 → food-db.js 이름. 없으면 이름 그대로 쓴다. None이면 뺀다.
+# 400종 중 381종은 표에 그대로 있고, 아래 18종만 표에서 다른 이름으로 적혀 있다
+# (쥐치채는 표에 아예 없어서 food-db.js ①에 더했다).
+FOOD74_MAP = {
+    '도토리묵': '도토리묵무침', '무말랭이': '무말랭이무침', '고들빼기': '고들빼기김치',
+    '무피클': '단무지', '오이피클': '오이지', '오징어젓갈': '오징어젓', '육사시미': '육회',
+    '메밀전병': '메밀전', '찰떡': '인절미', '깨강정': '유과', '닭개장': '닭고기육개장',
+    '참꼬막': '꼬막찜', '닭꼬치': '닭꼬치구이', '돼지갈비': '돼지갈비구이',
+    '양념왕갈비': '소갈비구이', '치킨윙': '후라이드치킨', '동그랑땡': '완자전',
+    '호박부침개': '애호박부침개',
 }
 
 
@@ -203,27 +214,71 @@ def unit(X, mean):
     return Z / np.linalg.norm(Z, axis=1, keepdims=True)
 
 
-def train(zip_path, per_class, out=OUT, seed=0):
+def add_f74(by_label, src, extra):
+    """tools/fetch_food74.py가 담아 둔 400종 사진을 같은 바구니에 넣는다 (폴더 이름이 음식 코드)."""
+    table_path = os.path.join(os.path.dirname(extra.rstrip('/\\')), 'foods74.json')
+    with open(table_path, encoding='utf-8') as f:
+        table = json.load(f)
+    added = set()
+    for code in sorted(os.listdir(extra)):
+        info = table.get(code)
+        if not info:
+            continue
+        label = FOOD74_MAP.get(info['name'], info['name'])
+        if not label:
+            continue
+        folder = os.path.join(extra, code)
+        for fn in sorted(os.listdir(folder)):
+            key = 'f74/' + code + '/' + fn                 # 캐시 키 (zip 이름과 안 겹치게)
+            by_label[label].append(key)
+            src[key] = os.path.join(folder, fn)             # 글자면 파일에서 읽는다
+        added.add(label)
+    log(f'74번 데이터에서 음식 {len(added)}가지를 더 넣었어요')
+
+
+def cached_keys(cache_path):
+    """숫자로 바꿔 둔 사진 이름들. zip을 지웠어도 이것만 있으면 다시 학습할 수 있다."""
     import numpy as np
-    if not os.path.exists(zip_path):
-        sys.exit(f'{zip_path}가 없어요. 먼저 download를 하거나 --zip으로 받은 파일을 알려 주세요.')
-    zf = zipfile.ZipFile(zip_path)
-    # kfood.zip은 분류별 zip(구이.zip, 국.zip …)을 압축 없이 한 번 더 담고 있다. 16GB를 또 풀지 않고 그 자리에서 연다
-    zips = [zf] + [zipfile.ZipFile(zf.open(n)) for n in zf.namelist() if n.lower().endswith('.zip')]
+    if not os.path.exists(cache_path):
+        return []
+    with np.load(cache_path, allow_pickle=False) as z:
+        return [str(k) for k in z['keys']]
+
+
+def train(zip_path, per_class, out=OUT, seed=0, extra=None):
+    import numpy as np
     by_label, src = defaultdict(list), {}
-    for z in zips:
-        for name in z.namelist():
-            if name.lower().endswith(IMG_EXT) and '/' in name:
-                label = name.rstrip('/').split('/')[-2].strip()
-                label = LABEL_MAP.get(label, label)
-                if label:
-                    by_label[label].append(name)
-                    src[name] = z
+    if os.path.exists(zip_path):
+        zf = zipfile.ZipFile(zip_path)
+        # kfood.zip은 분류별 zip(구이.zip, 국.zip …)을 압축 없이 한 번 더 담고 있다. 16GB를 또 풀지 않고 그 자리에서 연다
+        zips = [zf] + [zipfile.ZipFile(zf.open(n)) for n in zf.namelist() if n.lower().endswith('.zip')]
+        for z in zips:
+            for name in z.namelist():
+                if name.lower().endswith(IMG_EXT) and '/' in name:
+                    label = name.rstrip('/').split('/')[-2].strip()
+                    label = LABEL_MAP.get(label, label)
+                    if label:
+                        by_label[label].append(name)
+                        src[name] = z
+    else:
+        # zip이 없으면 캐시(kfood-emb.npz)에 남은 이름으로 되살린다. 사진 폴더 이름이 곧 음식 이름이라
+        # 16GB를 다시 받지 않아도 된다. 새 사진을 더 쓰려면 그때 다시 받으면 된다.
+        keys = [k for k in cached_keys(os.path.join(WORK, 'kfood-emb.npz')) if not k.startswith('f74/')]
+        if not keys and not extra:
+            sys.exit(f'{zip_path}도 캐시도 없어요. 먼저 download를 하거나 --zip으로 받은 파일을 알려 주세요.')
+        for name in keys:
+            label = LABEL_MAP.get(name.rstrip('/').split('/')[-2].strip(), name.rstrip('/').split('/')[-2].strip())
+            if label:
+                by_label[label].append(name)
+                src[name] = None                     # 캐시에만 있다 (다시 읽을 일이 없다)
+        log(f'kfood.zip이 없어 캐시에 저장된 사진 {len(keys)}장으로 학습해요')
+    if extra:
+        add_f74(by_label, src, extra)
     least = min(20, per_class)
     labels = sorted(l for l, v in by_label.items() if len(v) >= least)
     log(f'음식 {len(labels)}가지 (사진 {least}장 미만은 뺌)')
     if not labels:
-        sys.exit('zip 안에서 음식 폴더를 못 찾았어요: ' + ', '.join(zf.namelist()[:5]))
+        sys.exit(f'사진이 든 음식 폴더를 못 찾았어요 (사진 {least}장 이상인 음식이 없음).')
     rnd = random.Random(seed)
     items, val = [], set()
     for l in labels:
@@ -233,7 +288,18 @@ def train(zip_path, per_class, out=OUT, seed=0):
         val.update(names[:max(5, len(names) // 10)])          # 10%는 시험용으로 남긴다
         items += [((l, n), n) for n in names]
     sess = load_model()
-    vecs = embed_all(sess, [(n, (lambda n=n: src[n].read(n))) for _, n in items], os.path.join(WORK, 'kfood-emb.npz'))
+    # 두 데이터는 캐시를 따로 둔다 (한쪽만 다시 받아도 나머지는 그대로 쓴다)
+    def loader(n):
+        s = src[n]
+        if s is None:        # 캐시에만 있는 사진 — embed_all이 부를 일이 없다 (부르면 그게 버그)
+            return lambda: (_ for _ in ()).throw(RuntimeError(f'{n}: 원본이 없어요 (kfood.zip을 다시 받아야 합니다)'))
+        return (lambda: open(s, 'rb').read()) if isinstance(s, str) else (lambda: s.read(n))
+    vecs = {}
+    for cache, names in (('kfood-emb.npz', [n for _, n in items if not isinstance(src[n], str)]),
+                         ('f74-emb.npz', [n for _, n in items if isinstance(src[n], str)])):
+        if names:
+            log(f'── {cache}: 사진 {len(names)}장 ──')
+            vecs.update(embed_all(sess, [(n, loader(n)) for n in names], os.path.join(WORK, cache)))
     rows = [(l, n) for (l, n), _ in items if n in vecs]
     X = np.stack([vecs[n] for _, n in rows])
     y = np.array([labels.index(l) for l, _ in rows])
@@ -286,5 +352,7 @@ if __name__ == '__main__':
     ap.add_argument('--zip', default=os.path.join(WORK, 'kfood.zip'), help='받아 둔 kfood.zip 경로')
     ap.add_argument('--per-class', type=int, default=300, help='음식마다 쓸 사진 수 (많을수록 정확하지만 오래 걸림)')
     ap.add_argument('--out', default=OUT, help='결과 파일 (기본: 저장소의 food-vision.json)')
+    ap.add_argument('--extra', nargs='?', const=os.path.join(WORK, 'f74', 'img'), default=None,
+                    help='74번 데이터 사진 폴더도 함께 학습 (기본: tools/aihub/f74/img)')
     a = ap.parse_args()
     download() if a.step == 'download' else train(a.zip, a.per_class, a.out)
