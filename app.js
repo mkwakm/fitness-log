@@ -267,7 +267,7 @@ function applyTheme() {
   const dark = state.profile.theme !== 'light';
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   $('#themeIc').textContent = dark ? '☀️' : '🌙';                 // 메뉴에는 "누르면 바뀌는 쪽"을 적는다
-  $('#themeTx').textContent = dark ? '밝은 화면으로' : '어두운 화면으로';
+  $('#themeTx').textContent = dark ? '밝게' : '어둡게';   // 한 단어로 (사용자 요구)
   $('#themeColor').content = dark ? '#15191b' : '#f4f6f5';
 }
 
