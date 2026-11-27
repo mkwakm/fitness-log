@@ -23,7 +23,7 @@ export default async function (t) {
 
   // ── 체중·1RM 추이 (三 메뉴 창 안에 있어도 기록 탭과 같이 그려 둔다) ──
   t.ok(await page.locator('#weightChart circle').count() >= 7, '체중 점이 7개 이상 (7일 보기)');
-  t.ok(await page.locator('#liftChart circle').count() >= 2, '1RM 추이 점');
+  t.ok(await page.locator('#liftChart circle').count() >= 2, '1RM 그래프 점');
   const ticks = await page.locator('#liftChart text.axis').allTextContents();
   t.ok(ticks.every((s) => !/\.\d{2,}/.test(s)), `축 눈금이 다듬어짐 (${ticks.slice(0, 3).join(', ')})`);
 

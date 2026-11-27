@@ -85,7 +85,8 @@ export default async function (t) {
   t.ok((await text(page, '#exSheetBody')).includes(`${stats.days}번 함`), `한 날 수 (${stats.days})`);
   t.ok((await text(page, '.sheet-body .tiles')).includes(String(stats.sets)), `총 세트 (${stats.sets})`);
   t.ok((await text(page, '#exSheetBody')).includes('발 고정') && (await text(page, '#exSheetBody')).includes('와이드그립'), '메모 모음');
-  t.ok(await page.locator('#exSheetBody .chart').count() === 1, '1RM 추이 그래프');
+  t.ok(await page.locator('#exSheetBody .chart').count() === 1, '1RM 그래프');
+  t.ok((await text(page, '#exSheetBody')).includes('1RM 그래프') && !(await text(page, '#exSheetBody')).includes('추이'), '제목도 "추이" 대신 "그래프"');
   t.ok(await page.evaluate(() => document.body.classList.contains('sheet-open')), '뒤 화면 스크롤 잠금');
 
   // ── 닫기: ESC / ✕ / 뒤로가기, history가 쌓이지 않음 ──

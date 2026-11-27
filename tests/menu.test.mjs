@@ -15,7 +15,7 @@ export default async function (t) {
   await page.click('#menuBtn');
   t.ok(await page.locator('#menuSheet').isVisible(), '三을 누르면 메뉴');
   t.eq(await page.evaluate(() => [...document.querySelectorAll('.drawer-item:not([hidden]) .drawer-tx')].map((e) => e.firstChild.textContent.trim())),
-    ['운동 시간', '체중 추이', '1RM 추이', '동기화·백업', 'Theme', '도움말'], '메뉴 항목');
+    ['운동 시간', '체중 그래프', '1RM 그래프', '동기화·백업', 'Theme', '도움말'], '메뉴 항목');
   t.ok(await page.locator('#installBtn').isHidden(), '설치할 수 없으면 "홈 화면에 설치"는 숨김');
   const box = await page.locator('.drawer-item').first().boundingBox();
   t.ok(box.height >= 44, `메뉴 항목은 누르기 쉬운 높이 (${box.height}px)`);
@@ -93,7 +93,9 @@ export default async function (t) {
   await tab(page, 'history');
   t.eq(await page.locator('#history #weightChart, #history #liftChart, #history #syncCard, #history .backup, #history #installBtn').count(), 0,
     '기록 탭엔 체중·1RM·동기화·백업·설치가 없음');
-  t.eq(await page.evaluate(() => [...document.querySelectorAll('#history > .card')].at(-1).id), 'volCard', '기록 탭은 부위별 볼륨 추이로 끝남');
+  t.eq(await page.evaluate(() => [...document.querySelectorAll('#history > .card')].at(-1).id), 'volCard', '기록 탭은 부위별 볼륨 그래프로 끝남');
+  t.ok(!(await page.evaluate(() => [...document.querySelectorAll('#history, #menuSheet, #weightTitle, #liftTitle')].map((e) => e.textContent).join('') + HELP.flat().join(''))).includes('추이'),
+    '"추이" 대신 "그래프" (사용자 요청)');
 
   // 체중 추이
   await page.click('#menuBtn');
@@ -101,7 +103,7 @@ export default async function (t) {
   t.ok((await text(page, '#dataOpen')).includes('아직 사본 없음'), '메뉴에 마지막 사본');
   await page.click('#weightOpen');
   await wait(page, 80);
-  t.ok(await page.locator('#weightSheet').isVisible() && await page.locator('#menuSheet').isHidden(), '메뉴 → 체중 추이 창');
+  t.ok(await page.locator('#weightSheet').isVisible() && await page.locator('#menuSheet').isHidden(), '메뉴 → 체중 그래프 창');
   t.eq(await page.locator('#weightChart circle').count(), 6, '창 안에 체중 그래프 (6번)');
   await page.click('#weightSheet [data-range="30"]');
   t.eq(await page.evaluate(() => range), 30, '창에서 기간을 바꿈');

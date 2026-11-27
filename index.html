@@ -220,7 +220,7 @@
 
       <div class="card" id="volCard" hidden>
         <div class="card-head">
-          <h3>부위별 볼륨 추이</h3>
+          <h3>부위별 볼륨 그래프</h3>
           <select id="volPick"></select>
         </div>
         <div id="volChart"></div>
@@ -235,7 +235,7 @@
        1RM 창에서 "자세히"를 눌렀을 때 상세가 위에 뜬다(같은 z-index면 뒤에 있는 게 위) -->
   <div id="weightSheet" class="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="weightTitle">
     <div class="sheet-head">
-      <h2 id="weightTitle">체중 추이</h2>
+      <h2 id="weightTitle">체중 그래프</h2>
       <button class="del" id="weightClose" aria-label="닫기">✕</button>
     </div>
     <div class="sheet-body">
@@ -246,7 +246,7 @@
 
   <div id="liftSheet" class="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="liftTitle">
     <div class="sheet-head">
-      <h2 id="liftTitle">운동별 1RM 추이</h2>
+      <h2 id="liftTitle">운동별 1RM 그래프</h2>
       <button class="del" id="liftClose" aria-label="닫기">✕</button>
     </div>
     <div class="sheet-body">
@@ -336,8 +336,8 @@
     <nav class="drawer-panel" role="dialog" aria-modal="true" aria-label="메뉴">
       <div class="drawer-head"><strong>메뉴</strong><button class="del" data-menu-close aria-label="메뉴 닫기">✕</button></div>
       <button class="drawer-item" id="timerOpen"><span class="drawer-ic"><svg class="ic" aria-hidden="true"><use href="#i-timer"/></svg></span><span class="drawer-tx">운동 시간<small id="menuTimerText"></small></span></button>
-      <button class="drawer-item" id="weightOpen"><span class="drawer-ic"><svg class="ic" aria-hidden="true"><use href="#i-scale"/></svg></span><span class="drawer-tx">체중 추이<small id="menuWeightText"></small></span></button>
-      <button class="drawer-item" id="liftOpen"><span class="drawer-ic"><svg class="ic" aria-hidden="true"><use href="#i-trend"/></svg></span><span class="drawer-tx">1RM 추이</span></button>
+      <button class="drawer-item" id="weightOpen"><span class="drawer-ic"><svg class="ic" aria-hidden="true"><use href="#i-scale"/></svg></span><span class="drawer-tx">체중 그래프<small id="menuWeightText"></small></span></button>
+      <button class="drawer-item" id="liftOpen"><span class="drawer-ic"><svg class="ic" aria-hidden="true"><use href="#i-trend"/></svg></span><span class="drawer-tx">1RM 그래프</span></button>
       <button class="drawer-item" id="dataOpen"><span class="drawer-ic"><svg class="ic" aria-hidden="true"><use href="#i-cloud"/></svg></span><span class="drawer-tx">동기화·백업<small id="menuDataText"></small></span></button>
       <button class="drawer-item" id="installBtn" hidden><span class="drawer-ic"><svg class="ic" aria-hidden="true"><use href="#i-install"/></svg></span><span class="drawer-tx">홈 화면에 설치</span></button>
       <div class="drawer-sep" role="separator"></div>
