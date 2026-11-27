@@ -97,19 +97,54 @@ export default async function (t) {
   t.ok((await text(page, '#mealHint')).includes('내가 등록한'), '내가 등록한 값이라고 표시');
   await page.evaluate(() => { delete state.profile.foods['도가니탕']; save(); });
 
-  // ── 자동완성 ──
-  await page.fill('#foodName', '');
-  const opts = await page.locator('#foodSuggestions option').evaluateAll((o) => o.map((x) => x.value));
-  t.ok(opts.length > 1200, `자동완성 ${opts.length}개`);
-  t.ok(opts.includes('도가니탕') && opts.includes('부대찌개'), '도가니탕·부대찌개가 자동완성에');
-  t.ok(!opts.includes('찌개'), '끝말 평균("찌개")은 자동완성에 안 띄움');
-  const before = await page.evaluate(() => $('#foodSuggestions').innerHTML.length);
-  const kept = await page.evaluate(() => { const o = $('#foodSuggestions').firstElementChild; render(); render(); return o === $('#foodSuggestions').firstElementChild; });
-  t.ok(kept, '먹은 음식이 그대로면 화면을 다시 그려도 1,300개 목록을 새로 만들지 않음');
-  await page.evaluate(() => { day().meals.push({ id: 'z', type: '점심', name: '엄마표부대찌개', amount: '1그릇', kcal: 500 }); save(); render(); });
-  const first = await page.locator('#foodSuggestions option').first().getAttribute('value');
-  t.eq(first, '엄마표부대찌개', '내가 먹은 음식이 맨 앞');
-  t.ok(await page.evaluate((b) => $('#foodSuggestions').innerHTML.length > b, before), '먹은 음식이 바뀌면 목록을 다시 만듦');
+  // ── 자동완성: 이름 칸 아래에 후보 ("자주 먹는 음식" 칩 대신) ──
+  await page.evaluate(() => {
+    day().meals.push({ id: 'g1', type: '점심', name: '가자미구이', amount: '1토막', kcal: 262, protein: 30 },
+      { id: 'g2', type: '저녁', name: '가자미구이', amount: '1토막', kcal: 262 },
+      { id: 'z', type: '점심', name: '엄마표부대찌개', amount: '1그릇', kcal: 500 });
+    save(); render();
+  });
+  t.eq(await page.locator('#favFoods, #loadMeals').count(), 0, '"자주 먹는 음식" 칸·"그대로 불러오기" 버튼 없음');
+  const sug = () => page.locator('#foodSuggest .suggest-item span').allTextContents();
+  const typeIn = async (v) => { await page.fill('#foodName', v); await page.dispatchEvent('#foodName', 'input'); };
+  await page.fill('#foodAmount', '');
+  await typeIn('');
+  await page.focus('#foodName');
+  t.ok(await page.locator('#foodSuggest').isHidden(), '빈칸이면 안 띄움');
+  await page.locator('#foodName').pressSequentially('가');
+  let list = await sug();
+  t.eq(list[0], '가자미구이', "'가'만 쳐도 자주 먹은 가자미구이가 맨 위");
+  t.ok(list.length > 1 && list.length <= 8, `후보는 8개까지 (${list.length}개)`);
+  t.ok((await text(page, '#foodSuggest .suggest-item')).includes('1토막 · 262kcal'), '먹어 본 음식은 지난번 양·칼로리');
+  const h = await page.locator('#foodSuggest .suggest-item').first().boundingBox();
+  t.ok(h.height >= 44, `후보는 누르기 쉬운 높이 (${h.height}px)`);
+  await typeIn('가ㅈ');
+  t.eq((await sug())[0], '가자미구이', "치는 중인 자음('가ㅈ')도 가자미구이");
+  await typeIn('부대');
+  t.eq((await sug()).slice(0, 2), ['엄마표부대찌개', '부대찌개'], '내가 먹은 음식이 먼저, 그다음 음식 표');
+  await typeIn('찌개');
+  t.ok(!(await sug()).includes('찌개'), '끝말 평균("찌개")은 후보에 안 띄움');
+  await typeIn('도가');
+  t.ok((await sug()).includes('도가니탕'), '안 먹어 본 음식도 표에서 (도가니탕)');
+  await typeIn('가자');
+  await page.click('#foodSuggest [data-food-pick="0"]');
+  t.eq([await page.inputValue('#foodName'), await page.inputValue('#foodAmount')], ['가자미구이', '1토막'], '누르면 이름과 지난번 양이 채워짐');
+  t.ok(Number(await page.inputValue('#foodKcal')) > 0, '칼로리도 채워짐');
+  t.ok(await page.locator('#foodSuggest').isHidden(), '고르면 목록이 닫힘');
+  t.eq(await page.evaluate(() => document.activeElement.id), 'foodAmount', '양 칸으로 넘어감 (바로 고치거나 추가)');
+  await page.fill('#foodAmount', '');
+  await page.focus('#foodName');
+  await typeIn('도가니');
+  const mealsBefore = await page.evaluate(() => day().meals.length);
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  t.eq(await page.inputValue('#foodName'), '도가니탕', '키보드 ↓ Enter로도 고름');
+  t.eq(await page.evaluate(() => day().meals.length), mealsBefore, '그 Enter로 식단이 추가되진 않음');
+  await page.focus('#foodName');
+  await typeIn('가');
+  await page.keyboard.press('Escape');
+  t.ok(await page.locator('#foodSuggest').isHidden(), 'ESC로 닫힘');
+  await page.evaluate(() => { day().meals = day().meals.filter((m) => !['g1', 'g2', 'z'].includes(m.id)); resetMealForm(); save(); render(); });
 
   // ── 파일 크기 ──
   const bytes = statSync(join(ROOT, 'food-db.js')).size;

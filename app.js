@@ -21,7 +21,9 @@ const DEFAULT_PROFILE = {
   restSec: 90,       // 세트 완료 시 시작하는 휴식 시간 (초)
   foods: {},         // 직접 등록한 음식 { 이름: { kcal100, units } }
   goal: null,        // 하루 목표 칼로리 (안 정했으면 null)
-  proteinGoal: null, // 하루 목표 단백질 g (안 정했으면 체중 × 1.6 제안)
+  proteinGoal: null, // 하루 목표 단백질 g — '직접' 모드에서만 쓴다
+  goalMode: null,    // 하루 목표 종류 'cut' | 'keep' | 'bulk' | 'custom' (안 정했으면 goal이 있으면 custom, 없으면 keep)
+  body: null,        // 목표 계산용 { sex: 'm'|'f', age, height } — 없으면 체중으로 기초대사를 어림한다
   weeklyGoal: 3,     // 주 몇 번 운동할지
   waterGoal: 8,      // 하루 물 몇 잔
   routines: {},      // 저장해둔 루틴 { 이름: [{name, reps, sets, minutes}] }
@@ -209,7 +211,6 @@ let state = load();
 let currentDate = todayStr();
 let kcalTouched = false;  // 칼로리를 직접 고쳤으면 자동 계산으로 덮어쓰지 않는다
 let pendingPhoto = null;  // 식단 폼에서 고른 사진 id (아직 기록에 안 붙은 상태)
-let favCache = [];        // 자주 먹는 음식 칩이 가리키는 목록
 let range = 7;            // 통계 기간 (일)
 let liftPick = '';        // 중량 추이로 보고 있는 운동
 let volPart = '';         // 볼륨 추이로 보고 있는 부위
@@ -404,6 +405,7 @@ function resetMealForm() {
   $('#mealPhoto').value = '';
   pendingPhoto = null;
   kcalTouched = false;
+  hideFoodSuggest();
 }
 
 // ---------- 소모 칼로리 ----------
@@ -796,10 +798,47 @@ function dayIntake(d) {
 function dayProtein(d) {
   return Math.round(d.meals.reduce((s, m) => s + nonNeg(m.protein), 0));
 }
-// 목표를 안 정했으면 체중 1kg당 1.6g을 기준으로 제안한다 (근력 운동 시 흔히 쓰는 값)
-function proteinGoal() {
-  const g = Number(state.profile.proteinGoal);
-  return g > 0 ? g : Math.round(bodyWeight() * 1.6);
+// ---------- 하루 목표 (다이어트·유지·벌크업) ----------
+// 사용자가 목표 숫자를 직접 적는 대신 종류만 고르면 계산하게 해 달라고 했다.
+// 칼로리 목표 = 기초대사 × 1.2(운동을 뺀 하루 생활) ± 조정. 운동으로 쓴 칼로리는 그날그날 더해 준다(남은 칼로리 = 목표 + 소모 − 섭취).
+// 단백질 = 체중 × g/kg (근력 운동 하는 사람 권장 1.6~2.2g 안에서, 감량 땐 근육을 지키려고 높게).
+const GOAL_MODES = {
+  cut: { label: '다이어트', kcal: -500, protein: 2.0 },
+  keep: { label: '유지', kcal: 0, protein: 1.6 },
+  bulk: { label: '벌크업', kcal: 300, protein: 1.8 },
+  custom: { label: '직접' },
+};
+const GOAL_ACTIVITY = 1.2;
+function goalMode() {
+  const m = state.profile.goalMode;
+  if (typeof m === 'string' && Object.hasOwn(GOAL_MODES, m)) return m;
+  return Number(state.profile.goal) > 0 || Number(state.profile.proteinGoal) > 0 ? 'custom' : 'keep';   // 예전에 직접 적어 둔 값은 그대로
+}
+// 기초대사: 성별·나이·키가 있으면 Mifflin-St Jeor, 없으면 체중 × 22로 어림(보통 체격이면 몇 % 안에서 맞는다)
+function bmrInfo(date = currentDate) {
+  const w = bodyWeight(date);
+  const b = state.profile.body || {};
+  const age = Number(b.age);
+  const h = Number(b.height);
+  if ((b.sex === 'm' || b.sex === 'f') && age > 0 && h > 0) {
+    return { bmr: Math.round(10 * w + 6.25 * h - 5 * age + (b.sex === 'm' ? 5 : -161)), exact: true, w };
+  }
+  return { bmr: Math.round(w * 22), exact: false, w };
+}
+function kcalGoal(date = currentDate) {
+  const mode = goalMode();
+  if (mode === 'custom') return Number(state.profile.goal) > 0 ? Number(state.profile.goal) : 0;
+  const { bmr } = bmrInfo(date);
+  const base = bmr * GOAL_ACTIVITY + GOAL_MODES[mode].kcal;
+  return Math.round(Math.max(bmr, base) / 10) * 10;   // 기초대사보다는 안 내린다
+}
+function proteinGoal(date = currentDate) {
+  const mode = goalMode();
+  if (mode === 'custom') {
+    const g = Number(state.profile.proteinGoal);
+    return g > 0 ? g : Math.round(bodyWeight(date) * GOAL_MODES.keep.protein);
+  }
+  return Math.round(bodyWeight(date) * GOAL_MODES[mode].protein);
 }
 
 // ---------- 실행취소 ----------
@@ -1137,35 +1176,14 @@ function renderMeals() {
   const meals = d.meals;
   const total = dayIntake(d);
   const burn = dayBurn(currentDate);
-  const goal = Number(state.profile.goal) || 0;
-  const left = goal + burn - total;   // 소모한 만큼 더 먹을 수 있다
   const parts = [];
   if (meals.length) parts.push(`오늘 ${meals.length}개 · 총 ${total} kcal`);
-  if (burn) parts.push(`🔥 ${burn} kcal 소모`);
-  if (goal) parts.push(left >= 0 ? `🎯 ${left} kcal 남음` : `🎯 ${-left} kcal 초과`);
-  else if (meals.length && burn) parts.push(`순 ${total - burn} kcal`);
+  if (burn) parts.push(`운동 ${burn} kcal`);
   $('#mealSummary').textContent = parts.join(' · ');
 
-  const prot = dayProtein(d);
-  const pg = proteinGoal();
-  $('#proteinBar').hidden = !meals.length;
-  if (meals.length) {
-    const pct = Math.min(100, Math.round(prot / pg * 100));
-    $('#proteinBar').innerHTML = `
-      <div class="bar-head"><span>🥩 단백질</span><strong>${prot} / ${pg} g</strong></div>
-      <div class="bar"><span style="width:${pct}%"></span></div>`;
-  }
-
-  renderFavorites();
+  renderGoal();
   renderWater();
-  renderMealCopyBtn();
   renderMyFoods();
-  const goalInput = $('#goalKcal');
-  if (document.activeElement !== goalInput) goalInput.value = state.profile.goal ?? '';
-  const pgInput = $('#proteinGoal');
-  if (document.activeElement !== pgInput) pgInput.value = state.profile.proteinGoal ?? '';
-  $('#proteinGoalHint').textContent = state.profile.proteinGoal
-    ? '' : `안 적으면 체중 × 1.6 = ${proteinGoal()}g으로 잡아요.`;
 
   $('#mealList').innerHTML = MEAL_ORDER.map((type) => {
     const list = meals.filter((m) => m.type === type);
@@ -1185,7 +1203,7 @@ function renderMeals() {
 }
 
 // 많이 먹은 순서대로. 같은 음식은 가장 최근에 적은 양·칼로리를 쓴다.
-function favoriteFoods(limit = 6) {
+function favoriteFoods(limit = Infinity) {
   // 음식 이름이 그대로 키가 되므로 Map을 쓴다.
   // 일반 객체면 "constructor" 같은 이름이 프로토타입을 건드려 집계가 어긋난다.
   const tally = new Map();
@@ -1200,16 +1218,82 @@ function favoriteFoods(limit = 6) {
   return [...tally.values()].sort((a, b) => b.count - a.count).slice(0, limit);
 }
 
-function renderFavorites() {
-  const favs = favoriteFoods();
-  $('#favFoods').innerHTML = favs.length
-    ? `<h3>⭐ 자주 먹는 음식</h3>
-       <div class="chips">${favs.map((f, i) => `<button class="chip" data-fav="${i}">
-         ${esc(f.meal.name)} <span class="muted">${f.meal.kcal ? f.meal.kcal + 'kcal' : esc(f.meal.amount)}</span>
-       </button>`).join('')}</div>`
-    : '';
-  $('#favFoods').hidden = !favs.length;
-  favCache = favs;
+// 하루 목표 카드: 종류 탭 → 오늘 먹은 것 vs 목표(칼로리·단백질 막대) → 지난 7일 평균 → 계산 근거·내 정보.
+// 숫자 칸(#goalForm)은 치는 동안 다시 그리지 않는다(입력이 끊긴다). 막대(#goalBars)는 언제든 다시 그린다.
+let goalMeOpen = false;      // "내 정보"를 펼쳐 뒀는지 (다시 그려도 유지)
+function goalWeek(date = currentDate) {
+  let n = 0, kcal = 0, prot = 0, allow = 0;
+  for (let i = 1; i <= 7; i++) {
+    const dt = shiftDate(date, -i);
+    const d = state.days[dt];
+    if (!d?.meals?.length) continue;   // 안 적은 날까지 나누면 평균이 엉뚱해진다
+    n += 1;
+    kcal += dayIntake(d);
+    prot += dayProtein(d);
+    allow += kcalGoal(dt) + dayBurn(dt);
+  }
+  return n ? { n, kcal: Math.round(kcal / n), prot: Math.round(prot / n), diff: Math.round((kcal - allow) / n) } : null;
+}
+function goalBarHtml(label, eaten, goal, unit, extra = '') {
+  const pct = goal > 0 ? Math.min(100, Math.round(eaten / goal * 100)) : 0;
+  const left = goal - eaten;
+  const over = goal > 0 && left < 0;
+  return `<div class="goal-meter${over ? ' over' : ''}">
+      <div class="bar-head"><span>${label}</span><strong>${eaten.toLocaleString()} <small>/ ${goal.toLocaleString()} ${unit}</small></strong></div>
+      <div class="bar"><span style="width:${pct}%"></span></div>
+      <p class="goal-left">${goal > 0 ? (over ? `${(-left).toLocaleString()} ${unit} 넘음` : `${left.toLocaleString()} ${unit} 남음`) : ''}${extra}</p>
+    </div>`;
+}
+function renderGoal() {
+  const mode = goalMode();
+  $('#goalSeg').innerHTML = Object.entries(GOAL_MODES).map(([k, m]) =>
+    `<button type="button" role="tab" data-goal-mode="${k}" class="${k === mode ? 'on' : ''}" aria-selected="${k === mode}">${m.label}</button>`).join('');
+  renderGoalBars();
+  const form = $('#goalForm');
+  if (form.contains(document.activeElement) && document.activeElement.matches('input')) return;
+  const b = state.profile.body || {};
+  const { bmr, exact, w } = bmrInfo();
+  let basis;
+  if (mode === 'custom') {
+    basis = `<div class="row goal-inputs">
+        <label>칼로리 (kcal)<input data-goal-field="goal" type="number" inputmode="numeric" min="0" step="50" value="${Number(state.profile.goal) || ''}" placeholder="${kcalGoalFor('keep')}"></label>
+        <label>단백질 (g)<input data-goal-field="proteinGoal" type="number" inputmode="numeric" min="0" step="5" value="${Number(state.profile.proteinGoal) || ''}" placeholder="${Math.round(w * GOAL_MODES.keep.protein)}"></label>
+      </div>`;
+  } else {
+    const m = GOAL_MODES[mode];
+    const adj = m.kcal ? ` ${m.kcal > 0 ? '+' : '−'} ${Math.abs(m.kcal)}` : '';
+    const floored = bmr * GOAL_ACTIVITY + m.kcal < bmr;
+    basis = `<p class="goal-basis">기초대사 ${bmr.toLocaleString()}${exact ? '' : '(체중으로 어림)'} × ${GOAL_ACTIVITY}${adj}${floored ? ' → 기초대사 아래로는 안 내림' : ''}
+      · 단백질 ${w}kg × ${m.protein}g</p>`;
+  }
+  const sexLabel = { m: '남', f: '여' }[b.sex];
+  const me = sexLabel && Number(b.age) > 0 && Number(b.height) > 0 ? `${sexLabel} · ${b.age}세 · ${b.height}cm` : '내 정보 넣기 (성별·나이·키)';
+  form.innerHTML = `${basis}
+    <details class="goal-me"${goalMeOpen ? ' open' : ''}>
+      <summary>${esc(me)}</summary>
+      <div class="goal-me-body">
+        <div class="seg goal-sex">${[['m', '남'], ['f', '여']].map(([k, t]) => `<button type="button" data-goal-sex="${k}" class="${b.sex === k ? 'on' : ''}">${t}</button>`).join('')}</div>
+        <label>나이<input data-goal-field="age" type="number" inputmode="numeric" min="10" max="100" value="${Number(b.age) || ''}" placeholder="세"></label>
+        <label>키<input data-goal-field="height" type="number" inputmode="numeric" min="100" max="230" value="${Number(b.height) || ''}" placeholder="cm"></label>
+      </div>
+    </details>`;
+  form.querySelector('.goal-me').addEventListener('toggle', (e) => { goalMeOpen = e.target.open; });
+}
+function kcalGoalFor(mode) {
+  const { bmr } = bmrInfo();
+  return Math.round(Math.max(bmr, bmr * GOAL_ACTIVITY + (GOAL_MODES[mode].kcal || 0)) / 10) * 10;
+}
+function renderGoalBars() {
+  const d = day();
+  const goal = kcalGoal();
+  const burn = dayBurn(currentDate);
+  const week = goalWeek();
+  $('#goalNote').textContent = goal ? `${goal.toLocaleString()} kcal · 단백질 ${proteinGoal()}g` : '';
+  $('#goalBars').innerHTML = (goal
+    ? goalBarHtml('칼로리', dayIntake(d), goal + burn, 'kcal', burn ? ` · 운동 +${burn} 포함` : '')
+    : '<p class="goal-left">목표 칼로리를 적어 주세요.</p>') +
+    goalBarHtml('단백질', dayProtein(d), proteinGoal(), 'g') +
+    (week ? `<p class="goal-week">지난 7일 평균 <b>${week.kcal.toLocaleString()} kcal</b>${goal ? ` · 목표보다 ${Math.abs(week.diff).toLocaleString()} ${week.diff > 0 ? '많이' : '적게'}` : ''} · 단백질 ${week.prot}g <span>(기록한 ${week.n}일)</span></p>` : '');
 }
 
 function renderWater() {
@@ -1224,17 +1308,6 @@ function renderWater() {
       <button data-water="-1" aria-label="한 잔 빼기">−</button>
       <button data-water="1" class="primary">💧 한 잔 마심</button>
     </div>`;
-}
-
-function renderMealCopyBtn() {
-  const btn = $('#loadMeals');
-  const date = Object.keys(state.days)
-    .filter((d) => d < currentDate && state.days[d].meals.length)
-    .sort().reverse()[0];
-  if (!date) { btn.hidden = true; return; }
-  btn.hidden = false;
-  btn.textContent = `↩ ${fmtDate(date)} 식단 ${state.days[date].meals.length}개 그대로 불러오기`;
-  btn.dataset.copyMeals = date;
 }
 
 function renderMyFoods() {
@@ -1883,12 +1956,15 @@ const HELP = [
     <br>가장 빠른 길은 <b>📷 사진으로 기록하기</b>예요. 이름을 비워 두고 사진을 고르면 무슨 음식인지 알아서 찾아 넣어요.
     <br>사진은 이 기기 밖으로 나가지 않아요. 처음 한 번만 AI 모델(약 50MB)을 받아요.
     <br>양은 사진으로 알 수 없어서 <b>지난번 먹은 양</b>으로 넣어요. 다르면 숫자만 고치면 돼요.
-    <br>⭐ 자주 먹는 음식 칩은 누르면 바로 들어가요.`],
+    <br>음식 이름은 몇 글자만 쳐도 아래에 후보가 떠요(자주 먹은 음식이 위, '가ㅈ'처럼 치는 중이어도). 누르면 지난번 양까지 채워져요.
+    <br>지난 식단을 그대로 가져오려면 <b>기록</b> 탭 달력에서 그 날을 누르고 <b>↩ 오늘 식단으로 불러오기</b>.
+    <br><b>하루 목표</b>: 다이어트·유지·벌크업을 고르면 목표를 계산해요. 칼로리 = 기초대사 × 1.2(운동을 뺀 하루 생활)에 다이어트 −500 / 벌크업 +300(기초대사 아래로는 안 내림), 운동한 날은 소모 칼로리만큼 더 먹을 수 있어요.
+    단백질 = 체중 × 2.0g(다이어트) / 1.6g(유지) / 1.8g(벌크업). 기초대사는 <b>내 정보</b>(성별·나이·키)가 있으면 Mifflin-St Jeor 식, 없으면 체중 × 22로 어림해요. <b>직접</b>을 고르면 숫자를 적을 수 있어요.`],
   ['🔥 소모 칼로리', `운동 종류별 MET × 체중 × 운동 시간으로 낸 <b>추정치</b>예요. 시간을 안 적으면 세트당 3분으로 봐요.
     <br>MET(운동 강도)는 운동 이름으로 자동 추정해요. 안 맞으면 카드를 열어 직접 고칠 수 있고, 같은 이름의 운동에 모두 적용돼요.
-    <br>하루 목표 칼로리를 정해두면 <b>목표 + 소모 − 섭취 = 남은 칼로리</b>로 알려줘요.
+    <br>식단 탭 하루 목표에서 <b>목표 + 소모 − 섭취 = 남은 칼로리</b>로 알려줘요.
     <br>체중 칸엔 마지막으로 적은 체중이 들어가 있어요. 바뀌었을 때만 고치면 그 날 체중으로 기록돼요.
-    <br>단백질 목표를 비워 두면 체중 × 1.6g으로 잡아요.`],
+`],
   ['📅 기록·통계', `달력에서 날짜를 누르면 그 날 운동이 아래에 펼쳐져요. 🔍로 운동·음식·메모를 검색할 수 있어요.
     <br>부위별 밸런스와 주간 목표 세트는 <b>최근 7일</b>을 볼 때만 견줘요. 비워두면 목표 없이 세트 수만 봐요.
     <br>최고 기록과 중량 추이는 1RM(추정 1회 최대 중량)으로 견줘요. 100kg×1회와 90kg×8회를 바르게 비교하려고요.`],
@@ -2693,15 +2769,28 @@ function calDetailHtml(date) {
   const [, mm, dd] = date.split('-').map(Number);
   const title = `${mm}월 ${dd}일 ${WEEKDAYS[weekdayOf(date)]}요일`;
   const ws = d?.workouts || [];
+  const into = currentDate === todayStr() ? '오늘' : fmtDate(currentDate);
+  // 식단도 그 날 기록에 끼니별로 남긴다 (식단 탭의 "그대로 불러오기" 대신 여기서 불러온다 — 사용자)
+  const meals = d?.meals || [];
+  const mealHtml = meals.length ? `<div class="cal-meals">
+      <div class="cal-meals-head"><b>식단</b><span>${dayIntake(d).toLocaleString()} kcal · 단백질 ${dayProtein(d)}g</span></div>
+      ${MEAL_ORDER.map((type) => {
+        const list = meals.filter((m) => m.type === type);
+        if (!list.length) return '';
+        const sub = list.reduce((n, m) => n + nonNeg(m.kcal), 0);
+        return `<p class="cal-meal"><span class="cal-meal-type">${type}</span><span class="cal-meal-names">${list.map((m) => esc(m.name)).join(', ')}</span>${sub ? `<span class="cal-meal-kcal">${sub.toLocaleString()}</span>` : ''}</p>`;
+      }).join('')}
+    </div>` : '';
   const extra = [
     d?.note ? `<p class="cal-line">📝 ${esc(d.note)}</p>` : '',
-    d?.meals.length ? `<p class="cal-line muted">🍚 ${dayIntake(d).toLocaleString()} kcal · 단백질 ${dayProtein(d)}g${d.weight ? ` · ⚖️ ${d.weight}kg` : ''}</p>`
-      : (d?.weight ? `<p class="cal-line muted">⚖️ ${d.weight}kg</p>` : ''),
+    mealHtml,
+    d?.weight ? `<p class="cal-line muted">체중 ${d.weight}kg</p>` : '',
   ].join('');
+  const mealBtn = meals.length && date !== currentDate ? `<button type="button" data-copy-meals="${date}">↩ ${into} 식단으로 불러오기</button>` : '';
   if (!ws.length) {
     return `<div class="cal-dhead"><h4>${title}</h4></div>
       <p class="cal-empty">${isRestDay(date) ? '😴 쉬는 날' : '운동 기록이 없어요'}</p>${extra}
-      <div class="cal-actions"><button type="button" data-goto="${date}">이 날 열기</button></div>`;
+      <div class="cal-actions">${mealBtn}<button type="button" data-goto="${date}">이 날 열기</button></div>`;
   }
   const sets = ws.reduce((n, w) => n + countedSets(w).length, 0);
   const vol = ws.reduce((n, w) => n + volumeOf(w), 0);
@@ -2712,7 +2801,6 @@ function calDetailHtml(date) {
     const body = run.map((w) => calExHtml(w, date)).join('');
     return run.length > 1 ? `<div class="cal-ss"><span class="cal-ss-tag">🔗 슈퍼세트</span>${body}</div>` : body;
   }).join('');
-  const into = currentDate === todayStr() ? '오늘' : fmtDate(currentDate);
   return `<div class="cal-dhead"><h4>${title}</h4>${d.split ? `<span class="cal-split">${esc(d.split)}</span>` : ''}</div>
     <div class="cal-stats">
       ${stat(ws.length, '종목', '운동')}${stat(sets, '세트', '본 세트')}
@@ -2722,6 +2810,7 @@ function calDetailHtml(date) {
     <div class="cal-exs">${runs}</div>${extra}
     <div class="cal-actions">
       ${date !== currentDate ? `<button type="button" data-copy-day="${date}">↩ ${into} 운동으로 불러오기</button>` : ''}
+      ${mealBtn}
       <button type="button" data-move-day="${date}">📅 다른 날로 옮기기</button>
       <button type="button" data-goto="${date}">이 날 열기</button>
     </div>`;
@@ -3273,21 +3362,89 @@ function renderSuggestions() {
     exNames.push(n);
   });
   $('#exSuggestions').innerHTML = exNames.map((n) => `<option value="${esc(n)}">`).join('');
-  // 음식 표는 1,300가지가 넘어서 화면을 그릴 때마다 목록을 새로 만들면 느려진다.
-  // 내가 먹은 음식(앞)이 바뀌었을 때만 다시 만든다.
-  const foodSig = [...myFoods].join('|');
-  if (foodSig !== foodSuggestSig) {
-    foodSuggestSig = foodSig;
-    const seenFood = new Set();
-    $('#foodSuggestions').innerHTML = [...myFoods, ...FOOD_NAMES].filter((n) => {
-      const k = String(n).toLowerCase().replace(/\s+/g, '');
-      if (!k || seenFood.has(k)) return false;
-      seenFood.add(k);
-      return true;
-    }).map((n) => `<option value="${esc(n)}">`).join('');
-  }
 }
-let foodSuggestSig = null;
+
+// ---------- 음식 이름 자동완성 ----------
+// "자주 먹는 음식" 칩을 없애고, 이름을 몇 글자만 쳐도 아래에 후보를 띄운다(사용자: '가'만 쳐도 가자미구이).
+// 순서: 내가 먹은 음식(많이 먹은 순) → 음식 표. 각각 앞부분이 같은 것 먼저, 그다음 중간에 들어 있는 것.
+// 브라우저 기본 datalist는 휴대폰에서 키보드 위 작은 줄로만 떠서 안 보였다.
+const FOOD_SUGGEST_MAX = 8;
+const JAMO_INITIALS = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
+let foodSuggestItems = [];
+let foodSuggestActive = -1;
+function initialOf(ch) {
+  const c = (ch ?? '').charCodeAt(0) - 0xac00;
+  return c >= 0 && c < 11172 ? JAMO_INITIALS[Math.floor(c / 588)] : null;
+}
+// 0 = 앞부분이 같음, 1 = 중간에 들어 있음, -1 = 아님. 끝 글자가 치는 중인 자음이면('가ㅈ') 그 자음으로 시작하는 글자와 맞춘다.
+function foodMatch(name, q) {
+  const n = foodName(name);
+  const last = q.at(-1);
+  if (last && JAMO_INITIALS.includes(last)) {
+    const head = q.slice(0, -1);
+    const next = n[head.length];
+    return n.startsWith(head) && next && (initialOf(next) === last || next === last) ? 0 : -1;
+  }
+  if (n.startsWith(q)) return 0;
+  return n.includes(q) ? 1 : -1;
+}
+function foodCandidates(q) {
+  if (!q) return [];
+  const out = [];
+  const seen = new Set();
+  const push = (name, meal) => {
+    const k = foodName(name);
+    if (!k || seen.has(k) || out.length >= FOOD_SUGGEST_MAX) return;
+    seen.add(k);
+    out.push({ name, meal });
+  };
+  const mine = favoriteFoods();
+  for (const pass of [0, 1]) mine.forEach((f) => { if (foodMatch(f.meal.name, q) === pass) push(f.meal.name, f.meal); });
+  const table = [...Object.keys(state.profile.foods || {}), ...FOOD_NAMES];
+  for (const pass of [0, 1]) {
+    table.filter((n) => foodMatch(n, q) === pass).sort((a, b) => a.length - b.length).forEach((n) => push(n, null));
+  }
+  return out;
+}
+function renderFoodSuggest() {
+  const input = $('#foodName');
+  const box = $('#foodSuggest');
+  const q = foodName(input.value);
+  let items = document.activeElement === input ? foodCandidates(q) : [];
+  if (items.length === 1 && foodName(items[0].name) === q) items = [];   // 이미 다 친 이름 하나뿐이면 안 띄운다
+  foodSuggestItems = items;
+  foodSuggestActive = Math.min(foodSuggestActive, items.length - 1);
+  box.hidden = !items.length;
+  input.setAttribute('aria-expanded', String(!!items.length));
+  box.innerHTML = items.map((f, i) => {
+    const info = f.meal ? [f.meal.amount, Number(f.meal.kcal) > 0 ? `${f.meal.kcal}kcal` : ''].filter(Boolean).join(' · ') : '';
+    return `<button type="button" role="option" class="suggest-item${i === foodSuggestActive ? ' on' : ''}" data-food-pick="${i}" aria-selected="${i === foodSuggestActive}">
+      <span>${esc(f.name)}</span>${info ? `<small>${esc(info)}</small>` : ''}</button>`;
+  }).join('');
+}
+function hideFoodSuggest() {
+  foodSuggestItems = [];
+  foodSuggestActive = -1;
+  $('#foodSuggest').hidden = true;
+  $('#foodName').setAttribute('aria-expanded', 'false');
+}
+// 고르면 이름을 채우고, 먹어 본 음식이면 지난번 양도 채운다(칼로리는 표로 다시 계산 — 표에 없으면 지난번 칼로리).
+function pickFood(i) {
+  const f = foodSuggestItems[i];
+  if (!f) return;
+  $('#foodName').value = f.name;
+  if (f.meal?.amount && !$('#foodAmount').value.trim()) $('#foodAmount').value = f.meal.amount;
+  kcalTouched = false;
+  updateMealHint();
+  if (f.meal && !$('#foodKcal').value && Number(f.meal.kcal) > 0) {
+    $('#foodKcal').value = f.meal.kcal;
+    $('#foodProtein').value = Number(f.meal.protein) > 0 ? f.meal.protein : '';
+    kcalTouched = true;
+    updateMealHint();
+  }
+  hideFoodSuggest();
+  $('#foodAmount').focus();
+}
 
 function findWorkout(id) {
   return day().workouts.find((w) => w.id === id);
@@ -3680,17 +3837,56 @@ $('#foodName').addEventListener('input', updateMealHint);
 $('#foodAmount').addEventListener('input', updateMealHint);
 $('#foodKcal').addEventListener('input', () => { kcalTouched = true; updateMealHint(); });
 $('#foodProtein').addEventListener('input', () => { kcalTouched = true; });
-$('#proteinGoal').addEventListener('input', (e) => {
-  const v = Number(e.target.value);
-  state.profile.proteinGoal = v > 0 ? v : null;
-  saveSoon();
-  renderMeals();
+$('#foodName').addEventListener('input', () => { foodSuggestActive = -1; renderFoodSuggest(); });
+$('#foodName').addEventListener('focus', renderFoodSuggest);
+$('#foodName').addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== $('#foodName')) hideFoodSuggest(); }, 0));
+$('#foodName').addEventListener('keydown', (e) => {
+  if ($('#foodSuggest').hidden) return;
+  const n = foodSuggestItems.length;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    foodSuggestActive = e.key === 'ArrowDown' ? (foodSuggestActive + 1) % n : (foodSuggestActive <= 0 ? n - 1 : foodSuggestActive - 1);
+    renderFoodSuggest();
+  } else if (e.key === 'Enter' && foodSuggestActive >= 0) {
+    e.preventDefault();
+    pickFood(foodSuggestActive);
+  } else if (e.key === 'Escape') {
+    hideFoodSuggest();
+  }
 });
-$('#goalKcal').addEventListener('input', (e) => {
-  const v = Number(e.target.value);
-  state.profile.goal = v > 0 ? v : null;
-  saveSoon();
+// 후보를 누르는 순간 이름 칸의 포커스가 빠지면 목록이 먼저 닫혀 버린다 — 누르는 동안 포커스를 붙잡는다
+['pointerdown', 'mousedown'].forEach((ev) => $('#foodSuggest').addEventListener(ev, (e) => e.preventDefault()));
+$('#foodSuggest').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-food-pick]');
+  if (b) pickFood(Number(b.dataset.foodPick));
+});
+
+// 하루 목표: 종류 탭·성별, 숫자 칸 (치는 동안엔 막대만 다시 그린다)
+$('#goalCard').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-goal-mode], [data-goal-sex]');
+  if (!b) return;
+  if (b.dataset.goalMode) state.profile.goalMode = b.dataset.goalMode;
+  else state.profile.body = { ...(state.profile.body || {}), sex: b.dataset.goalSex };
+  save();
   renderMeals();
+  renderWorkouts();
+});
+$('#goalCard').addEventListener('input', (e) => {
+  const field = e.target.dataset.goalField;
+  if (!field) return;
+  const v = Number(e.target.value);
+  if (field === 'goal' || field === 'proteinGoal') state.profile[field] = v > 0 ? v : null;
+  else state.profile.body = { ...(state.profile.body || {}), [field]: v > 0 ? v : null };
+  saveSoon();
+  renderGoalBars();
+  if (field === 'age' || field === 'height') {
+    const basis = $('#goalForm').querySelector('.goal-basis');
+    if (basis && goalMode() !== 'custom') {   // 근거 줄만 바꾼다 (칸은 그대로)
+      const { bmr, exact, w } = bmrInfo();
+      const m = GOAL_MODES[goalMode()];
+      basis.textContent = `기초대사 ${bmr.toLocaleString()}${exact ? '' : '(체중으로 어림)'} × ${GOAL_ACTIVITY}${m.kcal ? ` ${m.kcal > 0 ? '+' : '−'} ${Math.abs(m.kcal)}` : ''} · 단백질 ${w}kg × ${m.protein}g`;
+    }
+  }
 });
 
 $('#mealForm').addEventListener('submit', (e) => {
@@ -4004,14 +4200,13 @@ document.addEventListener('click', (e) => {
     document.querySelectorAll('#rangeSeg button').forEach((b) => b.classList.toggle('on', b === t));
     renderHistory();
     return;
-  } else if (ds.fav) {
-    const m = favCache[Number(ds.fav)]?.meal;
-    if (!m) return;
-    day().meals.push({ id: uid(), type: $('#mealType').value, name: m.name, amount: m.amount, kcal: m.kcal, protein: m.protein });
   } else if (ds.copyMeals) {
+    // 기록 탭 달력의 "↩ 오늘 식단으로 불러오기" (식단 탭의 "그대로 불러오기"는 지웠다 — 사용자)
     const src = state.days[ds.copyMeals];
-    if (!confirm(`${fmtDate(ds.copyMeals)} 식단 ${src.meals.length}개를 그대로 불러올까요?`)) return;
+    if (!src?.meals.length) return;
+    if (!confirm(`${fmtDate(ds.copyMeals)} 식단 ${src.meals.length}개를 ${fmtDate(currentDate)}로 불러올까요?`)) return;
     src.meals.forEach((m) => day().meals.push({ ...m, id: uid() }));
+    showTab('meals');
   } else if (ds.delFood) {
     if (!confirm(`등록한 음식 '${ds.delFood}'을(를) 지울까요?`)) return;
     pushUndo(`등록 음식 '${ds.delFood}' 삭제함`);

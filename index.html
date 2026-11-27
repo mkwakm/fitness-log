@@ -38,7 +38,13 @@
     <!-- 식단 -->
     <section id="meals" class="panel">
       <div class="summary" id="mealSummary"></div>
-      <div class="card meter" id="proteinBar" hidden></div>
+      <!-- 하루 목표: 다이어트·유지·벌크업을 고르면 목표를 계산하고 오늘 먹은 것과 견준다 (사용자 요구) -->
+      <div class="card goal-card" id="goalCard">
+        <div class="goal-head"><h3>하루 목표</h3><span class="goal-mode-note" id="goalNote"></span></div>
+        <div class="seg goal-seg" id="goalSeg" role="tablist" aria-label="목표 종류"></div>
+        <div id="goalBars"></div>
+        <div id="goalForm"></div>
+      </div>
       <div class="card meter" id="waterRow"></div>
       <form id="mealForm" class="card form">
         <!-- 사진이 가장 손이 덜 가는 길이라 맨 위에 크게 (사용자: 적는 게 귀찮아서 안 하게 된다) -->
@@ -50,8 +56,12 @@
         <select id="mealType">
           <option>아침</option><option>점심</option><option>저녁</option><option>간식</option>
         </select>
-        <input id="foodName" list="foodSuggestions" placeholder="음식 이름 (예: 닭가슴살, 밥, 라면)" required autocomplete="off">
-        <datalist id="foodSuggestions"></datalist>
+        <!-- 몇 글자만 쳐도 아래에 후보 (자주 먹은 음식이 위). "자주 먹는 음식" 칩 대신 (사용자 요구) -->
+        <div class="food-name-wrap">
+          <input id="foodName" placeholder="음식 이름 (예: 닭가슴살, 밥, 라면)" required autocomplete="off"
+            role="combobox" aria-autocomplete="list" aria-controls="foodSuggest" aria-expanded="false">
+          <div id="foodSuggest" class="suggest" role="listbox" aria-label="음식 후보" hidden></div>
+        </div>
         <div class="row">
           <label>양<input id="foodAmount" placeholder="예: 200g, 1공기, 2개" autocomplete="off"></label>
           <label>칼로리(kcal)<input id="foodKcal" type="number" inputmode="numeric" min="0" placeholder="자동"></label>
@@ -61,22 +71,8 @@
         <button type="submit" class="primary">식단 추가</button>
       </form>
 
-      <div id="favFoods" class="card fav"></div>
-      <button id="loadMeals" class="wide-btn"></button>
       <div id="mealList"></div>
 
-      <div class="card">
-        <h3>🎯 하루 목표</h3>
-        <div class="row">
-          <label>칼로리 (kcal)
-            <input id="goalKcal" type="number" inputmode="numeric" min="0" step="50" placeholder="예: 2000">
-          </label>
-          <label>단백질 (g)
-            <input id="proteinGoal" type="number" inputmode="numeric" min="0" step="5" placeholder="자동">
-          </label>
-        </div>
-        <p class="hint" id="proteinGoalHint"></p>
-      </div>
       <div id="myFoods"></div>
     </section>
 

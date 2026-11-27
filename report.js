@@ -128,8 +128,7 @@ function rpSummary(dates, workDates, today) {
     out.push(`- 분할: ${days.length}분할 (${days.join(' → ')}) · 다음 차례 ${nextSplit(shiftDate(today, 1))}${rest ? ` · 쉬는 요일 ${rest}` : ''}`);
   }
   const goals = [];
-  if (Number(state.profile.goal) > 0) goals.push(`하루 ${rpNum(state.profile.goal)}kcal`);
-  if (Number(state.profile.proteinGoal) > 0) goals.push(`단백질 ${state.profile.proteinGoal}g`);
+  goals.push(`${GOAL_MODES[goalMode()].label} — 하루 ${kcalGoal(today) ? `${rpNum(kcalGoal(today))}kcal(운동한 날은 소모만큼 더)` : '칼로리 목표 없음'} · 단백질 ${proteinGoal(today)}g`);
   const pg = Object.entries(state.profile.partGoals || {}).filter(([, n]) => Number(n) > 0);
   if (pg.length) goals.push(`부위별 주간 세트 ${pg.map(([p, n]) => `${p} ${n}`).join(', ')}`);
   if (goals.length) out.push(`- 목표: ${goals.join(' · ')}`);

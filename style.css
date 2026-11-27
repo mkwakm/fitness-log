@@ -982,3 +982,52 @@ body.has-dock main { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
 @media (prefers-reduced-motion: reduce) {
   .drawer-panel { animation: none; }
 }
+
+/* 하루 목표 카드: 종류 탭 → 오늘 먹은 것 vs 목표 → 지난 7일 → 근거·내 정보 */
+.goal-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.goal-head h3 { margin: 0; }
+.goal-mode-note { color: var(--muted); font-size: 0.82rem; text-align: right; }
+.goal-seg { margin-bottom: 14px; }
+.goal-seg button { flex: 1; padding: 6px 4px; }
+/* .goal-row는 볼륨 목표 칸이 이미 쓴다 — 겹치면 막대가 가로로 늘어서 깨진다 */
+.goal-meter { margin-bottom: 12px; }
+.goal-meter .bar-head strong small { color: var(--muted); font-weight: 400; }
+.goal-meter.over .bar > span { background: var(--danger); }
+.goal-left { margin: 6px 0 0; font-size: 0.8rem; color: var(--muted); min-height: 1em; }
+.goal-meter.over .goal-left { color: var(--danger); }
+.goal-week { margin: 2px 0 10px; padding: 10px 12px; border-radius: 10px; background: var(--card-2); font-size: 0.85rem; }
+.goal-week span { color: var(--muted); }
+.goal-basis { margin: 0 0 8px; font-size: 0.78rem; color: var(--muted); line-height: 1.5; }
+.goal-inputs { margin-bottom: 8px; }
+.goal-me { border-top: 1px solid var(--line); padding-top: 8px; }
+.goal-me summary { cursor: pointer; min-height: 40px; display: flex; align-items: center; font-size: 0.85rem; color: var(--muted); }
+.goal-me-body { display: grid; grid-template-columns: auto 1fr 1fr; gap: 8px; align-items: end; padding-top: 4px; }
+.goal-me-body label { display: flex; flex-direction: column; gap: 4px; font-size: 0.8rem; color: var(--muted); }
+.goal-sex button { padding: 6px 14px; }
+
+/* 음식 이름 자동완성: 이름 칸 바로 아래에 겹쳐 띄운다 */
+.food-name-wrap { position: relative; }
+.food-name-wrap input { width: 100%; }
+.suggest {
+  position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 6;
+  display: flex; flex-direction: column; max-height: 300px; overflow-y: auto;
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+}
+.suggest[hidden] { display: none; }
+.suggest-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  min-height: 46px; padding: 10px 14px; border: 0; border-radius: 0; background: none; text-align: left; font-size: 1rem;
+}
+.suggest-item + .suggest-item { border-top: 1px solid var(--line); }
+.suggest-item small { color: var(--muted); font-size: 0.8rem; white-space: nowrap; }
+.suggest-item:hover, .suggest-item.on { background: var(--card-2); }
+
+/* 기록 탭 달력: 그 날 식단을 끼니별로 */
+.cal-meals { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--card-2); }
+.cal-meals-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 0.85rem; margin-bottom: 6px; }
+.cal-meals-head span { color: var(--muted); font-size: 0.8rem; }
+.cal-meal { display: flex; gap: 8px; margin: 4px 0 0; font-size: 0.85rem; line-height: 1.45; }
+.cal-meal-type { flex: none; width: 2.6em; color: var(--muted); }
+.cal-meal-names { flex: 1; min-width: 0; }
+.cal-meal-kcal { flex: none; color: var(--muted); font-size: 0.8rem; }
