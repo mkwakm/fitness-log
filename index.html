@@ -33,6 +33,10 @@
     <symbol id="i-stop" viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></symbol>
     <symbol id="i-plate" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.5"/></symbol>
     <symbol id="i-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.3l2.7 2.7L16.2 9.5"/></symbol>
+    <symbol id="i-scale" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16"/><path d="M8 10.5a4.6 4.6 0 0 1 8 0M12 10.5l1.6-2.4"/></symbol>
+    <symbol id="i-trend" viewBox="0 0 24 24"><path d="M3.5 20h17M4.5 15.5l4.5-4.5 3.5 3 7-7M15 7h4.5v4.5"/></symbol>
+    <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7.2 18.5h10a3.8 3.8 0 0 0 .5-7.57 5.7 5.7 0 0 0-11-.9A4.25 4.25 0 0 0 7.2 18.5Z"/><path d="M12 16v-5M9.8 13.2 12 11l2.2 2.2"/></symbol>
+    <symbol id="i-install" viewBox="0 0 24 24"><path d="M12 4v10.5M7.8 10.3 12 14.5l4.2-4.2M5 19.5h14"/></symbol>
   </svg>
   <header class="top">
     <!-- 자주 안 쓰는 것(운동 시간·밝기·도움말)은 三 모양 메뉴로 (사용자 요구). 운동 시간이 도는 중이면 점 -->
@@ -222,21 +226,43 @@
         <div id="volChart"></div>
         <div id="volGoalBox" class="goal-row"></div>
       </div>
+    </section>
+  </main>
 
-      <div class="card" id="weightCard">
-        <h3>체중 추이</h3>
-        <div id="weightChart"></div>
-      </div>
+  <div id="photoView" class="photo-view" hidden><img id="photoViewImg" alt=""></div>
 
-      <div class="card" id="liftCard">
-        <div class="card-head">
-          <h3>운동별 1RM 추이</h3>
-          <select id="liftPick"></select>
-        </div>
-        <div id="liftChart"></div>
-        <button class="link-btn" id="liftDetail">이 운동 자세히 보기 ›</button>
-      </div>
-      <button id="installBtn" class="wide-btn" hidden>홈 화면에 앱으로 설치하기</button>
+  <!-- 三 메뉴로 옮긴 것들 (사용자: "기록에 부위별 볼륨 추이 밑으로 전부 메뉴에"). 운동 상세보다 앞에 둬야
+       1RM 창에서 "자세히"를 눌렀을 때 상세가 위에 뜬다(같은 z-index면 뒤에 있는 게 위) -->
+  <div id="weightSheet" class="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="weightTitle">
+    <div class="sheet-head">
+      <h2 id="weightTitle">체중 추이</h2>
+      <button class="del" id="weightClose" aria-label="닫기">✕</button>
+    </div>
+    <div class="sheet-body">
+      <div class="seg range-seg"><button data-range="7" class="on">7일</button><button data-range="30">30일</button><button data-range="90">90일</button></div>
+      <div id="weightChart"></div>
+    </div>
+  </div>
+
+  <div id="liftSheet" class="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="liftTitle">
+    <div class="sheet-head">
+      <h2 id="liftTitle">운동별 1RM 추이</h2>
+      <button class="del" id="liftClose" aria-label="닫기">✕</button>
+    </div>
+    <div class="sheet-body">
+      <div class="seg range-seg"><button data-range="7" class="on">7일</button><button data-range="30">30일</button><button data-range="90">90일</button></div>
+      <select id="liftPick" class="lift-pick" aria-label="운동 고르기"></select>
+      <div id="liftChart"></div>
+      <button class="link-btn" id="liftDetail">이 운동 자세히 보기 ›</button>
+    </div>
+  </div>
+
+  <div id="dataSheet" class="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="dataTitle">
+    <div class="sheet-head">
+      <h2 id="dataTitle">동기화·백업</h2>
+      <button class="del" id="dataClose" aria-label="닫기">✕</button>
+    </div>
+    <div class="sheet-body data-body">
       <div class="card" id="syncCard"></div>
       <div class="card backup">
         <h3>백업</h3>
@@ -250,10 +276,8 @@
           <button id="prunePhotoBtn">안 쓰는 사진 정리</button>
         </div>
       </div>
-    </section>
-  </main>
-
-  <div id="photoView" class="photo-view" hidden><img id="photoViewImg" alt=""></div>
+    </div>
+  </div>
 
   <!-- 운동 중 집중 모드: 지금 할 세트 하나만 크게. 상세처럼 main 밖에 둔다 -->
   <div id="focusSheet" class="sheet focus" hidden role="dialog" aria-modal="true" aria-labelledby="focusTitle">
@@ -312,6 +336,11 @@
     <nav class="drawer-panel" role="dialog" aria-modal="true" aria-label="메뉴">
       <div class="drawer-head"><strong>메뉴</strong><button class="del" data-menu-close aria-label="메뉴 닫기">✕</button></div>
       <button class="drawer-item" id="timerOpen"><span class="drawer-ic"><svg class="ic" aria-hidden="true"><use href="#i-timer"/></svg></span><span class="drawer-tx">운동 시간<small id="menuTimerText"></small></span></button>
+      <button class="drawer-item" id="weightOpen"><span class="drawer-ic"><svg class="ic" aria-hidden="true"><use href="#i-scale"/></svg></span><span class="drawer-tx">체중 추이<small id="menuWeightText"></small></span></button>
+      <button class="drawer-item" id="liftOpen"><span class="drawer-ic"><svg class="ic" aria-hidden="true"><use href="#i-trend"/></svg></span><span class="drawer-tx">1RM 추이</span></button>
+      <button class="drawer-item" id="dataOpen"><span class="drawer-ic"><svg class="ic" aria-hidden="true"><use href="#i-cloud"/></svg></span><span class="drawer-tx">동기화·백업<small id="menuDataText"></small></span></button>
+      <button class="drawer-item" id="installBtn" hidden><span class="drawer-ic"><svg class="ic" aria-hidden="true"><use href="#i-install"/></svg></span><span class="drawer-tx">홈 화면에 설치</span></button>
+      <div class="drawer-sep" role="separator"></div>
       <button class="drawer-item" id="themeBtn"><span class="drawer-ic" id="themeIc"><svg class="ic" aria-hidden="true"><use href="#i-moon"/></svg></span><span class="drawer-tx" id="themeTx">Theme</span></button>
       <button class="drawer-item" id="helpBtn"><span class="drawer-ic"><svg class="ic" aria-hidden="true"><use href="#i-help"/></svg></span><span class="drawer-tx">도움말</span></button>
     </nav>

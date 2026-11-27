@@ -526,7 +526,13 @@ function setSyncBusy(on) {
   if (btn) { btn.disabled = on; btn.textContent = on ? '동기화 중…' : '지금 동기화'; }
 }
 
+// 저장이 끊긴 상태를 한 줄로 (三 메뉴의 빨간 점·"동기화·백업" 밑 글). 카드가 메뉴 속에 있어서 밖에서도 보여야 한다
+function syncTrouble() {
+  return fileBlocked ? '파일에 저장 안 되는 중' : driveError ? '드라이브 저장 실패' : '';
+}
+
 function renderSync() {
+  if (typeof renderMenuNotes === 'function') renderMenuNotes();
   const el = document.querySelector('#syncCard');
   if (!el) return;
   el.innerHTML = `

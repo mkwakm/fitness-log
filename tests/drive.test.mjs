@@ -1,7 +1,7 @@
 // Claude 연결 (구글 드라이브): Claude가 읽을 정리 글(recordText) + Apps Script 웹 앱으로 자동 저장 (가짜 서버로)
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { ROOT, serve, tab, text, wait } from './lib.mjs';
+import { ROOT, serve, text, wait, openData } from './lib.mjs';
 
 const URL1 = 'https://script.google.com/macros/s/AKfycbFAKE123/exec';
 const PW = 'pw-secret-77';
@@ -86,7 +86,7 @@ export default async function (t) {
       server.json = body.json;
       return reply({ ok: true, at: Date.now(), docUrl: 'https://docs.google.com/document/d/abc/edit' });
     });
-    await tab(p, 'history');
+    await openData(p);   // 三 메뉴 → 동기화·백업
     return p;
   };
   const status = (p) => text(p, '#driveRow');
@@ -202,7 +202,7 @@ export default async function (t) {
   const srv = await serve();
   try {
     const P = await t.open({ url: srv.url, context: { permissions: ['clipboard-read', 'clipboard-write'] } });
-    await tab(P, 'history');
+    await openData(P);
     await P.click('#driveScriptBtn');
     await wait(P, 400);
     t.eq(await P.evaluate(() => navigator.clipboard.readText()), readFileSync(join(ROOT, 'tools/drive-apps-script.gs'), 'utf8'), '스크립트 복사');

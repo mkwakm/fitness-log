@@ -1,5 +1,5 @@
 ﻿// 식단 사진: 줄여 담기, 표시, 지우기·되돌리기, 사진까지 내보내기·가져오기, 정리
-import { tab, wait } from './lib.mjs';
+import { tab, wait, openData } from './lib.mjs';
 import { readFileSync, statSync } from 'node:fs';
 
 export default async function (t) {
@@ -70,7 +70,7 @@ export default async function (t) {
     await wait(A, 300);
   }
   t.eq(await count(A), 2, '사진 2장 저장');
-  await tab(A, 'history');
+  await openData(A);
   const [dl] = await Promise.all([A.waitForEvent('download'), A.click('#exportPhotoBtn')]);
   const path = await dl.path();
   const json = JSON.parse(readFileSync(path, 'utf8'));
@@ -94,11 +94,12 @@ export default async function (t) {
 
   // ── 안 쓰는 사진 정리 ──
   await B.evaluate(() => { day().meals = day().meals.slice(0, 1); save(); render(); });
-  await tab(B, 'history');
+  await openData(B);
   await B.click('#prunePhotoBtn');
   await wait(B, 600);
   t.eq(await count(B), 1, '안 쓰는 사진 1장 정리');
   t.ok(await has(B, await B.evaluate(() => day().meals[0].photo)), '쓰는 사진은 남음');
+  await B.keyboard.press('Escape');   // 동기화·백업 창 닫기
 
   // ── 사진을 담는 중엔 추가를 못 누른다 (누르면 버리는 중인 앞 사진이 기록에 붙었다) ──
   await tab(B, 'meals');

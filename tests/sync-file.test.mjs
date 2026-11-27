@@ -1,5 +1,5 @@
 // 토큰 없는 동기화: PC 파일 자동 저장(File System Access), 휴대폰 공유, 백업 가져오기(합치기)
-import { tab, text, wait } from './lib.mjs';
+import { tab, text, wait, openData } from './lib.mjs';
 import { writeFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -47,7 +47,7 @@ export default async function (t) {
     await p.exposeFunction('cloudWrite', (x) => { cloud = x; }).catch(() => {});
     await p.reload();
     await p.waitForSelector('#mealList', { state: 'attached' });
-    await tab(p, 'history');
+    await openData(p);
     return p;
   };
   const addMeal = (p, n) => p.evaluate((n) => { day().meals.push({ id: uid(), type: '점심', name: n, amount: '', kcal: 100 }); save(); render(); }, n);
@@ -74,7 +74,7 @@ export default async function (t) {
   t.eq(await meals(B), ['PC1_점심', 'PC2_저녁'], '다른 PC가 쓰던 파일을 고르면 먼저 합침 (덮어쓰지 않음)');
   await wait(B, 2400);
   t.ok(cloud.includes('PC1_점심') && cloud.includes('PC2_저녁'), '파일에 둘 다');
-  await tab(A, 'history');
+  await openData(A);
   await A.click('#fileReadBtn');
   await wait(A, 400);
   t.eq(await meals(A), ['PC1_점심', 'PC2_저녁'], 'PC1이 불러오면 합쳐짐');
@@ -105,14 +105,14 @@ export default async function (t) {
     navigator.share = async (d) => { window.__shared = d.files[0].name; };
   } });
   await addMeal(P, '폰_아침');
-  await tab(P, 'history');
+  await openData(P);
   t.ok(!(await text(P, '#syncCard')).includes('파일 지정'), '파일 방식을 못 쓰는 폰에선 안 보임');
   await P.click('#shareBtn');
   await wait(P, 200);
   t.ok(/\.json$/.test(await P.evaluate(() => window.__shared) || ''), '내보내 공유로 JSON 파일을 넘김');
   // 윈도우 크롬·엣지는 실제로 공유를 지원하므로 못 하는 브라우저를 직접 흉내 낸다
   const P2 = await t.open({ init: () => { delete window.showSaveFilePicker; navigator.canShare = () => false; } });
-  await tab(P2, 'history');
+  await openData(P2);
   t.eq(await P2.locator('#shareBtn').count(), 0, '공유를 못 하는 브라우저면 버튼을 숨김');
 
   // ── 백업 가져오기는 합친다 ──
@@ -126,7 +126,8 @@ export default async function (t) {
   await wait(P, 400);
   const after = await meals(P);
   t.ok(before.every((m) => after.includes(m)) && after.includes('PC_점심'), '가져오면 지금 기록에 합쳐짐 (덮어쓰지 않음)');
-  await P.click('#undoBtn');
+  t.ok(await P.locator('#dataSheet').isVisible(), '동기화·백업 창에서 가져옴');
+  await P.click('#undoBtn');   // 되돌리기 바가 창 위에 보여야 누를 수 있다
   t.eq(await meals(P), before, '가져오기도 되돌릴 수 있음');
   await P.setInputFiles('#importFile', file);
   await wait(P, 300);

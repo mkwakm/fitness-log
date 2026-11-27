@@ -1,5 +1,5 @@
 // 기록 보호: 브라우저에 "지우지 마" 요청, 아이폰 홈 화면 안내(옮기는 순서 포함), 사본이 오래되면 알림
-import { tab, text, wait } from './lib.mjs';
+import { tab, text, wait, openData } from './lib.mjs';
 import { writeFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -108,7 +108,7 @@ export default async function (t) {
   await seedDays(page, 2);
   await wait(page, 100);
   t.eq(await page.evaluate(() => window.__persistCalls), 0, '파이어폭스에선 알아서 묻지 않음');
-  await tab(page, 'history');
+  await openData(page);
   await page.click('[data-safety="persist"]');
   await wait(page, 100);
   t.eq(await page.evaluate(() => window.__persistCalls), 1, '"보호 요청"을 누르면 그때 물음');
@@ -119,6 +119,7 @@ export default async function (t) {
   await seedDays(page, 2);
   await wait(page, 100);
   t.eq(await banner(page), '', '설치를 제안할 수 없으면 아무것도 안 띄움');
+  t.ok(await page.locator('#installBtn').isHidden(), '메뉴의 "홈 화면에 설치"도 숨김');
   await page.evaluate(() => {
     const e = new Event('beforeinstallprompt');
     e.prompt = () => { window.__prompted = true; };
@@ -128,6 +129,19 @@ export default async function (t) {
   t.ok((await banner(page)).includes('앱으로 설치하면'), '설치할 수 있게 되면 설치 권유');
   await page.click('[data-safety="install"]');
   t.ok(await page.evaluate(() => window.__prompted), '"설치"를 누르면 브라우저 설치 창');
+  // 三 메뉴의 "홈 화면에 설치" (기록 탭 아래에 있던 버튼)
+  await page.evaluate(() => {
+    const e = new Event('beforeinstallprompt');
+    e.prompt = () => { window.__prompted2 = true; };
+    e.userChoice = Promise.resolve({ outcome: 'accepted' });
+    window.dispatchEvent(e);
+  });
+  await page.click('#menuBtn');
+  t.ok(await page.locator('#installBtn').isVisible(), '설치할 수 있으면 메뉴에 "홈 화면에 설치"');
+  await page.click('#installBtn');
+  await wait(page, 100);
+  t.ok(await page.evaluate(() => window.__prompted2), '메뉴에서 눌러도 설치 창');
+  t.ok(await page.locator('#menuSheet').isHidden() && await page.locator('#installBtn').isHidden(), '메뉴는 닫히고 항목은 다시 숨김');
 
   // ── 아이폰 경고가 백업 알림보다 먼저 ──
   page = await t.open({ context: { userAgent: IPHONE }, init: fake({}) });

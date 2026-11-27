@@ -148,3 +148,15 @@ export async function openTimer(page) {
   await page.click('#timerOpen');
   await page.waitForTimeout(100);
 }
+
+// 三 메뉴 → 동기화·백업 / 체중 추이 / 1RM 추이. 기록 탭 아래에 있던 카드를 메뉴 창으로 옮겼다.
+// 이미 열려 있으면 그대로 둔다.
+async function openMenuItem(page, item, sheet) {
+  if (await page.locator(sheet).isVisible()) return;
+  await page.click('#menuBtn');
+  await page.click(item);
+  await page.waitForTimeout(80);
+}
+export const openData = (page) => openMenuItem(page, '#dataOpen', '#dataSheet');
+export const openLift = (page) => openMenuItem(page, '#liftOpen', '#liftSheet');
+export const openWeight = (page) => openMenuItem(page, '#weightOpen', '#weightSheet');

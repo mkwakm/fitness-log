@@ -21,7 +21,7 @@ export default async function (t) {
   t.eq(await page.locator('#weekChart .i-bar, #weekChart path[class*="bar"]').count() > 0, true, '섭취·소모 막대가 그려짐');
   t.ok((await text(page, '#weekTiles')).includes('평균 섭취'), '요약 타일');
 
-  // ── 체중·1RM 추이 ──
+  // ── 체중·1RM 추이 (三 메뉴 창 안에 있어도 기록 탭과 같이 그려 둔다) ──
   t.ok(await page.locator('#weightChart circle').count() >= 7, '체중 점이 7개 이상 (7일 보기)');
   t.ok(await page.locator('#liftChart circle').count() >= 2, '1RM 추이 점');
   const ticks = await page.locator('#liftChart text.axis').allTextContents();

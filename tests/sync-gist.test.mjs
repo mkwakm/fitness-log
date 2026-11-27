@@ -1,5 +1,5 @@
 // GitHub Gist 동기화 (가짜 GitHub 서버로) + 자동 동기화 타이밍
-import { tab, text, wait } from './lib.mjs';
+import { tab, text, wait, openData } from './lib.mjs';
 
 export default async function (t) {
   const gists = {};
@@ -20,7 +20,8 @@ export default async function (t) {
   const open = async () => {
     const p = await t.open({ dialog: (d) => (d.type() === 'prompt' ? d.accept('ghp_faketoken') : d.accept()) });
     await mock(p);
-    await tab(p, 'history');
+    await tab(p, 'history');   // 아래 검색칸 포커스 시험용
+    await openData(p);
     return p;
   };
   const adv = (p) => p.evaluate(() => { advOpen = true; renderSync(); });

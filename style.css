@@ -196,6 +196,10 @@ label.inline input.custom { border-color: var(--accent); color: var(--accent); f
   width: max-content; max-width: calc(100vw - 24px);
 }
 .dock > * { pointer-events: auto; }
+/* 동기화·백업 창에서 가져오기·사진 정리를 하면 되돌리기 바가 창(z-index 30) 위에 보여야 누를 수 있다.
+   그동안 휴식 버튼·바는 숨긴다(창 위에 같이 뜨면 어수선하다) */
+body.sheet-open .dock:has(> .undo-bar:not([hidden])) { z-index: 35; }
+body.sheet-open .dock:has(> .undo-bar:not([hidden])) > :not(.undo-bar) { display: none; }
 .rest-bar {
   display: flex; align-items: center; gap: 10px;
   background: var(--card); border: 1px solid var(--accent); border-radius: var(--r);
@@ -347,7 +351,6 @@ h3 .hint { display: inline; font-weight: 400; }
 .chart .l-line { stroke: var(--chart-4); }
 .chart .w-dot { fill: var(--chart-3); stroke: var(--card); stroke-width: 2; }
 .chart .l-dot { fill: var(--chart-4); stroke: var(--card); stroke-width: 2; }
-#weightCard[hidden], #liftCard[hidden] { display: none; }
 
 /* 카드 제목줄 · 기간 토글 */
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
@@ -398,6 +401,7 @@ h3 .hint { display: inline; font-weight: 400; }
   border-radius: var(--r); padding: 2px 7px; margin-left: 4px;
 }
 .tag.warn { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+.tag { white-space: nowrap; }   /* "토큰 필요"가 두 줄로 쪼개지지 않게 */
 .sync-adv { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 8px; }
 .sync-adv > summary { cursor: pointer; font-size: 0.85rem; color: var(--muted); padding: 4px 0; }
 .sync-adv > summary:hover { color: var(--text); }
@@ -944,6 +948,7 @@ body.has-dock main { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
 .menu-btn .bar { display: block; width: 18px; height: 2px; border-radius: 0; background: currentColor; }
 .menu-dot { position: absolute; top: 5px; right: 5px; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--card-2); }
 .menu-dot[hidden] { display: none; }
+.menu-dot.warn { background: var(--danger); }
 
 /* 三 메뉴: 왼쪽에서 밀려 나오는 판. 앱 폭(640px) 안의 왼쪽에 붙인다 */
 .drawer { position: fixed; inset: 0; z-index: 40; }
@@ -968,6 +973,17 @@ body.has-dock main { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
 .drawer-tx { display: flex; flex-direction: column; gap: 2px; }
 .drawer-tx small { color: var(--muted); font-size: 0.8rem; }
 .drawer-tx small:empty { display: none; }
+.drawer-tx small.warn-text { color: var(--danger); }
+.drawer-item[hidden] { display: none; }
+.drawer-sep { height: 1px; margin: 6px 4px; background: var(--line); }
+
+/* 메뉴로 옮긴 체중·1RM 추이, 동기화·백업 창 */
+.range-seg { margin-bottom: 14px; }
+.range-seg button { flex: 1; }
+.lift-pick { width: 100%; min-height: 44px; margin-bottom: 10px; }
+#liftDetail[hidden], .lift-pick[hidden] { display: none; }
+.data-body { display: flex; flex-direction: column; gap: 12px; }
+.data-body > .card { margin: 0; }
 
 /* 운동 시간 창: 위에 시계, 아래에 크게 숫자 (읽는 건 숫자로) */
 .timer-body { display: flex; flex-direction: column; align-items: center; gap: 14px; padding-top: 28px; }

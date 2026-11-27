@@ -1,5 +1,5 @@
 // 운동별 메모와 운동 상세 화면
-import { tab, text, wait, ago, openEx } from './lib.mjs';
+import { tab, text, wait, ago, openEx, openLift } from './lib.mjs';
 
 export default async function (t) {
   const page = await t.open();
@@ -130,11 +130,15 @@ export default async function (t) {
   t.ok((await text(page, '#exSheetBody')).includes('중량 기록이 없어요'), '1RM 그래프 대신 안내');
   await page.keyboard.press('Escape');
 
-  // ── 기록 탭 "자세히" ──
-  await tab(page, 'history');
+  // ── 三 메뉴 → 1RM 추이의 "자세히" ──
+  await openLift(page);
   await page.click('#liftDetail');
-  t.eq(await text(page, '#exSheetTitle'), await page.evaluate(() => liftPick), '1RM 카드에서도 열림');
+  t.eq(await text(page, '#exSheetTitle'), await page.evaluate(() => liftPick), '1RM 창에서도 열림');
+  t.ok(await page.evaluate(() => !!document.elementFromPoint(200, 300)?.closest('#exSheet')), '상세가 1RM 창 위에 뜸');
   await page.keyboard.press('Escape');
+  t.ok(await page.locator('#liftSheet').isVisible() && await page.locator('#exSheet').isHidden(), 'ESC: 상세만 닫히고 1RM 창으로 돌아옴');
+  await page.keyboard.press('Escape');
+  t.ok(await page.locator('#liftSheet').isHidden(), '한 번 더 ESC면 1RM 창도 닫힘');
 
   // ── 많아도 30개까지만 ──
   await page.evaluate(() => {

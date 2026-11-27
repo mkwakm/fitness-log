@@ -199,7 +199,7 @@ function save() {
     // 공간이 꽉 차면 예외가 그대로 튀어나와 화면이 반응 없이 멈춘다. 잡아서 알려준다.
     if (!storageFull) {
       storageFull = true;
-      alert('저장 공간이 꽉 찼어요.\n기록 탭에서 내보내기로 백업한 뒤, 오래된 기록을 정리해 주세요.\n(지금 적은 내용은 아직 저장되지 않았습니다)');
+      alert('저장 공간이 꽉 찼어요.\n三 메뉴 → 동기화·백업에서 내보내기로 백업한 뒤, 오래된 기록을 정리해 주세요.\n(지금 적은 내용은 아직 저장되지 않았습니다)');
     }
   }
   scheduleAutoSave();        // 파일 자동 저장 (sync.js)
@@ -962,7 +962,7 @@ function renderSession() {
   const d = state.days[currentDate];
   const running = Number(d?.sessionStart) > 0;
   const total = Math.floor(sessionSeconds(d) / 60);
-  $('#menuDot').hidden = !running;
+  renderMenuDot();
   $('#menuTimerText').textContent = running ? `재는 중 · ${total}분` : (total ? `${fmtDate(currentDate)} ${total}분` : '');
   renderTimer();
 
@@ -1014,8 +1014,55 @@ function renderTimer() {
 }
 function openMenu() {
   renderSession();
+  renderMenuNotes();
   $('#menuSheet').hidden = false;
   layerOpened('menu');
+}
+// 三 버튼의 점: 운동 시간이 도는 중(초록) 또는 동기화·드라이브 저장이 끊김(빨강).
+// 동기화 카드가 메뉴 속으로 들어가서, 끊긴 걸 밖에서 알 길이 이것뿐이다(조용히 넘어가면 저장된 줄 안다).
+function renderMenuDot() {
+  const running = Number(state.days[currentDate]?.sessionStart) > 0;
+  const trouble = typeof syncTrouble === 'function' ? syncTrouble() : '';
+  const dot = $('#menuDot');
+  dot.hidden = !running && !trouble;
+  dot.classList.toggle('warn', !!trouble);
+}
+// 메뉴 항목 밑 작은 글: 마지막 체중, 마지막 사본(끊겼으면 빨갛게)
+function renderMenuNotes() {
+  const last = weightEntries().at(-1);
+  $('#menuWeightText').textContent = last ? `${last.weight}kg · ${fmtDate(last.date)}` : '';
+  const trouble = typeof syncTrouble === 'function' ? syncTrouble() : '';
+  const copy = lastCopyAt();
+  const el = $('#menuDataText');
+  el.textContent = trouble || (copy ? `마지막 사본 ${fmtAgo(copy)}` : '아직 사본 없음');
+  el.classList.toggle('warn-text', !!trouble);
+  renderMenuDot();
+}
+// 체중·1RM 추이: 기록 탭 아래에 있던 카드를 메뉴로 옮겼다. 기간(7/30/90일)은 기록 탭과 같은 range를 쓴다
+function syncRangeSeg() {
+  document.querySelectorAll('[data-range]').forEach((b) => b.classList.toggle('on', Number(b.dataset.range) === range));
+}
+function openChartSheet(name) {
+  syncRangeSeg();
+  if (name === 'weight') renderWeightChart(); else renderLiftChart();
+  $(`#${name}Sheet`).hidden = false;
+  layerOpened(name);
+}
+function closeChartSheet(name, fromPop = false) {
+  if ($(`#${name}Sheet`).hidden) return;
+  $(`#${name}Sheet`).hidden = true;
+  layerClosed(name, fromPop);
+}
+function openData() {
+  renderSync();
+  renderSafetyStatus();
+  $('#dataSheet').hidden = false;
+  layerOpened('data');
+}
+function closeData(fromPop = false) {
+  if ($('#dataSheet').hidden) return;
+  $('#dataSheet').hidden = true;
+  layerClosed('data', fromPop);
 }
 function closeMenu(fromPop = false) {
   if ($('#menuSheet').hidden) return;
@@ -1556,15 +1603,11 @@ function renderWeightChart() {
   const from = shiftDate(currentDate, -(range - 1));
   const points = all.filter((e) => e.date >= from && e.date <= currentDate)
     .map((e) => ({ date: e.date, value: e.weight }));
-  const card = $('#weightCard');
   if (points.length < 2) {
-    card.hidden = all.length === 0;
-    $('#weightChart').innerHTML = all.length
-      ? '<p class="muted">이 기간에 기록이 하나뿐이에요. 운동 탭에서 체중을 적으면 추이가 그려집니다.</p>'
-      : '';
+    $('#weightChart').innerHTML = `<p class="muted">${!all.length ? '아직 적은 체중이 없어요. 운동 탭의 소모 칼로리 카드에 체중을 적으면 그려져요.'
+      : points.length ? '이 기간에 기록이 하나뿐이에요.' : '이 기간에 적은 체중이 없어요.'}</p>`;
     return;
   }
-  card.hidden = false;
   const diff = Math.round((points[points.length - 1].value - points[0].value) * 10) / 10;
   $('#weightChart').innerHTML =
     `<p class="muted">${points.length}번 기록 · ${diff > 0 ? '+' : ''}${diff} kg</p>` +
@@ -1586,9 +1629,8 @@ function liftHistory(name) {
 function renderLiftChart() {
   const names = [...new Set(Object.keys(state.days).sort().reverse()
     .flatMap((d) => state.days[d].workouts.map((w) => w.name)))];
-  const card = $('#liftCard');
-  if (!names.length) { card.hidden = true; return; }
-  card.hidden = false;
+  $('#liftPick').hidden = $('#liftDetail').hidden = !names.length;
+  if (!names.length) { $('#liftChart').innerHTML = '<p class="muted">아직 운동 기록이 없어요.</p>'; return; }
 
   // 처음 열었을 땐 중량 기록이 가장 많은 운동을 보여준다 (빈 그래프로 시작하지 않게)
   if (!names.some((n) => metKey(n) === metKey(liftPick))) {
@@ -1652,6 +1694,8 @@ window.addEventListener('popstate', () => {
   if (top === 'help') closeHelp(true);
   else if (top === 'menu') closeMenu(true);
   else if (top === 'timer') closeTimer(true);
+  else if (top === 'weight' || top === 'lift') closeChartSheet(top, true);
+  else if (top === 'data') closeData(true);
   else if (top === 'pick') closePicker(true);
   else if (top === 'plate') closePlates(true);
   else if (top === 'move') closeMove(true);
@@ -1974,12 +2018,13 @@ const HELP = [
 `],
   ['기록·통계', `달력에서 날짜를 누르면 그 날 운동이 아래에 펼쳐져요. 달력 위 돋보기로 운동·음식·메모를 검색할 수 있어요.
     <br>부위별 밸런스와 주간 목표 세트는 <b>최근 7일</b>을 볼 때만 견줘요. 비워두면 목표 없이 세트 수만 봐요.
-    <br>최고 기록과 중량 추이는 1RM(추정 1회 최대 중량)으로 견줘요. 100kg×1회와 90kg×8회를 바르게 비교하려고요.`],
+    <br>최고 기록과 중량 추이는 1RM(추정 1회 최대 중량)으로 견줘요. 100kg×1회와 90kg×8회를 바르게 비교하려고요.
+    <br><b>체중 추이</b>·<b>1RM 추이</b>는 三 메뉴에 있어요. 기간(7·30·90일)은 기록 탭과 같이 바뀌어요.`],
   ['백업과 기기 옮기기', `기록은 <b>이 기기 브라우저 안에만</b> 있어요. 기기를 바꾸거나 앱을 지우면 사라져요.
-    <br>옮길 땐 <b>내보내기</b>로 받은 파일을 다른 기기에서 <b>가져오기</b> 하세요. 합쳐지니까 기록이 사라지지 않아요.
+    <br>옮길 땐 三 메뉴 → <b>동기화·백업</b>의 <b>내보내기</b>로 받은 파일을 다른 기기에서 <b>가져오기</b> 하세요. 합쳐지니까 기록이 사라지지 않아요.
     <br>사진은 평소 동기화·내보내기에 들어가지 않아요(파일이 너무 커져서요). <b>사진까지 내보내기</b>를 따로 쓰세요.
     <br>아이폰 사파리는 7일 동안 안 연 사이트의 저장 공간을 지워요. <b>홈 화면에 추가</b>해서 쓰는 걸 권해요.`],
-  ['Claude 연결 (구글 드라이브)', `기록 탭 <b>Claude 연결</b>을 해 두면 기록을 고칠 때마다 내 구글 드라이브 <b>fitness-log</b> 폴더에
+  ['Claude 연결 (구글 드라이브)', `三 메뉴 → <b>동기화·백업</b>의 <b>Claude 연결</b>을 해 두면 기록을 고칠 때마다 내 구글 드라이브 <b>fitness-log</b> 폴더에
     <b>운동 기록 (fitness-log)</b> 문서(Claude가 읽기 좋은 정리)와 기록 파일 전체가 저장돼요.
     claude.ai에 구글 드라이브를 연결해 두고 "드라이브의 운동 기록 읽어줘"라고 하면 Claude가 최신 기록을 봐요.
     <br>만드는 법(PC에서 한 번, 5분): ① <b>스크립트 복사</b> → ② script.google.com <b>새 프로젝트</b>에 붙여넣고 저장
@@ -4015,6 +4060,8 @@ document.addEventListener('keydown', (e) => {
   else if (layers.at(-1) === 'help') closeHelp();
   else if (layers.at(-1) === 'menu') closeMenu();
   else if (layers.at(-1) === 'timer') closeTimer();
+  else if (layers.at(-1) === 'weight' || layers.at(-1) === 'lift') closeChartSheet(layers.at(-1));
+  else if (layers.at(-1) === 'data') closeData();
   else if (layers.at(-1) === 'pick') closePicker();
   else if (layers.at(-1) === 'plate') closePlates();
   else if (layers.at(-1) === 'move') closeMove();
@@ -4025,6 +4072,12 @@ document.addEventListener('keydown', (e) => {
 $('#menuBtn').addEventListener('click', openMenu);
 $('#menuSheet').addEventListener('click', (e) => { if (e.target.closest('[data-menu-close]')) closeMenu(); });
 $('#timerOpen').addEventListener('click', () => { menuTo('timer'); openTimer(); });
+$('#weightOpen').addEventListener('click', () => { menuTo('weight'); openChartSheet('weight'); });
+$('#liftOpen').addEventListener('click', () => { menuTo('lift'); openChartSheet('lift'); });
+$('#dataOpen').addEventListener('click', () => { menuTo('data'); openData(); });
+$('#weightClose').addEventListener('click', () => closeChartSheet('weight'));
+$('#liftClose').addEventListener('click', () => closeChartSheet('lift'));
+$('#dataClose').addEventListener('click', () => closeData());
 $('#timerClose').addEventListener('click', () => closeTimer());
 $('#helpBtn').addEventListener('click', () => { menuTo('help'); openHelp(); });
 // 운동 고르기 (보기만 하는 창이라 저장·다시 그리기는 고른 뒤 이름 칸이 알아서 한다)
@@ -4204,7 +4257,7 @@ document.addEventListener('click', (e) => {
     day().water = cups || null;
   } else if (ds.range) {
     range = Number(ds.range);
-    document.querySelectorAll('#rangeSeg button').forEach((b) => b.classList.toggle('on', b === t));
+    syncRangeSeg();
     renderHistory();
     return;
   } else if (ds.copyMeals) {
@@ -4500,6 +4553,7 @@ window.addEventListener('beforeinstallprompt', (e) => {
   renderSafety();
 });
 $('#installBtn').addEventListener('click', async () => {
+  closeMenu();
   if (!installPrompt) return;
   installPrompt.prompt();
   await installPrompt.userChoice;
