@@ -15,7 +15,7 @@ export default async function (t) {
   await page.click('#menuBtn');
   t.ok(await page.locator('#menuSheet').isVisible(), '三을 누르면 메뉴');
   t.eq((await page.locator('.drawer-item').allTextContents()).map((s) => s.replace(/\s+/g, '')),
-    ['⏱운동시간', '☀️밝게', '❓도움말'], '메뉴 항목');
+    ['⏱운동시간', '🌙Theme', '❓도움말'], '메뉴 항목');
   const box = await page.locator('.drawer-item').first().boundingBox();
   t.ok(box.height >= 44, `메뉴 항목은 누르기 쉬운 높이 (${box.height}px)`);
   await page.mouse.click(360, 400);                          // 판 바깥(어두운 곳)

@@ -266,8 +266,9 @@ function fmtDate(str) {
 function applyTheme() {
   const dark = state.profile.theme !== 'light';
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-  $('#themeIc').textContent = dark ? '☀️' : '🌙';                 // 메뉴에는 "누르면 바뀌는 쪽"을 적는다
-  $('#themeTx').textContent = dark ? '밝게' : '어둡게';   // 한 단어로 (사용자 요구)
+  // 메뉴 글자는 늘 "Theme"(사용자가 고른 한 단어). 지금 어느 쪽인지는 아이콘으로 — 누르면 반대로 바뀐다
+  $('#themeIc').textContent = dark ? '🌙' : '☀️';
+  $('#themeBtn').setAttribute('aria-label', dark ? 'Theme — 지금 어두운 화면, 누르면 밝게' : 'Theme — 지금 밝은 화면, 누르면 어둡게');
   $('#themeColor').content = dark ? '#15191b' : '#f4f6f5';
 }
 
