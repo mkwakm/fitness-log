@@ -167,7 +167,7 @@ async function gistSync({ quiet = false } = {}) {
       afterMerge(changed, 'GitHub');
     }
   } catch (err) {
-    if (!quiet) toastSync(`⚠️ ${err.message}`);
+    if (!quiet) toastSync(`${err.message}`);
   } finally {
     syncing = false;
     if (!quiet) setSyncBusy(false);
@@ -215,7 +215,7 @@ async function connectGist() {
       if (found) sync.gistId = found.id;
       saveSync();
     } catch (err) {
-      toastSync(`⚠️ ${err.message}`);
+      toastSync(`${err.message}`);
       return;
     }
   }
@@ -295,7 +295,7 @@ async function drivePush({ quiet = false, force = false, leaving = false } = {})
   } catch (err) {
     // fetch 자체가 실패하면 TypeError (인터넷이 없거나, 주소가 틀려 구글 로그인 화면으로 넘어간 경우)
     driveError = err instanceof TypeError ? '드라이브에 연결하지 못했어요. 인터넷과 웹 앱 주소·배포 설정을 확인해 주세요.' : err.message;
-    if (quiet) renderSync(); else toastSync(`⚠️ ${driveError}`);
+    if (quiet) renderSync(); else toastSync(`${driveError}`);
     return false;
   } finally {
     driving = false;
@@ -321,13 +321,13 @@ async function connectDrive() {
   const url = (prompt('구글 Apps Script 웹 앱 주소를 붙여넣으세요.\n(…/exec 로 끝나는 주소 — 만드는 법은 三 메뉴 → 도움말의 "Claude 연결")', sync.driveUrl || '') || '').trim();
   if (!url) return;
   if (!DRIVE_URL_RE.test(url)) {
-    toastSync('⚠️ 주소 모양이 달라요. https://script.google.com/macros/s/…/exec 이어야 해요.');
+    toastSync('주소 모양이 달라요. https://script.google.com/macros/s/…/exec 이어야 해요.');
     return;
   }
   const key = (prompt('비밀번호를 정해 주세요 (4자 이상).\n처음 저장할 때 스크립트가 기억해요. 다른 기기에서도 같은 비밀번호를 넣으세요.\n※ 이 기기에만 저장되고 백업 파일에는 들어가지 않아요.') || '').trim();
   if (!key) return;
   if (key.length < 4) {
-    toastSync('⚠️ 비밀번호는 4자 이상이어야 해요.');
+    toastSync('비밀번호는 4자 이상이어야 해요.');
     return;
   }
   sync = { ...sync, driveUrl: url, driveKey: key, driveSig: '', driveDoc: url === sync.driveUrl ? sync.driveDoc : '' };
@@ -361,7 +361,7 @@ async function copyRecordText() {
     await copyText(recordText());
     toastSync('기록을 글로 복사했어요. Claude 대화에 붙여넣으세요.');
   } catch {
-    toastSync('⚠️ 복사하지 못했어요.');
+    toastSync('복사하지 못했어요.');
   }
 }
 async function copyDriveScript() {
@@ -373,7 +373,7 @@ async function copyDriveScript() {
     await copyText(text);
     toastSync('스크립트를 복사했어요. script.google.com 새 프로젝트에 붙여넣으세요.');
   } catch {
-    toastSync('⚠️ 복사하지 못했어요. GitHub 저장소의 tools/drive-apps-script.gs를 열어 복사해 주세요.');
+    toastSync('복사하지 못했어요. GitHub 저장소의 tools/drive-apps-script.gs를 열어 복사해 주세요.');
   }
 }
 function setDriveBusy(on) {
@@ -427,7 +427,7 @@ async function pickSyncFile() {
   if (!syncMsg) {
     toastSync(remembered
       ? '이제 기록이 이 파일에 자동 저장돼요.'
-      : '⚠️ 이 창에서는 자동 저장되지만, 브라우저를 닫으면 파일을 다시 지정해야 해요.');
+      : '이 창에서는 자동 저장되지만, 브라우저를 닫으면 파일을 다시 지정해야 해요.');
   }
   renderSync();
 }
@@ -459,7 +459,7 @@ async function readSyncFile({ quiet = false } = {}) {
   if (!fileHandle) return;
   try {
     if ((await fileHandle.requestPermission?.({ mode: 'readwrite' })) === 'denied') {
-      if (!quiet) toastSync('⚠️ 파일 권한이 없어요.');
+      if (!quiet) toastSync('파일 권한이 없어요.');
       return;
     }
     const text = await (await fileHandle.getFile()).text();
@@ -467,7 +467,7 @@ async function readSyncFile({ quiet = false } = {}) {
     const changed = mergeState(JSON.parse(text));
     if (changed || !quiet) afterMerge(changed, '파일');
   } catch (err) {
-    if (!quiet) toastSync(`⚠️ 파일을 읽지 못했어요. ${err.message}`);
+    if (!quiet) toastSync(`파일을 읽지 못했어요. ${err.message}`);
   }
 }
 
@@ -476,13 +476,13 @@ async function relinkSyncFile() {
   if (!fileHandle) return;
   try {
     const perm = await fileHandle.requestPermission?.({ mode: 'readwrite' });
-    if (perm && perm !== 'granted') { toastSync('⚠️ 파일 권한이 없어요.'); return; }
+    if (perm && perm !== 'granted') { toastSync('파일 권한이 없어요.'); return; }
     fileBlocked = false;
     await readSyncFile({ quiet: true });
     await writeSyncFile();
     if (!syncMsg) toastSync('다시 연결했어요.');
   } catch {
-    toastSync('⚠️ 파일에 다시 연결하지 못했어요. 파일을 다시 지정해 주세요.');
+    toastSync('파일에 다시 연결하지 못했어요. 파일을 다시 지정해 주세요.');
   }
   renderSync();
 }
@@ -530,19 +530,19 @@ function renderSync() {
   const el = document.querySelector('#syncCard');
   if (!el) return;
   el.innerHTML = `
-    <h3>🔄 다른 기기와 동기화</h3>
+    <h3>다른 기기와 동기화</h3>
     ${syncMsg ? `<p class="sync-msg">${esc(syncMsg)}</p>` : ''}
     <p class="hint">기록은 기기마다 따로 저장돼요. 아래 방법으로 맞출 수 있고, <b>어느 쪽이든 합칠 때 기록이 사라지지 않아요.</b>
       같은 날에 이 PC에서 점심을, 휴대폰에서 저녁을 적었어도 둘 다 남습니다.</p>
 
     <div class="sync-row">
       <div>
-        <strong>💻 PC · 파일 자동 저장 <span class="tag">토큰 없음</span></strong>
+        <strong>PC · 파일 자동 저장 <span class="tag">토큰 없음</span></strong>
         <p class="hint">${canUseFile()
           ? `OneDrive·구글드라이브 폴더에 파일을 한 번 지정해 두면 이후 자동으로 저장돼요.
              다른 PC에서 같은 파일을 지정하면 합쳐집니다.<br>
              ${!fileHandle ? '아직 지정 안 함'
-               : fileBlocked ? '<b class="warn-text">⚠️ 지금은 파일에 저장되지 않고 있어요. 브라우저를 다시 열면 권한이 풀립니다 — 아래 버튼으로 다시 연결해 주세요.</b>'
+               : fileBlocked ? '<b class="warn-text">지금은 파일에 저장되지 않고 있어요. 브라우저를 다시 열면 권한이 풀립니다 — 아래 버튼으로 다시 연결해 주세요.</b>'
                : `마지막 저장: ${fmtAgo(sync.lastFile)}`}`
           : '이 브라우저는 지원하지 않아요. 아래 휴대폰 방법을 쓰거나 크롬·엣지 PC에서 열어 주세요.'}</p>
       </div>
@@ -560,7 +560,7 @@ function renderSync() {
 
     <div class="sync-row">
       <div>
-        <strong>📱 휴대폰 <span class="tag">토큰 없음</span></strong>
+        <strong>휴대폰 <span class="tag">토큰 없음</span></strong>
         <p class="hint">휴대폰은 브라우저 제약으로 자동 저장이 안 돼요.
           ${canShare() ? '<b>내보내 공유</b>를 눌러 드라이브 앱에 저장하고' : '아래 <b>내보내기</b>로 파일을 드라이브에 올리고'},
           다른 기기에선 <b>가져오기</b>로 그 파일을 고르면 합쳐집니다.</p>
@@ -573,9 +573,9 @@ function renderSync() {
 
     <div class="sync-row" id="driveRow">
       <div>
-        <strong>🤖 Claude 연결 · 구글 드라이브</strong>
+        <strong>Claude 연결 · 구글 드라이브</strong>
         <p class="hint">${!sync.driveUrl ? '연결 안 됨'
-          : driveError ? `<b class="warn-text">⚠️ ${esc(driveError)}</b>`
+          : driveError ? `<b class="warn-text">${esc(driveError)}</b>`
           : `마지막 저장: ${fmtAgo(sync.lastDrive)}`}</p>
       </div>
       <div class="sync-btns">

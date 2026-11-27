@@ -32,7 +32,7 @@ export default async function (t) {
   t.ok(await page.evaluate(() => sessionOn()), '오늘이면 운동 시간 재기를 같이 시작');
   t.ok((await text(page, '#focusBody')).includes('벤치프레스') && (await text(page, '#focusBody')).includes('1세트 / 3'), '운동 이름과 1세트 / 3');
   t.eq([await page.inputValue('[data-focus-edit="weight"]'), await page.inputValue('[data-focus-edit="reps"]')], ['60', '10'], '중량·횟수가 크게');
-  t.ok((await text(page, '#focusBody')).includes('📝 와이드그립'), '지난번 기록과 메모');
+  t.ok((await text(page, '#focusBody')).includes('메모 와이드그립'), '지난번 기록과 메모');
   t.ok((await text(page, '#focusBody')).includes('62.5kg'), '첫 세트엔 과부하 제안');
   t.eq(await text(page, '#focusProgress'), '0 / 5세트', '전체 진행');
 

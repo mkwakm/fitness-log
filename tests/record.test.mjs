@@ -179,10 +179,10 @@ export default async function (t) {
   // ── 테마 ──
   t.eq(await page.getAttribute('html', 'data-theme'), 'dark', '기본은 어두운 테마');
   await page.click('#menuBtn');
-  t.eq(await text(page, '#themeBtn'), '🌙Theme', '메뉴 글자는 Theme, 아이콘은 지금 화면(어두움)');
+  t.eq([await text(page, '#themeBtn'), await page.getAttribute('#themeIc use', 'href')], ['Theme', '#i-moon'], '메뉴 글자는 Theme, 아이콘은 지금 화면(어두움: 달)');
   await page.click('#themeBtn');
   t.eq(await page.getAttribute('html', 'data-theme'), 'light', '三 메뉴에서 밝은 테마');
-  t.eq(await text(page, '#themeBtn'), '☀️Theme', '바뀐 뒤엔 아이콘이 지금 화면(밝음)');
+  t.eq([await text(page, '#themeBtn'), await page.getAttribute('#themeIc use', 'href')], ['Theme', '#i-sun'], '바뀐 뒤엔 아이콘이 지금 화면(밝음: 해)');
   await page.keyboard.press('Escape');
 
   // ── 새로고침 뒤에도 전부 남나 ──

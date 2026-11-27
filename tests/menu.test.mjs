@@ -15,7 +15,7 @@ export default async function (t) {
   await page.click('#menuBtn');
   t.ok(await page.locator('#menuSheet').isVisible(), '三을 누르면 메뉴');
   t.eq((await page.locator('.drawer-item').allTextContents()).map((s) => s.replace(/\s+/g, '')),
-    ['⏱운동시간', '🌙Theme', '❓도움말'], '메뉴 항목');
+    ['운동시간', 'Theme', '도움말'], '메뉴 항목');
   const box = await page.locator('.drawer-item').first().boundingBox();
   t.ok(box.height >= 44, `메뉴 항목은 누르기 쉬운 높이 (${box.height}px)`);
   await page.mouse.click(360, 400);                          // 판 바깥(어두운 곳)
@@ -34,14 +34,14 @@ export default async function (t) {
   t.ok(await page.locator('#timerSheet').isVisible() && await page.locator('#menuSheet').isHidden(), '메뉴 → 운동 시간: 메뉴는 닫고 창을 엶');
   t.eq(await text(page, '#timerClock'), '0:00:00', '처음엔 0:00:00');
   t.eq(await page.locator('#timerDial .dial-tick').count(), 60, '시계 눈금 60개');
-  t.eq(await text(page, '#sessionBtn'), '▶️ 운동 시작', '시작 버튼');
+  t.eq(await text(page, '#sessionBtn'), '운동 시작', '시작 버튼');
   await page.click('#sessionBtn');
   await page.evaluate(() => { day().sessionStart = Date.now() - (12 * 60 + 34) * 1000; renderTimer(); });
   t.eq(await text(page, '#timerClock'), '0:12:34', '아래에 시:분:초로 크게');
   t.eq(await page.getAttribute('#dialHand', 'transform'), 'rotate(204 120 120)', '바늘 = 초 (34초 → 204°)');
   t.eq(await page.getAttribute('#dialArc', 'stroke-dasharray'), '12.57 60', '바깥 호 = 한 시간 중 몇 분째');
   t.ok((await text(page, '#sessionText')).startsWith('오늘 운동 중'), '재는 중 표시');
-  t.eq(await text(page, '#sessionBtn'), '⏹ 운동 끝내기', '끝내기 버튼');
+  t.eq(await text(page, '#sessionBtn'), '운동 끝내기', '끝내기 버튼');
   await page.waitForFunction(() => document.getElementById('timerClock').textContent !== '0:12:34', null, { timeout: 2500 });
   t.ok(true, '창이 열려 있으면 1초마다 바뀜');
 
@@ -59,7 +59,7 @@ export default async function (t) {
   await page.click('#sessionBtn');
   t.eq(await page.evaluate(() => day().sessionMin), 62, '끝내면 분으로 쌓임');
   t.eq(await text(page, '#timerClock'), '1:02:00', '끝낸 뒤엔 쌓인 시간');
-  t.eq(await text(page, '#sessionBtn'), '▶️ 이어서 재기', '다시 누르면 이어서');
+  t.eq(await text(page, '#sessionBtn'), '이어서 재기', '다시 누르면 이어서');
   t.ok((await text(page, '#sessionText')).includes('62분 운동했어요'), '오늘 몇 분 했는지');
   await page.click('#timerClose');
   t.ok(await page.locator('#menuDot').isHidden(), '끝내면 점도 사라짐');

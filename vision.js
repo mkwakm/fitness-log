@@ -298,26 +298,26 @@ function renderVision() {
   if (!s) { box.innerHTML = ''; return; }
   const chips = (list) => `<div class="chips">${list.map((n, i) => `<button type="button" class="chip" data-vision-pick="${i}">${esc(n)}</button>`).join('')}</div>`;
   if (s.mode === 'ask') {
-    box.innerHTML = `<p><strong>📷 사진으로 음식을 알아볼까요?</strong></p>
+    box.innerHTML = `<p><strong>사진으로 음식을 알아볼까요?</strong></p>
       <p class="hint">처음 한 번 AI 모델(약 50MB)을 받아요. 와이파이에서 받는 걸 권해요. 사진은 이 기기 밖으로 나가지 않아요.</p>
       ${VISION_HEAD_URL ? '<p class="hint">기본 음식 분류는 한국지능정보사회진흥원의 사업결과인 AI 허브 「한국 이미지(음식)」 데이터로 학습했어요.</p>' : ''}
       <div class="vision-btns"><button type="button" class="primary" data-vision="on">받고 알아보기</button>
       <button type="button" data-vision="skip">직접 적을게요</button></div>`;
   } else if (s.mode === 'loading') {
-    box.innerHTML = `<p>🤖 ${s.pct != null ? `AI 모델 받는 중… ${Math.round(s.pct * 100)}%` : '사진 보는 중…'}</p>`;
+    box.innerHTML = `<p>${s.pct != null ? `AI 모델 받는 중… ${Math.round(s.pct * 100)}%` : '사진 보는 중…'}</p>`;
   } else if (s.mode === 'done') {
     const m = s.meal;
-    box.innerHTML = `<p>✅ <strong>${esc(m.name)}</strong>(으)로 넣었어요 <span class="muted">${esc(m.amount)}${m.kcal ? ` · ${m.kcal} kcal` : ''}</span></p>
+    box.innerHTML = `<p>✓ <strong>${esc(m.name)}</strong>(으)로 넣었어요 <span class="muted">${esc(m.amount)}${m.kcal ? ` · ${m.kcal} kcal` : ''}</span></p>
       <div class="vision-btns"><button type="button" data-vision="wrong">다른 음식이에요</button>
       <button type="button" data-vision="close">확인</button></div>`;
   } else if (s.mode === 'pick') {
-    box.innerHTML = `<p><strong>🤔 어떤 음식인가요?</strong> <span class="hint">누르면 바로 넣어요</span></p>${chips(s.cands)}
+    box.innerHTML = `<p><strong>어떤 음식인가요?</strong> <span class="hint">누르면 바로 넣어요</span></p>${chips(s.cands)}
       <p class="hint">목록에 없으면 이름을 적어 추가해 주세요. 다음부터 이 사진으로 알아봐요.</p>`;
   } else if (s.mode === 'new') {
-    box.innerHTML = `<p><strong>📝 아직 모르는 음식이에요.</strong></p>
+    box.innerHTML = `<p><strong>아직 모르는 음식이에요.</strong></p>
       <p class="hint">이름을 적어 추가하면 다음부터 이 사진으로 알아봐요.</p>`;
   } else if (s.mode === 'error') {
-    box.innerHTML = `<p>⚠️ AI를 불러오지 못했어요. 인터넷 연결을 확인하거나 이름을 직접 적어 주세요.</p>`;
+    box.innerHTML = `<p>AI를 불러오지 못했어요. 인터넷 연결을 확인하거나 이름을 직접 적어 주세요.</p>`;
   }
 }
 function setVision(next) {

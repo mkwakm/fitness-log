@@ -122,7 +122,7 @@ export default async function (t) {
   await page.evaluate(() => stopRest());
 
   // 카드의 ⏱: 세트 완료를 안 눌러도 바로 쉬기
-  t.eq(await text(page, '[data-rest-now="x"]'), '⏱ 3:00', '카드에 그 운동의 휴식이 보임');
+  t.eq(await text(page, '[data-rest-now="x"]'), '3:00', '카드에 그 운동의 휴식이 보임');
   await page.click('[data-rest-now="x"]');
   t.eq(await left(), 180, '⏱ 누르면 바로 타이머');
   await page.click('[data-rest-now="y"]');
@@ -133,7 +133,7 @@ export default async function (t) {
   await page.evaluate(() => { exMetaOpen.add('x'); render(); });
   await page.selectOption('[data-rest-sel="x"]', '150');
   t.eq(await page.evaluate(() => [day().workouts[0].rest, restFor('스쿼트')]), [150, 150], '카드에서 고치면 그 운동과 다음번 기본값이 바뀜');
-  t.eq(await text(page, '[data-rest-now="x"]'), '⏱ 2:30', '⏱ 버튼도 바뀜');
+  t.eq(await text(page, '[data-rest-now="x"]'), '2:30', '⏱ 버튼도 바뀜');
 
   // 집중 모드도 그 운동의 휴식
   await page.evaluate(() => { day().workouts.forEach((w) => w.sets.forEach((s) => { s.done = false; })); save(); render(); });
@@ -150,7 +150,7 @@ export default async function (t) {
   // ── 화면 아래 ⏱ 버튼 (사용자: "타이머가 어딨는지 모르겠다") ──
   const fab = () => page.evaluate(() => ({ shown: !$('#restFab').hidden, text: $('#restFab').textContent.replace(/\s+/g, ' ').trim(), bar: !$('#restBar').hidden }));
   await page.evaluate(() => { stopRest(); day().workouts.forEach((w) => w.sets.forEach((s) => { s.done = false; s.doneAt = null; })); save(); render(); });
-  t.eq(await fab(), { shown: true, text: '⏱ 휴식 2:30', bar: false }, '오늘 운동이 있으면 운동 탭 아래에 ⏱ 버튼 (아직 다 안 한 첫 운동 스쿼트의 휴식)');
+  t.eq(await fab(), { shown: true, text: '휴식 2:30', bar: false }, '오늘 운동이 있으면 운동 탭 아래에 ⏱ 버튼 (아직 다 안 한 첫 운동 스쿼트의 휴식)');
   await tab(page, 'meals');
   t.eq((await fab()).shown, true, '다른 탭에서도 보임 (사용자: "타이머는 항시 있는 걸로")');
   await tab(page, 'workouts');
@@ -162,15 +162,15 @@ export default async function (t) {
   await openEx(page, 2);
   await page.click('[data-toggle="z:0"]');
   await page.evaluate(() => stopRest());
-  t.eq((await fab()).text, '⏱ 휴식 1:30', '방금 세트를 끝낸 운동(레그컬, 기본 휴식)의 휴식으로');
+  t.eq((await fab()).text, '휴식 1:30', '방금 세트를 끝낸 운동(레그컬, 기본 휴식)의 휴식으로');
   await page.evaluate(() => {
     const y = shiftDate(todayStr(), -1);
     state.days[y] = { meals: [], note: '', workouts: [{ id: 'old', name: '벤치프레스', sets: [{ weight: 60, reps: 10 }] }] };
     currentDate = y; render();
   });
-  t.eq((await fab()).text, `⏱ 휴식 ${await page.evaluate(() => mmss(restOf(restTarget())))}`, '지난 날짜에서도 보임 (그 날 운동의 휴식)');
+  t.eq((await fab()).text, `휴식 ${await page.evaluate(() => mmss(restOf(restTarget())))}`, '지난 날짜에서도 보임 (그 날 운동의 휴식)');
   await page.evaluate(() => { currentDate = todayStr(); day().workouts = []; save(); render(); });
-  t.eq([(await fab()).shown, (await fab()).text, await page.evaluate(() => document.body.classList.contains('has-dock'))], [true, '⏱ 휴식 1:30', true], '운동을 넣기 전에도 보임 (기본 휴식)');
+  t.eq([(await fab()).shown, (await fab()).text, await page.evaluate(() => document.body.classList.contains('has-dock'))], [true, '휴식 1:30', true], '운동을 넣기 전에도 보임 (기본 휴식)');
   await page.evaluate(() => {
     day().workouts = [{ id: 'x', name: '스쿼트', rest: 150, sets: [{ weight: 100, reps: 5 }, { weight: 100, reps: 5 }] }];
     save(); render();

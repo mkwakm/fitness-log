@@ -20,9 +20,9 @@ export default async function (t) {
   // ── 운동별 메모 ──
   await page.fill('#exName', '벤치프레스');
   await wait(page, 80);
-  t.ok((await text(page, '#exHint')).includes('📝 와이드그립'), '폼 안내에 지난번 메모가 따라옴');
+  t.ok((await text(page, '#exHint')).includes('메모 와이드그립'), '폼 안내에 지난번 메모가 따라옴');
   await page.click('#workoutForm button[type=submit]');
-  t.ok((await text(page, '#workoutList')).includes('📝 와이드그립'), '카드의 지난번 줄에도');
+  t.ok((await text(page, '#workoutList')).includes('메모 와이드그립'), '카드의 지난번 줄에도');
   await page.fill('.ex-note', '  발 고정  ');
   await page.locator('.ex-note').blur();
   t.eq(await page.evaluate(() => day().workouts[0].note), '발 고정', '메모 저장 (앞뒤 공백 정리)');

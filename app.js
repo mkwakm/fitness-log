@@ -263,12 +263,19 @@ function fmtDate(str) {
   return str.slice(5).replace('-', '/');   // 2026-09-21 → 09/21
 }
 
+// ---------- 아이콘 ----------
+// index.html의 SVG 스프라이트(#i-이름). 색깔 이모지를 다 걷어 내고 같은 굵기의 단색 선 아이콘으로 바꿨다(사용자 요구).
+// 쓰는 곳은 탭·메뉴·자주 누르는 버튼뿐 — 카드 제목·문장엔 아이콘을 붙이지 않는다.
+function ic(name) {
+  return `<svg class="ic" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+}
+
 // ---------- 테마 ----------
 function applyTheme() {
   const dark = state.profile.theme !== 'light';
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   // 메뉴 글자는 늘 "Theme"(사용자가 고른 한 단어). 지금 어느 쪽인지는 아이콘으로 — 누르면 반대로 바뀐다
-  $('#themeIc').textContent = dark ? '🌙' : '☀️';
+  $('#themeIc').innerHTML = ic(dark ? 'moon' : 'sun');
   $('#themeBtn').setAttribute('aria-label', dark ? 'Theme — 지금 어두운 화면, 누르면 밝게' : 'Theme — 지금 밝은 화면, 누르면 어둡게');
   $('#themeColor').content = dark ? '#15191b' : '#f4f6f5';
 }
@@ -392,7 +399,7 @@ function updateMealHint() {
   const what = est.generic ? `'${esc(est.key)}' 종류 평균으로 추정` : esc(est.key);
   const typed = Number($('#foodKcal').value);
   const fixed = kcalTouched && typed > 0 && typed !== est.kcal;
-  hint.innerHTML = `🧮 ${what} ${est.grams}g 기준 약 ${est.kcal} kcal · 단백질 ${est.protein}g${custom}` +
+  hint.innerHTML = `${what} ${est.grams}g 기준 약 ${est.kcal} kcal · 단백질 ${est.protein}g${custom}` +
     (est.assumed ? ' · 양을 안 적어 1인분으로 추정' : '') +
     (est.kind === 's' ? ' · 밥은 따로 적어 주세요' : '') +
     (fixed ? ` <button type="button" class="link-btn" id="rememberFood">＋ 고친 칼로리로 기억하기</button>` : '');
@@ -701,10 +708,10 @@ function setsVary(sets) {
   return new Set(sets.map((x) => `${Number(x.weight) || 0}×${Number(x.reps) || 0}`)).size > 1;
 }
 function overloadText(tip) {
-  if (tip.kind === 'weight' && tip.varied) return `💪 지난번 세트를 다 채웠어요. 오늘은 세트마다 +${tip.step}kg 어때요?`;
+  if (tip.kind === 'weight' && tip.varied) return `지난번 세트를 다 채웠어요. 오늘은 세트마다 +${tip.step}kg 어때요?`;
   return tip.kind === 'weight'
-    ? `💪 지난번 ${tip.from}kg × ${tip.reps}회를 다 채웠어요. 오늘은 ${tip.to}kg 어때요?`
-    : `💪 지난번 ${tip.from}회를 다 채웠어요. 오늘은 ${tip.to}회 어때요?`;
+    ? `지난번 ${tip.from}kg × ${tip.reps}회를 다 채웠어요. 오늘은 ${tip.to}kg 어때요?`
+    : `지난번 ${tip.from}회를 다 채웠어요. 오늘은 ${tip.to}회 어때요?`;
 }
 
 // 보고 있는 날보다 이전에 같은 운동을 한 가장 최근 기록
@@ -936,7 +943,7 @@ function renderFocusBtn() {
   const q = focusQueue();
   btn.hidden = !q.length;
   const left = q.filter((x) => !x.s.done).length;
-  btn.innerHTML = left ? `🎯 집중 모드로 운동하기 <span>남은 ${left}세트</span>` : '🎯 집중 모드 <span>오늘 세트를 다 했어요</span>';
+  btn.innerHTML = left ? `<b>${ic('focus')}집중 모드로 운동하기</b><span>남은 ${left}세트</span>` : `<b>${ic('focus')}집중 모드</b><span>오늘 세트를 다 했어요</span>`;   // 아이콘·이름은 한 덩어리 (따로 두면 양 끝으로 벌어진다)
 }
 // 운동 시간은 三 메뉴의 "운동 시간" 창에서 잰다(운동 탭에 카드로 두니 자리만 먹었다 — 사용자 요구).
 // 창을 닫아도 계속 재고, 도는 동안은 三 버튼에 점을 찍는다(10/12처럼 끄는 걸 잊지 않게).
@@ -995,12 +1002,12 @@ function renderTimer() {
   $('#timerSheet').classList.toggle('running', running);
   $('#timerClock').textContent = clockText(sec);
   const btn = $('#sessionBtn');
-  btn.textContent = running ? '⏹ 운동 끝내기' : (sec ? '▶️ 이어서 재기' : '▶️ 운동 시작');
+  btn.innerHTML = running ? `${ic('stop')}운동 끝내기` : `${ic('play')}${sec ? '이어서 재기' : '운동 시작'}`;
   btn.classList.toggle('primary', !running);
   btn.classList.toggle('running', running);
   const when = currentDate === todayStr() ? '오늘' : fmtDate(currentDate);
   $('#sessionText').innerHTML = running
-    ? `${when} 운동 중${wakeLock ? ' · <span class="tip">🔆 화면 안 꺼짐</span>' : ''}`
+    ? `${when} 운동 중${wakeLock ? ' · <span class="tip">화면 안 꺼짐</span>' : ''}`
     : (sec ? `${when} ${Math.floor(sec / 60)}분 운동했어요` : '시작을 누르면 시간을 재요');
   clearInterval(timerTick);
   if (running) timerTick = setInterval(renderTimer, 1000);   // 창이 열려 있고 도는 동안만 1초마다
@@ -1194,7 +1201,7 @@ function renderMeals() {
       ${list.map((m) => `<div class="item">
         ${m.photo ? `<span class="photo-wrap"><img data-photo="${esc(m.photo)}" alt="" loading="lazy"></span>` : ''}
         <div class="grow">${esc(m.name)} <span class="muted">${esc(m.amount)}${m.kcal ? ' · ' + m.kcal + ' kcal' : ''}${m.protein ? ' · 단백질 ' + m.protein + 'g' : ''}</span></div>
-        <button class="del move-btn" data-move-meal="${m.id}" aria-label="다른 날로 옮기기" title="다른 날로 옮기기">📅</button>
+        <button class="del move-btn" data-move-meal="${m.id}" aria-label="다른 날로 옮기기" title="다른 날로 옮기기">${ic('cal')}</button>
         <button class="del" data-del-meal="${m.id}" aria-label="삭제">✕</button>
       </div>`).join('')}</div>`;
   }).join('');
@@ -1300,20 +1307,20 @@ function renderWater() {
   const cups = Number(day().water) || 0;
   const goal = Number(state.profile.waterGoal) || 8;
   $('#waterRow').innerHTML = `
-    <div class="bar-head"><span>💧 물</span><strong>${cups} / ${goal}잔</strong></div>
+    <div class="bar-head"><span>물</span><strong>${cups} / ${goal}잔</strong></div>
     <div class="cups">
       ${Array.from({ length: goal }, (_, i) => `<span class="cup ${i < cups ? 'on' : ''}"></span>`).join('')}
     </div>
     <div class="row water-btns">
       <button data-water="-1" aria-label="한 잔 빼기">−</button>
-      <button data-water="1" class="primary">💧 한 잔 마심</button>
+      <button data-water="1" class="primary">${ic('drop')}한 잔 마심</button>
     </div>`;
 }
 
 function renderMyFoods() {
   const foods = Object.entries(state.profile.foods || {});
   $('#myFoods').innerHTML = foods.length
-    ? `<div class="card"><h3>🍽 내가 등록한 음식</h3>
+    ? `<div class="card"><h3>내가 등록한 음식</h3>
         ${foods.map(([key, f]) => `<div class="item">
           <div>${esc(key)} <span class="muted">100g당 ${f.kcal100} kcal${f.protein ? ` · 단백질 ${f.protein}g` : ''}</span></div>
           <button class="del" data-del-food="${esc(key)}" aria-label="삭제">✕</button>
@@ -1332,7 +1339,7 @@ function renderWorkouts() {
   const setText = done ? `${done}/${totalSets}세트 완료` : `${totalSets}세트`;
 
   $('#workoutSummary').textContent = workouts.length
-    ? `운동 ${workouts.length}종 · ${setText}${volume ? ` · 볼륨 ${volume.toLocaleString()} kg` : ''} · ${totalMin}분 · 🔥 ${burn} kcal`
+    ? `운동 ${workouts.length}종 · ${setText}${volume ? ` · 볼륨 ${volume.toLocaleString()} kg` : ''} · ${totalMin}분 · 소모 ${burn} kcal`
     : '';
 
   renderBurn(workouts, weight, burn);
@@ -1350,14 +1357,14 @@ function renderWorkouts() {
     // 둘 중 하나를 펼쳤을 때만 보여준다 (묶인 것은 카드 왼쪽 띠와 맨 위 태그로 이미 보인다).
     const linkRow = next && (exOpen.has(w.id) || exOpen.has(next.id))
       ? `<div class="ss-link ${linked ? 'on' : ''}">
-      <button data-ss-link="${w.id}:${next.id}">${linked ? '🔗 슈퍼세트 · 풀기' : '🔗 아래 운동과 슈퍼세트로 묶기'}</button></div>`
+      <button data-ss-link="${w.id}:${next.id}">${ic('link')}${linked ? '슈퍼세트 · 풀기' : '아래 운동과 슈퍼세트로 묶기'}</button></div>`
       : '';
     const vol = volumeOf(w);
     const done = doneCount(w);
     const pr = personalBest(w.name);
     const prText = !pr ? ''
-      : pr.rm ? `🏆 최고 ${pr.weight} kg × ${pr.reps}회 <span class="muted">(1RM ${pr.rm}kg)</span>`
-      : `🏆 최고 ${pr.reps}회`;
+      : pr.rm ? `최고 ${pr.weight} kg × ${pr.reps}회 <span class="muted">(1RM ${pr.rm}kg)</span>`
+      : `최고 ${pr.reps}회`;
     const isNewPr = pr && pr.date === currentDate;   // 보고 있는 날에 세운 기록
     const last = lastRecord(w.name);
     const tip = overloadTip(w.name);
@@ -1369,7 +1376,7 @@ function renderWorkouts() {
     const setCount = workSets(w).length;
     const body = !open ? '' : `<div class="ex-body">
     <details class="ex-meta" data-meta-id="${w.id}" ${exMetaOpen.has(w.id) ? 'open' : ''}>
-      <summary>🔥 ${burnOf(w, weight)} kcal${isEstimated(w) ? ' (추정)' : ''} · ${minutesOf(w)}분 · MET ${metOf(w.name)}${customMet(w.name) ? ' (직접)' : ''} · ${partOf(w.name)} <span class="muted">시간·휴식·MET·부위 고치기</span></summary>
+      <summary>${burnOf(w, weight)} kcal${isEstimated(w) ? ' (추정)' : ''} · ${minutesOf(w)}분 · MET ${metOf(w.name)}${customMet(w.name) ? ' (직접)' : ''} · ${partOf(w.name)} <span class="muted">시간·휴식·MET·부위 고치기</span></summary>
       <div class="meta-inputs">
         <label class="inline">시간
           <input type="number" inputmode="numeric" min="0" step="1" value="${w.minutes ?? ''}"
@@ -1413,23 +1420,23 @@ function renderWorkouts() {
       <button data-add-set="${w.id}">+ 세트</button>
       <button data-add-warmup="${w.id}" title="본 세트 앞에 가벼운 워밍업 세트를 넣어요 (볼륨·기록에서 빠져요)">+ 워밍업</button>
       <button data-drop-add="${w.id}" title="방금 완료한 세트에 무게를 내려 이어 한 것을 붙여요">↘ 드롭</button>
-      <button class="rest-now" data-rest-now="${w.id}" title="휴식 타이머를 지금 켜요 (세트를 완료하면 저절로 켜져요)">⏱ ${restOf(w) ? mmss(restOf(w)) : '휴식'}</button>
+      <button class="rest-now" data-rest-now="${w.id}" title="휴식 타이머를 지금 켜요 (세트를 완료하면 저절로 켜져요)">${ic('timer')}${restOf(w) ? mmss(restOf(w)) : '휴식'}</button>
     </div>
     <p class="muted card-stats">${done ? `${done}/${workSets(w).length}세트 완료 · ` : ''}볼륨 ${vol.toLocaleString()} kg${
         todayRm ? ` · 오늘 1RM ${todayRm}kg` : ''}${rest ? ` · 휴식 ${mmss(rest)}` : ''}</p>
     ${last ? `<div class="item pr">
       <span class="muted">↩ 지난번 ${fmtDate(last.date)}</span>
       <span class="muted">${setsText(last.workout)}</span>
-    </div>${last.workout.note ? `<div class="item pr"><span class="muted">📝 ${esc(last.workout.note)}</span></div>` : ''}` : ''}
+    </div>${last.workout.note ? `<div class="item pr"><span class="muted"><span class="note-tag">메모</span> ${esc(last.workout.note)}</span></div>` : ''}` : ''}
     ${tip ? `<div class="item pr"><span class="tip">${overloadText(tip)}</span></div>` : ''}
     ${prText ? `<div class="item pr">
       <span>${prText}</span>
-      <span class="${isNewPr ? 'new-pr' : 'muted'}">${isNewPr ? '🎉 신기록!' : pr.date}</span>
+      <span class="${isNewPr ? 'new-pr' : 'muted'}">${isNewPr ? '신기록' : pr.date}</span>
     </div>` : ''}
     <div class="ex-foot">
       <span class="ex-links">
-        <button class="link-btn" data-ex-detail="${esc(w.name)}">📊 기록 보기</button>
-        <button class="link-btn" data-move-ex="${w.id}">📅 날짜 옮기기</button>
+        <button class="link-btn" data-ex-detail="${esc(w.name)}">기록 보기</button>
+        <button class="link-btn" data-move-ex="${w.id}">날짜 옮기기</button>
       </span>
       <span class="order">
         ${idx > 0 ? `<button data-move="${w.id}:-1" aria-label="위로" title="위로">↑</button>` : ''}
@@ -1439,7 +1446,7 @@ function renderWorkouts() {
     </div>
     </div>`;
     return `<div class="card ex-card${ssCls}${open ? ' open' : ''}">
-    ${ss && run[0] === w ? `<p class="ss-tag">🔗 슈퍼세트 ${run.length}종</p>` : ''}
+    ${ss && run[0] === w ? `<p class="ss-tag">슈퍼세트 ${run.length}종</p>` : ''}
     <button class="ex-head" data-ex-open="${w.id}" aria-expanded="${open}">
       <span class="ex-name">${esc(w.name)}</span>
       <span class="ex-count">${done ? `${done}/${setCount}` : setCount}세트</span>
@@ -1767,7 +1774,7 @@ function plateText(total) {
 function plateLineHtml(w) {
   if (!isBarbell(w.name)) return '';
   const kg = Number(w.sets.find((s) => !s.done)?.weight) || 0;
-  return kg > 0 ? `<button class="plate-line" data-plates="${kg}">🏋️ ${kg}kg · ${plateText(kg)}</button>` : '';
+  return kg > 0 ? `<button class="plate-line" data-plates="${kg}">${ic('plate')}${kg}kg · ${plateText(kg)}</button>` : '';
 }
 function openPlates(kg) {
   if (Number(kg) > 0) plateKg = Number(kg);
@@ -1932,7 +1939,7 @@ function pickExercise(name) {
 // 설명을 화면 곳곳에 적어 두면 글 벽이 된다(사용자: "주석 같은 게 많아 정돈이 안 돼 보인다").
 // 설명은 전부 여기 모으고, 화면에는 지금 눌러야 할 것만 남긴다. 기능을 더하면 이 표에 한 줄 적을 것.
 const HELP = [
-  ['🏋️ 운동 기록', `운동 이름 칸 옆 <b>📋 목록</b>을 누르면 운동 200여 가지를 부위별로 볼 수 있어요. 내가 한 운동이 위에 오고,
+  ['운동 기록', `운동 이름 칸 옆 <b>목록</b>을 누르면 운동 200여 가지를 부위별로 볼 수 있어요. 내가 한 운동이 위에 오고,
     "사레레"·"렛풀"처럼 줄임말로도 찾을 수 있어요.
     <br>이름을 조금 다르게 적어도(사레레 = 사이드레터럴레이즈, 벤치 프레스 = 벤치프레스) <b>같은 운동으로 묶여서</b>
     지난 기록·최고 기록·그래프가 이어져요. 적은 이름은 그대로 보여요.
@@ -1944,35 +1951,35 @@ const HELP = [
     <br>세트 번호를 누르면 완료 체크가 되고, 체크한 세트만 볼륨·소모 칼로리에 들어가요(하나도 안 하면 전체를 세요).
     <br><b>W</b>는 워밍업 세트라 기록·볼륨에서 빠지고, <b>↘</b>는 무게를 내려 이어 한 드롭세트예요.
     <br>세트 수는 <b>−/+</b>로 바꿔요. 줄였다가 다시 늘리면 적어 둔 세트가 그대로 돌아와요.
-    <br><b>휴식 타이머</b>는 화면 아래 늘 떠 있는 <b>⏱ 휴식</b> 버튼이에요. 누르면 바로 켜지고, 세트 번호를 눌러 완료해도 저절로 켜져요.
+    <br><b>휴식 타이머</b>는 화면 아래 늘 떠 있는 <b>휴식</b> 버튼이에요. 누르면 바로 켜지고, 세트 번호를 눌러 완료해도 저절로 켜져요.
     <b>휴식</b> 시간은 운동마다 정해요(스쿼트 3분, 컬 1분처럼). 다음에 같은 운동을 넣으면 지난번 휴식으로 채워져요.
-    <br><b>🏋️ 원판</b>: 바벨 운동은 다음 세트 무게를 "한쪽 20 · 10"처럼 알려줘요. 누르면 계산기가 열리고, 바 무게와 헬스장에 있는 원판을 정할 수 있어요.
-    <br><b>🔥 워밍업 자동</b>(운동 폼)이나 카드의 첫 <b>+ 워밍업</b>은 1세트 무게를 보고 워밍업을 한 번에 짜요(바벨은 빈 바 → 40% → 60% → 80%).
-    <br><b>📅 날짜 옮기기</b>: 다른 날에 잘못 적었으면 카드 아래 <b>📅 날짜 옮기기</b>(슈퍼세트는 묶음째), 식단 줄의 📅, 기록 탭 달력의 <b>다른 날로 옮기기</b>(그 날 운동 전부)로 옮겨요.
-    <br>🎯 집중 모드는 지금 할 세트 하나만 크게 띄우고 완료하면 휴식·다음 세트로 저절로 넘어가요.
+    <br><b>원판</b>: 바벨 운동은 다음 세트 무게를 "한쪽 20 · 10"처럼 알려줘요. 누르면 계산기가 열리고, 바 무게와 헬스장에 있는 원판을 정할 수 있어요.
+    <br><b>워밍업 자동</b>(운동 폼)이나 카드의 첫 <b>+ 워밍업</b>은 1세트 무게를 보고 워밍업을 한 번에 짜요(바벨은 빈 바 → 40% → 60% → 80%).
+    <br><b>날짜 옮기기</b>: 다른 날에 잘못 적었으면 카드 아래 <b>날짜 옮기기</b>(슈퍼세트는 묶음째), 식단 줄의 달력 버튼, 기록 탭 달력의 <b>다른 날로 옮기기</b>(그 날 운동 전부)로 옮겨요.
+    <br>집중 모드는 지금 할 세트 하나만 크게 띄우고 완료하면 휴식·다음 세트로 저절로 넘어가요.
     <br>지난 운동을 통째로 가져오려면 <b>기록</b> 탭 달력에서 그 날을 누르고 <b>↩ 오늘 운동으로 불러오기</b>.
-    <br><b>⏱ 운동 시간</b>은 왼쪽 위 <b>三 메뉴</b>에 있어요. 시작하면 창을 닫아도 계속 재고, 도는 동안은 三에 점이 떠요(끝내기를 잊지 않게). 밝기 바꾸기·도움말도 거기 있어요.`],
-  ['🍚 식단은 선택이에요', `식단은 안 적어도 운동 기록과 통계는 그대로 돌아가요. 적고 싶은 날만 적으세요.
-    <br>가장 빠른 길은 <b>📷 사진으로 기록하기</b>예요. 이름을 비워 두고 사진을 고르면 무슨 음식인지 알아서 찾아 넣어요.
+    <br><b>운동 시간</b>은 왼쪽 위 <b>三 메뉴</b>에 있어요. 시작하면 창을 닫아도 계속 재고, 도는 동안은 三에 점이 떠요(끝내기를 잊지 않게). 밝기 바꾸기·도움말도 거기 있어요.`],
+  ['식단은 선택이에요', `식단은 안 적어도 운동 기록과 통계는 그대로 돌아가요. 적고 싶은 날만 적으세요.
+    <br>가장 빠른 길은 <b>사진으로 기록하기</b>예요. 이름을 비워 두고 사진을 고르면 무슨 음식인지 알아서 찾아 넣어요.
     <br>사진은 이 기기 밖으로 나가지 않아요. 처음 한 번만 AI 모델(약 50MB)을 받아요.
     <br>양은 사진으로 알 수 없어서 <b>지난번 먹은 양</b>으로 넣어요. 다르면 숫자만 고치면 돼요.
     <br>음식 이름은 몇 글자만 쳐도 아래에 후보가 떠요(자주 먹은 음식이 위, '가ㅈ'처럼 치는 중이어도). 누르면 지난번 양까지 채워져요.
     <br>지난 식단을 그대로 가져오려면 <b>기록</b> 탭 달력에서 그 날을 누르고 <b>↩ 오늘 식단으로 불러오기</b>.
     <br><b>하루 목표</b>: 다이어트·유지·벌크업을 고르면 목표를 계산해요. 칼로리 = 기초대사 × 1.2(운동을 뺀 하루 생활)에 다이어트 −500 / 벌크업 +300(기초대사 아래로는 안 내림), 운동한 날은 소모 칼로리만큼 더 먹을 수 있어요.
     단백질 = 체중 × 2.0g(다이어트) / 1.6g(유지) / 1.8g(벌크업). 기초대사는 <b>내 정보</b>(성별·나이·키)가 있으면 Mifflin-St Jeor 식, 없으면 체중 × 22로 어림해요. <b>직접</b>을 고르면 숫자를 적을 수 있어요.`],
-  ['🔥 소모 칼로리', `운동 종류별 MET × 체중 × 운동 시간으로 낸 <b>추정치</b>예요. 시간을 안 적으면 세트당 3분으로 봐요.
+  ['소모 칼로리', `운동 종류별 MET × 체중 × 운동 시간으로 낸 <b>추정치</b>예요. 시간을 안 적으면 세트당 3분으로 봐요.
     <br>MET(운동 강도)는 운동 이름으로 자동 추정해요. 안 맞으면 카드를 열어 직접 고칠 수 있고, 같은 이름의 운동에 모두 적용돼요.
     <br>식단 탭 하루 목표에서 <b>목표 + 소모 − 섭취 = 남은 칼로리</b>로 알려줘요.
     <br>체중 칸엔 마지막으로 적은 체중이 들어가 있어요. 바뀌었을 때만 고치면 그 날 체중으로 기록돼요.
 `],
-  ['📅 기록·통계', `달력에서 날짜를 누르면 그 날 운동이 아래에 펼쳐져요. 🔍로 운동·음식·메모를 검색할 수 있어요.
+  ['기록·통계', `달력에서 날짜를 누르면 그 날 운동이 아래에 펼쳐져요. 달력 위 돋보기로 운동·음식·메모를 검색할 수 있어요.
     <br>부위별 밸런스와 주간 목표 세트는 <b>최근 7일</b>을 볼 때만 견줘요. 비워두면 목표 없이 세트 수만 봐요.
     <br>최고 기록과 중량 추이는 1RM(추정 1회 최대 중량)으로 견줘요. 100kg×1회와 90kg×8회를 바르게 비교하려고요.`],
-  ['💾 백업과 기기 옮기기', `기록은 <b>이 기기 브라우저 안에만</b> 있어요. 기기를 바꾸거나 앱을 지우면 사라져요.
+  ['백업과 기기 옮기기', `기록은 <b>이 기기 브라우저 안에만</b> 있어요. 기기를 바꾸거나 앱을 지우면 사라져요.
     <br>옮길 땐 <b>내보내기</b>로 받은 파일을 다른 기기에서 <b>가져오기</b> 하세요. 합쳐지니까 기록이 사라지지 않아요.
-    <br>사진은 평소 동기화·내보내기에 들어가지 않아요(파일이 너무 커져서요). <b>📷 사진까지 내보내기</b>를 따로 쓰세요.
+    <br>사진은 평소 동기화·내보내기에 들어가지 않아요(파일이 너무 커져서요). <b>사진까지 내보내기</b>를 따로 쓰세요.
     <br>아이폰 사파리는 7일 동안 안 연 사이트의 저장 공간을 지워요. <b>홈 화면에 추가</b>해서 쓰는 걸 권해요.`],
-  ['🤖 Claude 연결 (구글 드라이브)', `기록 탭 <b>🤖 Claude 연결</b>을 해 두면 기록을 고칠 때마다 내 구글 드라이브 <b>fitness-log</b> 폴더에
+  ['Claude 연결 (구글 드라이브)', `기록 탭 <b>Claude 연결</b>을 해 두면 기록을 고칠 때마다 내 구글 드라이브 <b>fitness-log</b> 폴더에
     <b>운동 기록 (fitness-log)</b> 문서(Claude가 읽기 좋은 정리)와 기록 파일 전체가 저장돼요.
     claude.ai에 구글 드라이브를 연결해 두고 "드라이브의 운동 기록 읽어줘"라고 하면 Claude가 최신 기록을 봐요.
     <br>만드는 법(PC에서 한 번, 5분): ① <b>스크립트 복사</b> → ② script.google.com <b>새 프로젝트</b>에 붙여넣고 저장
@@ -2087,12 +2094,12 @@ function focusSetHtml({ w, i, s, idx, q }) {
       <span class="focus-dots">${w.sets.map((x, k) => `<i class="${x.done ? 'on' : ''} ${k === i ? 'cur' : ''}"></i>`).join('')}</span>
     </div>
     ${field('weight', '중량', 'kg', 'inputmode="decimal" min="0" step="0.5" placeholder="맨몸"')}
-    ${isBarbell(w.name) && Number(s.weight) > 0 ? `<button class="plate-line focus-plates" data-plates="${s.weight}">🏋️ ${plateText(s.weight)}</button>` : ''}
+    ${isBarbell(w.name) && Number(s.weight) > 0 ? `<button class="plate-line focus-plates" data-plates="${s.weight}">${ic('plate')}${plateText(s.weight)}</button>` : ''}
     ${field('reps', '횟수', '회', 'inputmode="numeric" min="0" step="1"')}
     ${dropsOf(s).length ? `<div class="set-table focus-drops">${dropRowsHtml(w, i, s)}</div>` : ''}
     <button class="link-btn focus-drop" data-drop-add="${w.id}:${i}">↘ 드롭 추가 (무게 내려 이어서)</button>
     ${last ? `<p class="hint focus-hint">↩ 지난번 ${fmtDate(last.date)}: ${esc(setsText(last.workout))}${
-      last.workout.note ? `<br>📝 ${esc(last.workout.note)}` : ''}</p>` : ''}
+      last.workout.note ? `<br><span class="note-tag">메모</span> ${esc(last.workout.note)}` : ''}</p>` : ''}
     ${tip ? `<p class="tip focus-hint">${overloadText(tip)}</p>` : ''}
     <button class="focus-main ${s.done ? '' : 'primary'}" data-focus-done>${s.done ? '↺ 완료 취소' : '✓ 세트 완료'}</button>
     <div class="focus-nav">
@@ -2106,7 +2113,7 @@ function focusSetHtml({ w, i, s, idx, q }) {
 function focusSsHtml(w) {
   const run = ssRunOf(w);
   if (run.length < 2) return '';
-  return `<p class="focus-ss">🔗 슈퍼세트 · ${run.map((x) => x === w ? `<b>${esc(x.name)}</b>` : esc(x.name)).join(' → ')}</p>`;
+  return `<p class="focus-ss">슈퍼세트 · ${run.map((x) => x === w ? `<b>${esc(x.name)}</b>` : esc(x.name)).join(' → ')}</p>`;
 }
 
 function focusRestHtml({ w, i, s }) {
@@ -2139,7 +2146,7 @@ function focusFinishHtml() {
     .filter((n) => personalBest(n)?.date === currentDate && lastRecord(n));
   return `
     <div class="focus-finish">
-      <p class="focus-big" aria-hidden="true">🎉</p>
+      <p class="focus-big" aria-hidden="true">${ic('check-circle')}</p>
       <h3>오늘 운동 끝!</h3>
       <div class="focus-tiles">
         <div class="tile"><span class="muted">세트</span><strong>${sets}</strong></div>
@@ -2147,8 +2154,8 @@ function focusFinishHtml() {
         <div class="tile"><span class="muted">시간</span><strong>${mins}<small> 분</small></strong></div>
         <div class="tile"><span class="muted">소모</span><strong>${dayBurn(currentDate)}<small> kcal</small></strong></div>
       </div>
-      ${prs.length ? `<p class="tip">🏆 신기록: ${prs.map(esc).join(', ')}</p>` : ''}
-      <button class="focus-main primary" data-focus-finish>${sessionOn() ? '⏹ 운동 끝내기' : '닫기'}</button>
+      ${prs.length ? `<p class="tip">신기록: ${prs.map(esc).join(', ')}</p>` : ''}
+      <button class="focus-main primary" data-focus-finish>${sessionOn() ? `${ic('stop')}운동 끝내기` : '닫기'}</button>
       <div class="focus-nav">
         <button data-focus-move="-1">‹ 세트 다시 보기</button>
         <button data-focus-addex>+ 운동 추가</button>
@@ -2296,25 +2303,25 @@ function renderSafety() {
   box.classList.toggle('info', n?.kind === 'import' || n?.kind === 'install');   // 위험 경고만 빨간 테두리
   if (n?.kind === 'ios') {
     box.innerHTML = n.days
-      ? `<p><b>📱 홈 화면에 추가해야 기록이 안전해요.</b> 사파리는 7일 동안 안 연 사이트의 기록을 지울 수 있어요.</p>
+      ? `<p><b>홈 화면에 추가해야 기록이 안전해요.</b> 사파리는 7일 동안 안 연 사이트의 기록을 지울 수 있어요.</p>
          <ol>
            <li><b>기록 파일 저장</b> — 홈 화면 앱은 사파리와 기록을 따로 써서 빈 화면으로 시작해요</li>
            <li>공유 버튼 <b>⬆︎</b> → <b>홈 화면에 추가</b></li>
            <li>홈 화면 앱을 열면 뜨는 <b>파일 가져오기</b>로 저장한 파일 고르기</li>
          </ol>
          <div class="safety-btns"><button class="primary" data-safety="save">① 기록 파일 저장</button><button data-safety-snooze="ios:3">나중에</button></div>`
-      : `<p><b>📱 기록을 시작하기 전에 홈 화면에 추가하세요.</b> 아이폰 사파리는 7일 동안 안 연 사이트의 기록을 지울 수 있는데, 홈 화면 앱은 예외예요.
+      : `<p><b>기록을 시작하기 전에 홈 화면에 추가하세요.</b> 아이폰 사파리는 7일 동안 안 연 사이트의 기록을 지울 수 있는데, 홈 화면 앱은 예외예요.
          아래 공유 버튼 <b>⬆︎</b> → <b>홈 화면에 추가</b> → 홈 화면 아이콘으로 여세요.</p>
          <div class="safety-btns"><button data-safety-snooze="ios:3">나중에</button></div>`;
   } else if (n?.kind === 'import') {
-    box.innerHTML = `<p><b>👋 사파리에서 쓰던 기록이 있나요?</b> 홈 화면 앱은 사파리와 기록을 따로 써요. 사파리에서 저장해 둔 파일을 가져오면 이어서 쓸 수 있어요.</p>
+    box.innerHTML = `<p><b>사파리에서 쓰던 기록이 있나요?</b> 홈 화면 앱은 사파리와 기록을 따로 써요. 사파리에서 저장해 둔 파일을 가져오면 이어서 쓸 수 있어요.</p>
       <div class="safety-btns"><button class="primary" data-safety="import">파일 가져오기</button><button data-safety-snooze="import:30">새로 시작할게요</button></div>`;
   } else if (n?.kind === 'backup') {
-    box.innerHTML = `<p><b>💾 다른 곳에 사본을 둔 지 ${n.last ? `${Math.floor((Date.now() - n.last) / DAY_MS)}일 됐어요` : '한 번도 없어요'}.</b>
+    box.innerHTML = `<p><b>다른 곳에 사본을 둔 지 ${n.last ? `${Math.floor((Date.now() - n.last) / DAY_MS)}일 됐어요` : '한 번도 없어요'}.</b>
       기록은 이 기기 안에만 있어서, 폰을 잃어버리거나 브라우저 데이터를 지우면 같이 사라져요.</p>
       <div class="safety-btns"><button class="primary" data-safety="save">지금 백업</button><button data-safety-snooze="backup:3">나중에</button></div>`;
   } else if (n?.kind === 'install') {
-    box.innerHTML = `<p><b>📲 앱으로 설치하면 기록이 더 안전하게 보관돼요.</b> 지금은 기기 공간이 모자라면 브라우저가 지울 수 있어요.</p>
+    box.innerHTML = `<p><b>앱으로 설치하면 기록이 더 안전하게 보관돼요.</b> 지금은 기기 공간이 모자라면 브라우저가 지울 수 있어요.</p>
       <div class="safety-btns"><button class="primary" data-safety="install">설치</button><button data-safety-snooze="install:14">나중에</button></div>`;
   }
   renderSafetyStatus();
@@ -2327,12 +2334,12 @@ function renderSafetyStatus() {
     : last === Number(sync?.lastDrive) ? ' (구글 드라이브)' : ' (내보내기)';
   const stale = Date.now() - last > BACKUP_DAYS * DAY_MS;
   $('#safetyStatus').innerHTML = `
-    <li class="${storagePersisted ? 'ok' : 'warn'}">${storagePersisted ? '✅ 이 기기: 브라우저가 지우지 않게 보호됨'
-      : storagePersisted === false ? `⚠️ 이 기기: 공간이 모자라면 브라우저가 지울 수 있어요 <button class="link-btn" data-safety="persist">보호 요청</button>`
-      : '❔ 이 브라우저는 보호 요청을 지원하지 않아요'}</li>
-    <li class="${isStandalone() || !isIOS() ? 'ok' : 'warn'}">${isStandalone() ? '📱 홈 화면 앱으로 열었어요'
-      : isIOS() ? '⚠️ 사파리로 열었어요 — 7일 동안 안 열면 지워질 수 있어요 (홈 화면에 추가 권장)' : '🌐 브라우저로 열었어요'}</li>
-    <li class="${stale ? 'warn' : 'ok'}">💾 마지막 사본: ${last ? `${fmtAgo(last)}${where}` : '아직 없음'}</li>`;
+    <li class="${storagePersisted ? 'ok' : 'warn'}">${storagePersisted ? '이 기기: 브라우저가 지우지 않게 보호됨'
+      : storagePersisted === false ? `이 기기: 공간이 모자라면 브라우저가 지울 수 있어요 <button class="link-btn" data-safety="persist">보호 요청</button>`
+      : '이 브라우저는 보호 요청을 지원하지 않아요'}</li>
+    <li class="${isStandalone() || !isIOS() ? 'ok' : 'warn'}">${isStandalone() ? '홈 화면 앱으로 열었어요'
+      : isIOS() ? '사파리로 열었어요 — 7일 동안 안 열면 지워질 수 있어요 (홈 화면에 추가 권장)' : '브라우저로 열었어요'}</li>
+    <li class="${stale ? 'warn' : 'ok'}">마지막 사본: ${last ? `${fmtAgo(last)}${where}` : '아직 없음'}</li>`;
 }
 
 // 백업: 휴대폰은 공유 창(파일 앱·드라이브·카톡 등에 저장), 아니면 내려받기
@@ -2362,8 +2369,8 @@ function renderExSheet() {
   const notes = log.filter((x) => x.w.note);
 
   const prText = !pr ? ''
-    : pr.rm ? `🏆 최고 <b>${pr.weight} kg × ${pr.reps}회</b> <span class="muted">(1RM ${pr.rm}kg)</span>`
-    : `🏆 최고 <b>${pr.reps}회</b>`;
+    : pr.rm ? `최고 <b>${pr.weight} kg × ${pr.reps}회</b> <span class="muted">(1RM ${pr.rm}kg)</span>`
+    : `최고 <b>${pr.reps}회</b>`;
 
   const rows = log.slice(0, SHEET_ROWS).map(({ date, w }) => `
     <div class="log-row">
@@ -2387,7 +2394,7 @@ function renderExSheet() {
     ${points.length >= 2
       ? lineChart(points, { unit: 'kg', cls: 'l' })
       : `<p class="muted">${points.length ? '기록이 하나뿐이라 아직 선이 안 그려져요.' : '중량 기록이 없어요. (맨몸 운동은 그려지지 않아요)'}</p>`}
-    ${notes.length ? `<h4>📝 메모</h4>${notes.slice(0, SHEET_ROWS).map(({ date, w }) => `
+    ${notes.length ? `<h4>메모</h4>${notes.slice(0, SHEET_ROWS).map(({ date, w }) => `
       <div class="log-row"><button class="link-btn" data-goto="${date}">${fmtDate(date)}</button>
         <span>${esc(w.note)}</span></div>`).join('')}` : ''}
     <h4>기록 ${log.length > SHEET_ROWS ? `<span class="muted">(최근 ${SHEET_ROWS}개)</span>` : ''}</h4>
@@ -2440,7 +2447,7 @@ function renderBalance() {
   const due = rows.filter((r) => MAIN_PARTS.includes(r.part) && r.rest >= 2).slice(0, 2);
   const short = Object.keys(goals).filter((p) => (counts.get(p) || 0) < Number(goals[p]));
   $('#balanceHint').innerHTML = due.length
-    ? `💡 <b>오늘은 ${due.map((r) => r.part).join('·')} 차례</b>예요. (가장 오래 쉬었어요)` +
+    ? `<b>오늘은 ${due.map((r) => r.part).join('·')} 차례</b>예요. (가장 오래 쉬었어요)` +
       (short.length ? ` · 목표까지 ${short.map((p) => `${p} ${goals[p] - (counts.get(p) || 0)}세트`).join(', ')}` : '')
     : `최근 ${range}일 · 총 ${total}세트`;
 }
@@ -2455,7 +2462,7 @@ function renderStreak() {
     <div class="tile"><span class="muted">주간 목표</span>
       <input id="weeklyGoal" type="number" inputmode="numeric" min="1" max="7" value="${goal}"></div>`;
   $('#streakMsg').textContent = wk >= goal
-    ? '🎉 이번 주 목표를 채웠어요!'
+    ? '이번 주 목표를 채웠어요!'
     : `이번 주 ${goal - wk}번 더 하면 목표 달성이에요.`;
 }
 
@@ -2506,7 +2513,7 @@ function renderReport() {
     <div class="item"><span>운동 시간</span><strong>${now.minutes}분${pctText(now.minutes, prev.minutes)}</strong></div>
     <div class="item"><span>소모 칼로리</span><strong>${now.burn.toLocaleString()} kcal${pctText(now.burn, prev.burn)}</strong></div>
     ${now.mealDays ? `<div class="item"><span>평균 섭취 <span class="muted">(적은 ${now.mealDays}일)</span></span><strong>${Math.round(now.intake / now.mealDays)} kcal${pctText(Math.round(now.intake / now.mealDays), prev.mealDays ? Math.round(prev.intake / prev.mealDays) : 0)}</strong></div>` : ''}
-    ${prs.length ? `<p class="tip">🎉 이번 주 신기록: ${prs.map(esc).join(', ')}</p>` : ''}`;
+    ${prs.length ? `<p class="tip">이번 주 신기록: ${prs.map(esc).join(', ')}</p>` : ''}`;
 }
 
 // 기간을 날짜/주 단위로 쪼개 그 부위의 볼륨을 더한다.
@@ -2574,7 +2581,7 @@ function renderVolumeChart() {
   } else if (goal) {
     const left = goal - total;
     goalText = ` · 주간 목표 ${goal.toLocaleString()} kg (${Math.round(total / goal * 100)}%` +
-      (left > 0 ? `, ${left.toLocaleString()} kg 남음)` : ', 달성 🎉)');
+      (left > 0 ? `, ${left.toLocaleString()} kg 남음)` : ', 달성)');
   }
   $('#volChart').innerHTML =
     `<p class="muted">${stepName}씩 · 최근 ${range}일 합계 ${total.toLocaleString()} kg${goalText}</p>` +
@@ -2671,7 +2678,7 @@ function renderWeekChart() {
 
   $('#weekChart').innerHTML = `<svg viewBox="0 0 ${W} ${H}" class="chart" role="img"
     aria-label="최근 ${range}일 섭취와 소모 칼로리">${grid}${bars}</svg>`;
-  $('#weekTitle').textContent = `📊 최근 ${range}일`;
+  $('#weekTitle').textContent = `최근 ${range}일`;
 
   const withWorkout = data.filter((d) => d.burn > 0).length;
   const avg = (key) => Math.round(data.reduce((s, d) => s + d[key], 0) / data.length);
@@ -2744,7 +2751,7 @@ function renderCalendar() {
     <button type="button" class="cal-nav" data-cal-nav="1" aria-label="다음 달">›</button>
     <span class="cal-count">${worked ? `<b>${worked}</b>일 운동` : ''}</span>
     ${month !== today.slice(0, 7) ? '<button type="button" class="cal-today" data-cal-nav="0">이번 달</button>' : ''}
-    <button type="button" class="cal-find ${calSearchOpen ? 'on' : ''}" data-cal-search aria-label="기록 검색" aria-expanded="${calSearchOpen}">🔍</button>`;
+    <button type="button" class="cal-find ${calSearchOpen ? 'on' : ''}" data-cal-search aria-label="기록 검색" aria-expanded="${calSearchOpen}">${ic('search')}</button>`;
   $('#calGrid').innerHTML = WEEKDAYS.slice(1).concat(WEEKDAYS[0]).map((w) => `<span class="cal-wd">${w}</span>`).join('')
     + calDates(month).map((date) => {
       if (date.slice(0, 7) !== month) return '<span class="cal-blank"></span>';
@@ -2782,14 +2789,14 @@ function calDetailHtml(date) {
       }).join('')}
     </div>` : '';
   const extra = [
-    d?.note ? `<p class="cal-line">📝 ${esc(d.note)}</p>` : '',
+    d?.note ? `<p class="cal-line"><span class="note-tag">메모</span> ${esc(d.note)}</p>` : '',
     mealHtml,
     d?.weight ? `<p class="cal-line muted">체중 ${d.weight}kg</p>` : '',
   ].join('');
   const mealBtn = meals.length && date !== currentDate ? `<button type="button" data-copy-meals="${date}">↩ ${into} 식단으로 불러오기</button>` : '';
   if (!ws.length) {
     return `<div class="cal-dhead"><h4>${title}</h4></div>
-      <p class="cal-empty">${isRestDay(date) ? '😴 쉬는 날' : '운동 기록이 없어요'}</p>${extra}
+      <p class="cal-empty">${isRestDay(date) ? '쉬는 날' : '운동 기록이 없어요'}</p>${extra}
       <div class="cal-actions">${mealBtn}<button type="button" data-goto="${date}">이 날 열기</button></div>`;
   }
   const sets = ws.reduce((n, w) => n + countedSets(w).length, 0);
@@ -2799,19 +2806,19 @@ function calDetailHtml(date) {
   const stat = (v, unit, label) => `<div><strong>${v}<small>${unit}</small></strong><span>${label}</span></div>`;
   const runs = ssRuns(ws).map((run) => {
     const body = run.map((w) => calExHtml(w, date)).join('');
-    return run.length > 1 ? `<div class="cal-ss"><span class="cal-ss-tag">🔗 슈퍼세트</span>${body}</div>` : body;
+    return run.length > 1 ? `<div class="cal-ss"><span class="cal-ss-tag">슈퍼세트</span>${body}</div>` : body;
   }).join('');
   return `<div class="cal-dhead"><h4>${title}</h4>${d.split ? `<span class="cal-split">${esc(d.split)}</span>` : ''}</div>
     <div class="cal-stats">
       ${stat(ws.length, '종목', '운동')}${stat(sets, '세트', '본 세트')}
       ${stat(vol >= 10000 ? (vol / 1000).toFixed(1) : vol.toLocaleString(), vol >= 10000 ? 't' : 'kg', '볼륨')}
-      ${stat(min, '분', burn ? `🔥 ${burn}kcal` : '시간')}
+      ${stat(min, '분', burn ? `${burn}kcal` : '시간')}
     </div>
     <div class="cal-exs">${runs}</div>${extra}
     <div class="cal-actions">
       ${date !== currentDate ? `<button type="button" data-copy-day="${date}">↩ ${into} 운동으로 불러오기</button>` : ''}
       ${mealBtn}
-      <button type="button" data-move-day="${date}">📅 다른 날로 옮기기</button>
+      <button type="button" data-move-day="${date}">다른 날로 옮기기</button>
       <button type="button" data-goto="${date}">이 날 열기</button>
     </div>`;
 }
@@ -2832,7 +2839,7 @@ function calExHtml(w, date) {
     return `<span class="cal-set${s.warmup ? ' wu' : ''}${skip ? ' skip' : ''}">${s.warmup ? '<em>W</em>' : ''}${text}</span>`;
   }).join('');
   const pb = personalBest(w.name);
-  const pr = pb?.date === date && lastRecord(w.name, date) ? '<span class="cal-pr" title="신기록">🏆</span>' : '';
+  const pr = pb?.date === date && lastRecord(w.name, date) ? '<span class="cal-pr" title="신기록">PR</span>' : '';
   const vol = volumeOf(w);
   const n = countedSets(w).length;
   const sum = [n ? `${n}세트` : '', vol ? `${vol.toLocaleString()}kg` : '', !chips && Number(w.minutes) > 0 ? `${w.minutes}분` : ''].filter(Boolean).join(' · ');
@@ -2843,7 +2850,7 @@ function calExHtml(w, date) {
       <span class="cal-ex-sum">${sum}</span>
     </div>
     ${chips ? `<div class="cal-sets">${chips}</div>` : ''}
-    ${w.note ? `<p class="cal-note">📝 ${esc(w.note)}</p>` : ''}
+    ${w.note ? `<p class="cal-note"><span class="note-tag">메모</span> ${esc(w.note)}</p>` : ''}
   </div>`;
 }
 
@@ -2872,7 +2879,7 @@ function renderCalSearch() {
     const d = state.days[date];
     const parts = dayParts(d).map(partLabel).join('·');
     const what = d.workouts.length ? d.workouts.map((w) => esc(w.name)).join(', ')
-      : (d.meals.length ? '🍚 ' + d.meals.map((x) => esc(x.name)).join(', ') : `📝 ${esc(d.note || '')}`);
+      : (d.meals.length ? '식단 · ' + d.meals.map((x) => esc(x.name)).join(', ') : `메모 · ${esc(d.note || '')}`);
     return `<button type="button" class="history-day" data-cal-go="${date}">
       <span class="hd-date">${date.slice(2).replace(/-/g, '.')} <small>${WEEKDAYS[weekdayOf(date)]}</small></span>
       <span class="hd-what">${parts ? `<b>${parts}</b> ` : ''}${what}</span>
@@ -2978,16 +2985,16 @@ function partnerRowsHtml(p, k) {
 function renderPartners() {
   $('#ssBox').innerHTML = partners.map((p, k) => `
     <div class="ss-partner">
-      <div class="ss-partner-head"><span>🔗 슈퍼세트 ${k + 2}번째 운동</span>
+      <div class="ss-partner-head"><span>슈퍼세트 ${k + 2}번째 운동</span>
         <button type="button" class="del" data-pdel="${k}" aria-label="이 운동 빼기">✕</button></div>
       <div class="ex-name-row">
         <input list="exSuggestions" placeholder="운동 종류 (예: 바벨로우)" autocomplete="off" value="${esc(p.name)}" data-pn="${k}">
-        <button type="button" class="ex-pick-btn" data-ex-pick="${k}" aria-label="목록에서 운동 고르기">📋 목록</button>
+        <button type="button" class="ex-pick-btn" data-ex-pick="${k}" aria-label="목록에서 운동 고르기">${ic('list')}목록</button>
       </div>
       <div class="perset" id="ssRows${k}">${partnerRowsHtml(p, k)}</div>
       <p class="hint" id="ssHint${k}">${partnerHint(p.name)}</p>
     </div>`).join('');
-  $('#ssAdd').textContent = partners.length ? '+ 하나 더 (번갈아 할 운동)' : '🔗 슈퍼세트로 같이 추가';
+  $('#ssAdd').innerHTML = partners.length ? '+ 하나 더 (번갈아 할 운동)' : `${ic('link')}슈퍼세트로 같이 추가`;
 }
 function formSetCount() {
   return setCountInput() || perSet.length || 1;
@@ -3037,12 +3044,12 @@ function updateExHint() {
   const same = canon && exKey(canon) !== exKey(name) ? `<span class="muted">= ${esc(canon)}</span><br>` : '';
   $('#exHint').innerHTML = same + (last
     ? `↩ 지난번 ${fmtDate(last.date)}: ${esc(setsText(last.workout))}` +
-      (last.workout.note ? `<br>📝 ${esc(last.workout.note)}` : '') +
+      (last.workout.note ? `<br><span class="note-tag">메모</span> ${esc(last.workout.note)}` : '') +
       (tip ? `<br><span class="tip">${overloadText(tip)}</span>` : '')
     : (name ? '처음 하는 운동이에요.' : ''));
   const was = lastPartners(name).filter((n) => !partners.some((p) => metKey(p.name) === metKey(n)));
   if (was.length) {
-    $('#exHint').insertAdjacentHTML('beforeend', `<br><span class="tip">🔗 지난번엔 ${esc(was.join(' · '))}와(과) 슈퍼세트</span>
+    $('#exHint').insertAdjacentHTML('beforeend', `<br><span class="tip">지난번엔 ${esc(was.join(' · '))}와(과) 슈퍼세트</span>
       <button type="button" class="link-btn ss-suggest" data-ss-suggest="${esc(was.join('\n'))}">같이 추가</button>`);
   }
   // 지난번 세트 모양대로 표를 채운다 (다 채웠으면 한 단위씩 올려서). 직접 만진 표는 그대로.
@@ -3053,7 +3060,7 @@ function updateExHint() {
       ? setsLikeLast(name, 0, null, { progress: true }).map(({ done, ...x }) => x)
       : defaultPerSet(Number($('#exSets').value) || 3);
     $('#exSets').value = perSet.length;
-    if (last) $('#exHint').insertAdjacentHTML('beforeend', '<br>📋 지난번 세트대로 채웠어요.');
+    if (last) $('#exHint').insertAdjacentHTML('beforeend', '<br>지난번 세트대로 채웠어요.');
     renderPerSet();
   }
   // "모든 세트 같게"일 땐 올릴 중량을 한 칸에 미리 채워 준다 (직접 적은 값은 건드리지 않는다)
@@ -3238,7 +3245,7 @@ function renderSplit() {
   if (splitEdit) {
     const e = splitEdit;
     card.hidden = false;
-    card.innerHTML = `<h3>📅 분할 정하기</h3>
+    card.innerHTML = `<h3>분할 정하기</h3>
       <div class="split-n">${[2, 3, 4, 5, 6].map((n) => `<button type="button" class="chip ${e.days.length === n ? 'on' : ''}" data-split-n="${n}">${n}분할</button>`).join('')}</div>
       <div class="split-names">${e.days.map((x, i) => `<label><span>${i + 1}일차</span><input value="${esc(x)}" data-split-name="${i}" autocomplete="off"></label>`).join('')}</div>
       <p class="hint">쉬는 요일 (누르면 휴식일)</p>
@@ -3251,7 +3258,7 @@ function renderSplit() {
   if (!cfg) {
     // 아직 안 정했으면 운동 없는 날에만 한 줄로 권한다
     card.hidden = hasWork;
-    card.innerHTML = `<p class="split-invite">📅 분할과 쉬는 요일을 정해 두면 <b>오늘 무슨 운동 차례인지</b>, 지난번 그 날 뭘 했는지 바로 꺼내 드려요.</p>
+    card.innerHTML = `<p class="split-invite">분할과 쉬는 요일을 정해 두면 <b>오늘 무슨 운동 차례인지</b>, 지난번 그 날 뭘 했는지 바로 꺼내 드려요.</p>
       <button type="button" data-split-setup>분할 정하기</button>`;
     return;
   }
@@ -3263,20 +3270,20 @@ function renderSplit() {
   if (hasWork) {
     // 운동 중엔 한 줄만 (카드가 주인공) — 분할을 안 적었으면 적게 한다(그래야 다음 차례가 맞는다)
     card.innerHTML = d.split
-      ? `<div class="split-line"><span>📅 오늘: <b>${esc(d.split)}</b> <span class="muted">${cfg.days.length}분할 ${k + 1}일차</span></span>
+      ? `<div class="split-line"><span>오늘: <b>${esc(d.split)}</b> <span class="muted">${cfg.days.length}분할 ${k + 1}일차</span></span>
           <button type="button" class="link-btn" data-split-change>바꾸기</button></div>${splitPickOpen ? chips : ''}`
-      : `<p class="split-invite">📅 오늘 운동은 어느 날이었나요? <span class="muted">(적어 두면 다음 차례가 맞아요)</span></p>${chips}`;
+      : `<p class="split-invite">오늘 운동은 어느 날이었나요? <span class="muted">(적어 두면 다음 차례가 맞아요)</span></p>${chips}`;
     return;
   }
   if (isRestDay() && !d.split && restAnyway !== currentDate) {
-    card.innerHTML = `<h3>😴 오늘은 쉬는 날이에요</h3>${week}
+    card.innerHTML = `<h3>오늘은 쉬는 날이에요</h3>${week}
       <p class="hint">다음 운동은 <b>${esc(nextSplit())}</b> 차례예요.</p>
       <div class="split-actions"><button type="button" data-rest-anyway>그래도 운동할래요</button>
         <button type="button" class="link-btn" data-split-setup>분할 설정</button></div>`;
     return;
   }
   const last = lastSessionOf(label);
-  card.innerHTML = `<div class="card-head"><h3>📅 오늘은 <span class="accent">${esc(label)}</span> 차례</h3>
+  card.innerHTML = `<div class="card-head"><h3>오늘은 <span class="accent">${esc(label)}</span> 차례</h3>
       <span class="muted">${cfg.days.length}분할 ${k + 1}일차</span></div>
     ${week}${chips}
     ${last ? `<p class="split-last">↩ 지난번 ${esc(label)} <span class="muted">${fmtDate(last.date)} · ${last.workouts.length}종</span></p>
@@ -3297,7 +3304,7 @@ function renderPlan() {
     // 아직 안 골랐으면 고를 수 있게만 해 둔다
     card.hidden = !routines.length || day().workouts.length > 0 || !!splitCfg();   // 분할을 쓰면 위 "오늘의 운동"이 대신한다
     if (!card.hidden) {
-      card.innerHTML = `<h3>🗒 오늘의 계획</h3>
+      card.innerHTML = `<h3>오늘의 계획</h3>
         <p class="hint">루틴을 걸어두면 뭘 했고 뭐가 남았는지 보여드려요.</p>
         <div class="chips">${routines.map((r) => `<button class="chip" data-set-plan="${esc(r)}">${esc(r)}</button>`).join('')}</div>`;
     }
@@ -3307,7 +3314,7 @@ function renderPlan() {
   const doneCnt = items.filter((i) => i.hit).length;
   card.innerHTML = `
     <div class="card-head">
-      <h3>🗒 ${esc(day().plan)}</h3>
+      <h3>${esc(day().plan)}</h3>
       <span class="muted">${doneCnt}/${items.length} 완료</span>
     </div>
     <div class="bar ${doneCnt >= items.length ? 'full' : ''}">
@@ -3315,7 +3322,7 @@ function renderPlan() {
     </div>
     <div class="plan-list">
       ${items.map((i) => `<div class="plan-row ${i.hit ? 'hit' : ''}">
-        <span>${i.hit ? '✅' : i.added ? '▶' : '⬜'} ${esc(i.name)}</span>
+        <span><span class="plan-mark ${i.hit ? 'hit' : i.added ? 'added' : ''}" aria-label="${i.hit ? '했음' : i.added ? '넣음' : '안 함'}"></span>${esc(i.name)}</span>
         <span class="muted">${i.done}/${i.target}세트${
           !i.added ? ` <button class="link-btn" data-plan-add="${esc(i.name)}:${i.target}">+ 추가</button>` : ''}</span>
       </div>`).join('')}
@@ -3328,7 +3335,7 @@ function renderRoutines() {
   const hasToday = day().workouts.length > 0;
   $('#routineCard').hidden = !list.length && !hasToday;
   $('#routineCard').innerHTML = `
-    <h3>📋 내 루틴</h3>
+    <h3>내 루틴</h3>
     ${list.length ? list.map(([key, items]) => `
       <div class="item routine">
         <div>
@@ -3341,7 +3348,7 @@ function renderRoutines() {
         </span>
       </div>`).join('')
       : '<p class="hint">자주 하는 운동을 루틴으로 저장해두면 한 번에 불러올 수 있어요.</p>'}
-    ${hasToday ? '<button id="saveRoutineBtn" class="wide-btn">💾 오늘 운동을 루틴으로 저장</button>' : ''}`;
+    ${hasToday ? '<button id="saveRoutineBtn" class="wide-btn">오늘 운동을 루틴으로 저장</button>' : ''}`;
 }
 
 function renderSuggestions() {
@@ -4097,7 +4104,7 @@ $('#warmupAuto').addEventListener('click', () => {
   const work = perSet.filter((s) => !s.warmup);
   const ramp = warmupRamp(name, work[0]?.weight);
   if (!ramp.length) {
-    $('#exHint').innerHTML = '🔥 1세트 무게를 먼저 적어 주세요. 그 무게를 보고 워밍업을 짜요.';
+    $('#exHint').innerHTML = '1세트 무게를 먼저 적어 주세요. 그 무게를 보고 워밍업을 짜요.';
     return;
   }
   perSet = [...ramp, ...work];
@@ -4436,7 +4443,7 @@ $('#exportPhotoBtn').addEventListener('click', async (e) => {
     alert(`사진을 담지 못했어요. ${err.message}`);
   } finally {
     btn.disabled = false;
-    btn.textContent = '📷 사진까지 내보내기';
+    btn.textContent = '사진까지 내보내기';
   }
 });
 

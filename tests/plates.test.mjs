@@ -24,10 +24,10 @@ export default async function (t) {
   });
   await openEx(page, 0);
   await openEx(page, 1);
-  t.eq(await page.$$eval('#workoutList .plate-line', (x) => x.map((e) => e.textContent.trim())), ['🏋️ 60kg · 한쪽 20'], '바벨 운동 카드에만, 아직 안 한 다음 세트 무게로');
+  t.eq(await page.$$eval('#workoutList .plate-line', (x) => x.map((e) => e.textContent.trim())), ['60kg · 한쪽 20'], '바벨 운동 카드에만, 아직 안 한 다음 세트 무게로');
   await page.click('[data-toggle="b:0"]');
   await page.evaluate(() => stopRest());
-  t.eq(await text(page, '#workoutList .plate-line'), '🏋️ 100kg · 한쪽 20 · 20', '세트를 끝내면 다음 세트 무게로');
+  t.eq(await text(page, '#workoutList .plate-line'), '100kg · 한쪽 20 · 20', '세트를 끝내면 다음 세트 무게로');
   await page.click('[data-toggle="b:1"]');
   await page.evaluate(() => stopRest());
   t.eq(await page.$$eval('#workoutList .plate-line', (x) => x.length), 0, '다 끝내면 안 보임');
@@ -70,12 +70,12 @@ export default async function (t) {
   t.ok(await page.evaluate(() => $('#plateSheet').hidden), '뒤로가기로 닫힘');
   t.eq(await page.evaluate(() => plateCfg().sizes), [20], '지금 원판은 20kg만');
   await page.evaluate(() => { day().workouts[0].sets[1].weight = 102.5; save(); render(); });
-  t.eq(await text(page, '#workoutList .plate-line'), '🏋️ 102.5kg · 한쪽 20 · 20 (= 100kg)', '설정이 카드에도 (20kg만 있으면 102.5kg은 100kg까지)');
+  t.eq(await text(page, '#workoutList .plate-line'), '102.5kg · 한쪽 20 · 20 (= 100kg)', '설정이 카드에도 (20kg만 있으면 102.5kg은 100kg까지)');
 
   // ── 집중 모드 ──
   await page.evaluate(() => { day().workouts[0].sets.forEach((s) => { s.done = false; }); save(); render(); });
   await page.click('#focusBtn');
-  t.eq(await text(page, '#focusSheet .focus-plates'), '🏋️ 한쪽 20', '집중 모드: 무게 아래 원판');
+  t.eq(await text(page, '#focusSheet .focus-plates'), '한쪽 20', '집중 모드: 무게 아래 원판');
   await page.click('#focusSheet .focus-plates');
   t.eq(await page.evaluate(() => [!$('#plateSheet').hidden, layers.join(',')]), [true, 'focus,plate'], '집중 모드 위에 계산기');
   await page.keyboard.press('Escape');
@@ -88,7 +88,7 @@ export default async function (t) {
   await page.click('[data-add-warmup="s"]');
   t.eq(await page.evaluate(() => day().workouts[0].sets.map((s) => `${s.warmup ? 'W' : ''}${s.weight}x${s.reps}`)),
     ['W20x10', 'W40x5', 'W60x3', 'W80x2', '100x5', '100x5'], '+ 워밍업 (처음): 빈 바부터 한 번에');
-  t.eq(await text(page, '#workoutList .plate-line'), '🏋️ 20kg · 빈 바', '원판 줄은 첫 워밍업(빈 바)부터');
+  t.eq(await text(page, '#workoutList .plate-line'), '20kg · 빈 바', '원판 줄은 첫 워밍업(빈 바)부터');
 
   // ── 워밍업 자동: 폼 ──
   await page.fill('#exName', '벤치프레스');

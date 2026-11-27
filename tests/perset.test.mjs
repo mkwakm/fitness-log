@@ -71,7 +71,7 @@ export default async function (t) {
   t.eq(await rows(), [['60', '12'], ['70', '10'], ['80', '8']], '지난번이 피라미드면 그 모양 그대로 표를 채움');
   t.eq(await page.inputValue('#exSets'), '3', '세트 수도 지난번대로');
   t.ok((await text(page, '#exHint')).includes('지난번 세트대로 채웠어요'), '그렇게 채웠다고 알려줌');
-  t.ok(!(await text(page, '#exHint')).includes('💪'), '횟수가 줄어든 피라미드는 "다 채웠다"로 보지 않음 (무게를 멋대로 안 올림)');
+  t.ok(!(await text(page, '#exHint')).includes('다 채웠어요'), '횟수가 줄어든 피라미드는 "다 채웠다"로 보지 않음 (무게를 멋대로 안 올림)');
   await fillRow(0, 65, 12);
   await page.fill('#exName', '벤치프레스 ');
   await wait(page, 80);

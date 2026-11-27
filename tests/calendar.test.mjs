@@ -111,7 +111,7 @@ export default async function (t) {
   t.eq(await page.evaluate(() => [calMonth, calPick]), ['2026-09', '2026-09-22'], '결과를 누르면 달력이 그 날로');
   await page.fill('#historySearch', '제육');
   await wait(page, 100);
-  t.ok((await text(page, '#historyList')).includes('🍚 제육덮밥'), '식단으로도 찾음');
+  t.ok((await text(page, '#historyList')).includes('식단 · 제육덮밥'), '식단으로도 찾음');
   await page.fill('#historySearch', '그립 넓게');
   await wait(page, 100);
   t.eq(await page.$$eval('#historyList .history-day', (x) => x.length), 1, '운동 메모로도 찾음');
