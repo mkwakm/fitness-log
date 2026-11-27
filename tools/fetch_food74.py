@@ -157,6 +157,8 @@ def shrink(raw, dest):
     """긴 사진(7MB)을 학습에 쓸 만큼만 줄여 담는다."""
     from PIL import Image
     im = Image.open(io.BytesIO(raw))
+    # JPEG는 1/2·1/4 크기로 바로 디코딩할 수 있다(draft). 원본이 7MB라 통째로 풀면 한 장에 0.2초가 든다.
+    im.draft('RGB', (SIDE, SIDE))
     im = im.convert('RGB')
     w, h = im.size
     s = SIDE / min(w, h)

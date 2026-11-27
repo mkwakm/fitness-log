@@ -210,7 +210,8 @@ export default async function (t) {
     await P.click('#copyTextBtn');
     await wait(P, 300);
     const [clip, now] = await P.evaluate(async () => [await navigator.clipboard.readText(), recordText()]);
-    const strip = (s) => s.replace(/마지막 저장 [^·]+·/, '');
+    // 윈도우 클립보드는 읽어 올 때 줄바꿈을 CRLF로 바꾼다 (리눅스에서는 안 그런다)
+    const strip = (s) => s.replace(/\r\n/g, '\n').replace(/마지막 저장 [^·]+·/, '');
     t.ok(clip.includes('랫풀다운') && strip(clip) === strip(now), '글로 복사 = 드라이브 문서와 같은 정리');
     t.noErrors(P, '복사');
   } finally {

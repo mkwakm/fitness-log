@@ -229,6 +229,7 @@
 - 앱이 **운동 탭으로 열리므로** 식단 폼을 쓰는 테스트는 `tab(page, 'meals')`를 먼저 부른다. `page.reload()` 뒤에도 다시 불러야 한다.
 - 파일마다 `export default async function (t)`. `t.open()`은 새 컨텍스트(빈 localStorage)라 기기 두 대는 두 번 열면 된다. 서비스워커 테스트는 `serve()`로 띄우고, 새 버전 배포는 `overrides`로 흉내 낸다(저장소 파일을 건드리지 않는다).
 - 외부 API는 가짜로 돌린다: Gist는 `page.route`, 파일 저장은 `showSaveFilePicker`·IndexedDB 흉내, Wake Lock·공유는 `navigator`에 심는다. 사진 인식은 `window.FAKE_VISION`(사진 색으로 숫자를 만드는 가짜 엔진)과 `window.VISION_HEAD_URL`(data: URL 분류기)을 init 스크립트로 심는다 — 50MB 모델을 받지 않는다.
+- **윈도우 클립보드는 읽어 올 때 줄바꿈을 CRLF로 바꾼다.** 리눅스(클라우드 세션)에서는 안 그러므로, 클립보드와 원문을 견주는 테스트는 줄바꿈을 맞춰 놓고 볼 것(`drive.test.mjs`의 `strip`).
 - `page.waitForFunction`에 async 함수를 주면 기다리지 않고 바로 통과한다(promise가 참으로 보인다). IndexedDB처럼 비동기로 확인할 건 `vision.test.mjs`의 `untilVectors`처럼 직접 몇 번 물어볼 것.
 
 ## 작업 규칙
