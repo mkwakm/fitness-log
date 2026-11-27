@@ -202,6 +202,7 @@ function save() {
   }
   scheduleAutoSave();        // 파일 자동 저장 (sync.js)
   syncAfterEdit();           // 잠잠해지면 Gist에도 올린다 (sync.js)
+  driveAfterEdit();          // 잠잠해지면 구글 드라이브(Claude가 읽는 문서)에도 (sync.js)
 }
 
 let state = load();
@@ -1805,6 +1806,13 @@ const HELP = [
     <br>옮길 땐 <b>내보내기</b>로 받은 파일을 다른 기기에서 <b>가져오기</b> 하세요. 합쳐지니까 기록이 사라지지 않아요.
     <br>사진은 평소 동기화·내보내기에 들어가지 않아요(파일이 너무 커져서요). <b>📷 사진까지 내보내기</b>를 따로 쓰세요.
     <br>아이폰 사파리는 7일 동안 안 연 사이트의 저장 공간을 지워요. <b>홈 화면에 추가</b>해서 쓰는 걸 권해요.`],
+  ['🤖 Claude 연결 (구글 드라이브)', `기록 탭 <b>🤖 Claude 연결</b>을 해 두면 기록을 고칠 때마다 내 구글 드라이브 <b>fitness-log</b> 폴더에
+    <b>운동 기록 (fitness-log)</b> 문서(Claude가 읽기 좋은 정리)와 기록 파일 전체가 저장돼요.
+    claude.ai에 구글 드라이브를 연결해 두고 "드라이브의 운동 기록 읽어줘"라고 하면 Claude가 최신 기록을 봐요.
+    <br>만드는 법(PC에서 한 번, 5분): ① <b>스크립트 복사</b> → ② script.google.com <b>새 프로젝트</b>에 붙여넣고 저장
+    → ③ <b>배포 → 새 배포 → 웹 앱</b>, 실행: 나 / 액세스: <b>모든 사용자</b> → 배포하고 권한 허용("확인되지 않은 앱"이면 고급 → 이동)
+    → ④ 나온 <b>웹 앱 URL</b>을 <b>연결하기</b>에 붙여넣고 비밀번호를 정해요. 다른 기기에서도 같은 주소·비밀번호를 넣으면 돼요.
+    <br>주소·비밀번호는 이 기기에만 저장되고 백업 파일에는 들어가지 않아요. 연결 없이도 <b>글로 복사</b>로 같은 정리를 Claude 대화에 붙여넣을 수 있어요.`],
 ];
 function openHelp() {
   $('#helpBody').innerHTML = HELP.map(([title, body], i) => `<details class="help" ${i === 0 ? 'open' : ''}>
@@ -2076,9 +2084,9 @@ function isIOS() {
 function recordedDays() {
   return Object.keys(state.days).filter((d) => !isEmptyDay(state.days[d])).length;
 }
-// 이 기기 밖에 있는 가장 최근 사본 (파일 자동 저장·Gist·내보내기·공유)
+// 이 기기 밖에 있는 가장 최근 사본 (파일 자동 저장·Gist·구글 드라이브·내보내기·공유)
 function lastCopyAt() {
-  return Math.max(Number(sync?.lastGist) || 0, Number(sync?.lastFile) || 0, Number(readUi().lastExport) || 0);
+  return Math.max(Number(sync?.lastGist) || 0, Number(sync?.lastFile) || 0, Number(sync?.lastDrive) || 0, Number(readUi().lastExport) || 0);
 }
 function markBackup() {
   saveUi({ lastExport: Date.now() });
@@ -2149,7 +2157,8 @@ function renderSafety() {
 // 백업 카드 안의 현재 상태
 function renderSafetyStatus() {
   const last = lastCopyAt();
-  const where = !last ? '' : last === Number(sync?.lastFile) ? ' (파일 자동 저장)' : last === Number(sync?.lastGist) ? ' (Gist)' : ' (내보내기)';
+  const where = !last ? '' : last === Number(sync?.lastFile) ? ' (파일 자동 저장)' : last === Number(sync?.lastGist) ? ' (Gist)'
+    : last === Number(sync?.lastDrive) ? ' (구글 드라이브)' : ' (내보내기)';
   const stale = Date.now() - last > BACKUP_DAYS * DAY_MS;
   $('#safetyStatus').innerHTML = `
     <li class="${storagePersisted ? 'ok' : 'warn'}">${storagePersisted ? '✅ 이 기기: 브라우저가 지우지 않게 보호됨'

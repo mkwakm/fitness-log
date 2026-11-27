@@ -14,7 +14,9 @@
 - `exercise-db.js` — 운동 목록 `EXERCISES` 225가지(`[이름, 부위, 다른 이름들, MET?]`, 부위별로 많이 하는 순). `app.js`보다 먼저 읽힌다. **운동을 더하려면 여기에.** 다른 이름(사레레·렛풀다운·OHP…)은 `EX_ALIAS`로 정식 이름에 묶이므로 **다른 운동을 가리킬 수도 있는 말(로우·플라이·브릿지)은 넣지 말 것** — 한 번 묶이면 두 운동의 기록이 섞인다. 이름은 띄어쓰기 없이(예전 기록과 같은 모양).
 - `photos.js` — 식단 사진. **IndexedDB**에 따로 저장한다(localStorage는 5MB라 몇 장이면 꽉 찬다). 기록에는 id만 남으므로 **평소 동기화에는 사진이 안 들어간다**. 옮기려면 "사진까지 내보내기"(`collectPhotos` → base64로 한 파일) → 다른 기기에서 가져오기(`restorePhotos`). 안 쓰는 사진은 `prunePhotos()`로 치운다.
 - `vision.js` — 식단 사진으로 음식 알아보기. `app.js` **뒤에** 읽힌다(`$`·`esc`·`readUi`를 쓴다). 아래 "사진으로 넣기" 참고.
-- `sync.js` — 기기 간 동기화(GitHub Gist / 파일 자동 저장)와 병합 로직. `app.js`보다 먼저 읽히고, 시작은 `app.js` 끝의 `initSync()`가 한다.
+- `sync.js` — 기기 간 동기화(GitHub Gist / 파일 자동 저장)와 병합 로직, 구글 드라이브(Claude 연결) 내보내기. `app.js`보다 먼저 읽히고, 시작은 `app.js` 끝의 `initSync()`가 한다.
+- `report.js` — Claude가 읽을 기록 정리 글(`recordText`). 드라이브 문서와 "글로 복사"가 같이 쓴다. 아래 "Claude 연결" 참고.
+- `tools/drive-apps-script.gs` — 사용자가 자기 구글 계정에 올리는 Apps Script 웹 앱(드라이브에 문서·JSON을 덮어씀). 앱의 "스크립트 복사"가 이 파일을 그대로 읽어 가므로 경로를 바꾸지 말 것.
 - `sw.js` — 오프라인 캐시. 파일을 수정하면 `CACHE` 버전 문자열을 올릴 것.
 - `manifest.json`, `icon.svg` — 홈 화면 설치용.
 
@@ -147,6 +149,14 @@
 - 날짜 이동: ‹ › 버튼, 좌우 스와이프, 오늘이 아닐 때만 뜨는 "오늘" 버튼. 어느 쪽이든 `goToDate(날짜, 방향)`을 거쳐야 연출이 붙는다. `currentDate`를 직접 바꾸고 `render()`하면 조용히 바뀌어 티가 안 난다.
 - 날짜 넘김 연출은 **`main` 하나만** 움직인다(나가기 120ms → 내용 교체 → 들어오기 300ms). 나가는 요소와 들어오는 요소를 따로 두면 방향이 엇갈려 서로 상쇄되고, 내용 길이에 따라 어떤 부분만 움직이는 것처럼 보인다.
 - 연출 중에도 `currentDate`는 **먼저 확정**한다(안 그러면 빠르게 두 번 눌러도 하루만 넘어간다). 대신 그 120ms 동안은 화면과 날짜가 어긋나므로 `main.leaving { pointer-events: none }`으로 못 누르게 막고, `findWorkout()` 결과는 항상 없을 수 있다고 보고 다룬다.
+- **Claude 연결 (구글 드라이브)**(`drivePush`, `recordText`, 기록 탭 `#driveRow`): 사용자가 "앱 기록이 Claude 헬스 대화(claude.ai 프로젝트)에 바로 연결됐으면"이라고 해서 넣었다. 기록을 고치면 드라이브 `fitness-log` 폴더의 **운동 기록 (fitness-log)** 구글 문서(정리 글)와 `fitness-log.json`을 덮어쓴다. claude.ai의 구글 드라이브 연결로 Claude가 읽는다.
+  - **앱에 구글 로그인(GIS)을 붙이지 않은 이유**: 브라우저 토큰은 1시간짜리라 다시 받으려면 팝업이 필요하고, 휴대폰에선 사용자 동작 없이 팝업이 막혀 자동 저장이 끊긴다. 그래서 사용자가 자기 드라이브에 만든 **Apps Script 웹 앱**(`tools/drive-apps-script.gs`, 실행: 나 / 액세스: 모든 사용자)에 POST한다. 구글 클라우드 프로젝트·OAuth 클라이언트가 필요 없다.
+  - 요청은 **`Content-Type: text/plain`**(application/json이면 사전 요청 OPTIONS가 가는데 Apps Script는 못 받는다). 스크립트는 처음 받은 비밀번호를 `ScriptProperties`에 기억하고(TOFU) 다른 비밀번호는 거절, `LockService`로 두 기기가 동시에 써도 파일이 둘 생기지 않게 한다.
+  - 주소·비밀번호는 Gist 토큰과 같은 취급: `fitness-log-sync`(`sync.driveUrl`, `sync.driveKey`)에만, **state·내보내기에 넣지 말 것**.
+  - 언제 보내나: 고친 뒤 30초 잠잠하면(`driveAfterEdit`), **앱을 숨길 때 바로**(숨겨지면 타이머가 거의 안 돌아 30초를 기다리면 안 간다 — 작으면 `keepalive`), 돌아올 때·`online`·앱을 열 때. 보내기 전에 `flushSave()`(미뤄 둔 저장의 수정 시각부터). 내용이 같으면(`driveSig` = 오늘 날짜 + state 해시) 안 보낸다 — 날짜를 넣는 건 "3일 전" 같은 말이 날마다 바뀌어서.
+  - 실패는 조용히 넘어가지 않고 카드에 ⚠️로(`driveError`), 다음 기회에 다시. 드라이브 저장도 "이 기기 밖 사본"이라 `lastCopyAt`에 들어간다(백업 알림).
+  - 정리 글(`report.js`)은 화면과 같은 집계 함수만 쓴다(`countedSets`·`volumeOf`·`oneRM`·`partOf`·`metKey`). 요약(이번 주·최근 4주 vs 그 전·부위별 마지막으로 한 날, 오래 쉰 순) → 운동별(최고·처음·최근 세트) → 날짜별(최근 180일, 최근부터, W·↘·(안 함)·슈퍼세트 A·신기록·메모·식단 한 줄). **신기록은 예전 기록을 넘긴 날만**(처음 해 본 운동은 비교할 게 없다). 기호 설명은 문서 맨 위에 둔다(읽는 Claude가 알게).
+  - 테스트: `drive.test.mjs`(정리 글 + 가짜 Apps Script `page.route`, 클립보드는 `serve()`의 http에서만), `drive-script.test.mjs`(스크립트를 `vm`으로 가짜 DriveApp·DocumentApp 위에서).
 - 기기 간 동기화(`sync.js`): ① PC는 File System Access API로 클라우드 드라이브 파일에 자동 저장 ② 휴대폰은 내보내 공유(`navigator.share`) → 가져오기 ③ GitHub Gist(토큰 필요, 접어둠). 셋 다 같은 `mergeState()`를 쓴다.
 
 ## 동기화 규칙 (sync.js)

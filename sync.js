@@ -3,6 +3,7 @@
 //  ② 휴대폰은 내보내기/공유 → 드라이브에 올리고, 가져오기로 합친다 (토큰 불필요)
 //  ③ GitHub Gist — 토큰이 필요해서 기본에서 내렸다. 자동 동기화를 원할 때만 쓴다.
 // 셋 다 아래 mergeState()로 항목 단위 병합을 한다.
+//  ④ 구글 드라이브(Claude 연결) — 동기화가 아니라 내보내기 전용. Claude가 읽을 정리 문서와 기록 파일을 자동으로 덮어쓴다.
 //
 // ⚠️ 토큰은 state가 아니라 별도 키(SYNC_KEY)에 둔다. 백업 JSON 내보내기에 절대 섞이지 않게 하기 위함.
 const SYNC_KEY = 'fitness-log-sync';
@@ -12,7 +13,7 @@ const AUTO_SYNC_MS = 5 * 60 * 1000;   // 앱을 열어둔 동안 이 간격으�
 const AFTER_EDIT_MS = 45 * 1000;      // 기록을 고친 뒤 이만큼 잠잠하면 올린다
 const RETURN_GAP_MS = 2 * 60 * 1000;  // 앱으로 돌아왔을 때 마지막 동기화가 이보다 오래됐으면 맞춘다
 
-let sync = { token: '', gistId: '', lastGist: 0, lastFile: 0 };
+let sync = { token: '', gistId: '', lastGist: 0, lastFile: 0, driveUrl: '', driveKey: '', lastDrive: 0, driveDoc: '', driveSig: '' };
 let fileHandle = null;
 let autoSaveTimer = null;
 let syncMsg = '';
@@ -228,6 +229,155 @@ function disconnectGist() {
   toastSync('연결을 해제했어요.');
 }
 
+// ---------- ④ 구글 드라이브 — Claude가 읽을 문서 ----------
+// 앱에 구글 로그인을 직접 붙이면 휴대폰 브라우저에선 토큰이 1시간마다 풀리고, 다시 받으려면 팝업이 떠서 자동 저장이 끊긴다.
+// 그래서 사용자가 자기 드라이브에 만든 Apps Script 웹 앱(tools/drive-apps-script.gs)으로 보낸다.
+// 그쪽이 '운동 기록 (fitness-log)' 구글 문서(report.js의 recordText)와 fitness-log.json을 덮어쓴다.
+// 주소·비밀번호는 토큰과 같은 취급 — state가 아니라 SYNC_KEY에만 둔다(백업 파일에 섞이지 않게).
+const DRIVE_AFTER_EDIT_MS = 30 * 1000;
+const DRIVE_URL_RE = /^https:\/\/script\.google\.com\/(?:a\/macros\/[\w.-]+|macros)\/s\/[\w-]+\/exec$/;
+const DRIVE_BEACON_MAX = 60000;          // keepalive 요청은 64KB를 넘으면 브라우저가 거절한다
+let driveTimer = null;
+let driving = false;
+let driveAgain = false;
+let driveError = '';
+
+// 보낼 내용이 지난번과 같은지. 오늘 날짜도 넣는다 — 문서의 "3일 전" 같은 말이 날마다 바뀌어서.
+function driveSig() {
+  const str = todayStr() + JSON.stringify(state);
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return `${(h >>> 0).toString(36)}.${str.length.toString(36)}`;
+}
+
+// quiet: 저절로 도는 경우 — 토스트 없이 카드의 상태 줄만 바꾼다.
+// leaving: 앱을 닫는 중 — 끝까지 보내도록 keepalive를 건다(작을 때만).
+async function drivePush({ quiet = false, force = false, leaving = false } = {}) {
+  if (!sync.driveUrl || !sync.driveKey) return false;
+  if (driving) { driveAgain = true; return false; }
+  if (typeof flushSave === 'function') flushSave();   // 미뤄 둔 저장(수정 시각 찍기)부터 — 앱을 닫는 순간에도
+  const sig = driveSig();
+  if (!force && sig === sync.driveSig && !driveError) return true;
+  clearTimeout(driveTimer);
+  driveTimer = null;
+  driving = true;
+  if (!quiet) setDriveBusy(true);
+  try {
+    const body = JSON.stringify({ key: sync.driveKey, text: recordText(), json: JSON.stringify(state) });
+    const res = await fetch(sync.driveUrl, {
+      method: 'POST',
+      // application/json이면 브라우저가 사전 요청(OPTIONS)을 먼저 보내는데 Apps Script는 그걸 못 받는다
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body,
+      keepalive: leaving && new Blob([body]).size < DRIVE_BEACON_MAX,
+    });
+    let out;
+    try {
+      out = await res.json();
+    } catch {
+      throw new Error('응답을 못 읽었어요. 웹 앱 주소와 배포 설정(액세스: 모든 사용자)을 확인해 주세요.');
+    }
+    if (!out?.ok) {
+      throw new Error(out?.error === 'key' ? '비밀번호가 스크립트에 저장된 것과 달라요. 다시 연결해 주세요.'
+        : out?.error === 'busy' ? '드라이브가 바빠요. 잠시 뒤 다시 저장할게요.' : '드라이브에 저장하지 못했어요.');
+    }
+    sync.lastDrive = Date.now();
+    sync.driveSig = sig;
+    if (typeof out.docUrl === 'string' && out.docUrl.startsWith('https://docs.google.com/')) sync.driveDoc = out.docUrl;
+    saveSync();
+    driveError = '';
+    if (quiet) renderSync(); else toastSync('구글 드라이브에 저장했어요.');
+    if (typeof renderSafety === 'function') renderSafety();   // 이 기기 밖 사본이 생겼다 (백업 알림)
+    return true;
+  } catch (err) {
+    // fetch 자체가 실패하면 TypeError (인터넷이 없거나, 주소가 틀려 구글 로그인 화면으로 넘어간 경우)
+    driveError = err instanceof TypeError ? '드라이브에 연결하지 못했어요. 인터넷과 웹 앱 주소·배포 설정을 확인해 주세요.' : err.message;
+    if (quiet) renderSync(); else toastSync(`⚠️ ${driveError}`);
+    return false;
+  } finally {
+    driving = false;
+    if (!quiet) setDriveBusy(false);
+    if (driveAgain) { driveAgain = false; driveAfterEdit(); }
+  }
+}
+// 기록을 고치면 잠잠해진 뒤 한 번 보낸다 (app.js의 save()가 부른다)
+function driveAfterEdit() {
+  if (!sync.driveUrl) return;
+  clearTimeout(driveTimer);
+  driveTimer = setTimeout(() => { driveTimer = null; drivePush({ quiet: true }); }, DRIVE_AFTER_EDIT_MS);
+}
+// 앱을 닫거나 다른 앱으로 갈 때 밀린 걸 보내고, 돌아오면 못 보낸 게(인터넷이 끊겼거나 날이 바뀜) 있는지 본다.
+// 숨겨진 뒤엔 타이머가 멈추다시피 해서 30초를 기다리면 안 간다.
+document.addEventListener('visibilitychange', () => {
+  if (!sync.driveUrl) return;
+  drivePush({ quiet: true, leaving: document.hidden });
+});
+window.addEventListener('online', () => { if (sync.driveUrl) drivePush({ quiet: true }); });
+
+async function connectDrive() {
+  const url = (prompt('구글 Apps Script 웹 앱 주소를 붙여넣으세요.\n(…/exec 로 끝나는 주소 — 만드는 법은 ❓ 도움말의 "Claude 연결")', sync.driveUrl || '') || '').trim();
+  if (!url) return;
+  if (!DRIVE_URL_RE.test(url)) {
+    toastSync('⚠️ 주소 모양이 달라요. https://script.google.com/macros/s/…/exec 이어야 해요.');
+    return;
+  }
+  const key = (prompt('비밀번호를 정해 주세요 (4자 이상).\n처음 저장할 때 스크립트가 기억해요. 다른 기기에서도 같은 비밀번호를 넣으세요.\n※ 이 기기에만 저장되고 백업 파일에는 들어가지 않아요.') || '').trim();
+  if (!key) return;
+  if (key.length < 4) {
+    toastSync('⚠️ 비밀번호는 4자 이상이어야 해요.');
+    return;
+  }
+  sync = { ...sync, driveUrl: url, driveKey: key, driveSig: '', driveDoc: url === sync.driveUrl ? sync.driveDoc : '' };
+  saveSync();
+  driveError = '';
+  await drivePush({ force: true });
+}
+
+function disconnectDrive() {
+  if (!confirm('이 기기에서 구글 드라이브 연결을 끊을까요?\n(드라이브에 저장된 문서는 그대로 남습니다)')) return;
+  clearTimeout(driveTimer);
+  driveTimer = null;
+  sync = { ...sync, driveUrl: '', driveKey: '', lastDrive: 0, driveDoc: '', driveSig: '' };
+  driveError = '';
+  saveSync();
+  toastSync('구글 드라이브 연결을 끊었어요.');
+}
+
+// 클립보드에 쓸 내용이 비동기로 만들어질 때: 사파리는 await 뒤에 쓰면 거절하므로 ClipboardItem에 promise로 넘긴다
+async function copyText(textPromise) {
+  if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ 'text/plain': Promise.resolve(textPromise).then((t) => new Blob([t], { type: 'text/plain' })) })]);
+      return;
+    } catch { /* 아래 방법으로 */ }
+  }
+  await navigator.clipboard.writeText(await textPromise);
+}
+async function copyRecordText() {
+  try {
+    await copyText(recordText());
+    toastSync('기록을 글로 복사했어요. Claude 대화에 붙여넣으세요.');
+  } catch {
+    toastSync('⚠️ 복사하지 못했어요.');
+  }
+}
+async function copyDriveScript() {
+  const text = fetch('tools/drive-apps-script.gs', { cache: 'no-store' }).then((r) => {
+    if (!r.ok) throw new Error(r.status);
+    return r.text();
+  });
+  try {
+    await copyText(text);
+    toastSync('스크립트를 복사했어요. script.google.com 새 프로젝트에 붙여넣으세요.');
+  } catch {
+    toastSync('⚠️ 복사하지 못했어요. GitHub 저장소의 tools/drive-apps-script.gs를 열어 복사해 주세요.');
+  }
+}
+function setDriveBusy(on) {
+  const btn = document.querySelector('#drivePushBtn');
+  if (btn) { btn.disabled = on; btn.textContent = on ? '저장 중…' : '지금 저장'; }
+}
+
 // ---------- ② 파일 자동 저장 ----------
 const canUseFile = () => typeof window !== 'undefined' && 'showSaveFilePicker' in window;
 
@@ -418,6 +568,25 @@ function renderSync() {
       </div>
     </div>
 
+    <div class="sync-row" id="driveRow">
+      <div>
+        <strong>🤖 Claude 연결 · 구글 드라이브</strong>
+        <p class="hint">${!sync.driveUrl ? '연결 안 됨'
+          : driveError ? `<b class="warn-text">⚠️ ${esc(driveError)}</b>`
+          : `마지막 저장: ${fmtAgo(sync.lastDrive)}`}</p>
+      </div>
+      <div class="sync-btns">
+        ${sync.driveUrl
+          ? `<button id="drivePushBtn" class="primary">지금 저장</button>
+             ${sync.driveDoc ? '<button id="driveDocBtn">문서 열기</button>' : ''}
+             ${driveError ? '<button id="driveOnBtn">다시 연결</button>' : ''}
+             <button id="driveOffBtn">끊기</button>`
+          : `<button id="driveOnBtn" class="primary">연결하기</button>
+             <button id="driveScriptBtn">스크립트 복사</button>`}
+        <button id="copyTextBtn">글로 복사</button>
+      </div>
+    </div>
+
     <details class="sync-adv"${advOpen ? ' open' : ''}>
       <summary>자동으로 맞추고 싶다면 — GitHub Gist <span class="tag warn">토큰 필요</span></summary>
       <div class="sync-row">
@@ -456,6 +625,12 @@ async function initSync() {
     else if (id === 'fileRelinkBtn') relinkSyncFile();
     else if (id === 'fileOffBtn') forgetSyncFile();
     else if (id === 'shareBtn') shareBackup();
+    else if (id === 'driveOnBtn') connectDrive();
+    else if (id === 'drivePushBtn') drivePush({ force: true });
+    else if (id === 'driveOffBtn') disconnectDrive();
+    else if (id === 'driveDocBtn') window.open(sync.driveDoc, '_blank', 'noopener');
+    else if (id === 'driveScriptBtn') copyDriveScript();
+    else if (id === 'copyTextBtn') copyRecordText();
     else if (id === 'jumpBackup') document.querySelector('.card.backup')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   });
 
@@ -473,4 +648,5 @@ async function initSync() {
     gistSync();                   // 열 때 한 번 맞춰 둔다
     startAutoSync();
   }
+  if (sync.driveUrl) drivePush({ quiet: true });   // 못 보낸 게 있거나 날이 바뀌었으면 (같으면 아무것도 안 함)
 }
