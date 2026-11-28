@@ -1375,8 +1375,16 @@ function renderMyFoods() {
     : '';
 }
 
+// 오운완 카드를 띄울 날: 운동이 있고, 완료한 세트가 있거나 지난 날짜(체크를 안 쓰는 사람도 있다)
+function canShareDay(date) {
+  const ws = state.days[date]?.workouts || [];
+  if (!ws.length) return false;
+  return ws.some((w) => w.sets.some((s) => s.done)) || date < todayStr();
+}
+
 function renderWorkouts() {
   const workouts = day().workouts;
+  $('#shareDayBtn').hidden = !canShareDay(currentDate);
   const weight = bodyWeight();
   const totalSets = workouts.reduce((s, w) => s + workSets(w).length, 0);
   const done = workouts.reduce((s, w) => s + doneCount(w), 0);
@@ -1696,6 +1704,7 @@ window.addEventListener('popstate', () => {
   else if (top === 'timer') closeTimer(true);
   else if (top === 'weight' || top === 'lift') closeChartSheet(top, true);
   else if (top === 'data') closeData(true);
+  else if (top === 'share') closeShare(true);
   else if (top === 'pick') closePicker(true);
   else if (top === 'plate') closePlates(true);
   else if (top === 'move') closeMove(true);
@@ -2016,6 +2025,8 @@ const HELP = [
     <br>식단 탭 하루 목표에서 <b>목표 + 소모 − 섭취 = 남은 칼로리</b>로 알려줘요.
     <br>체중 칸엔 마지막으로 적은 체중이 들어가 있어요. 바뀌었을 때만 고치면 그 날 체중으로 기록돼요.
 `],
+  ['오운완 카드', `운동 카드 아래(완료한 세트가 있을 때)·집중 모드 마무리 화면·기록 탭 달력의 그 날 보기에서 <b>오운완 카드</b>를 누르면 그 날 운동이 이미지 한 장으로 나와요.
+    시간·볼륨·세트·소모와 운동마다 가장 센 세트, 신기록(PR)이 들어가요. <b>공유</b>로 인스타 스토리·카톡에 바로 올리거나 <b>이미지 저장</b>으로 사진첩에 저장하세요.`],
   ['기록·통계', `달력에서 날짜를 누르면 그 날 운동이 아래에 펼쳐져요. 달력 위 돋보기로 운동·음식·메모를 검색할 수 있어요.
     <br>부위별 밸런스와 주간 목표 세트는 <b>최근 7일</b>을 볼 때만 견줘요. 비워두면 목표 없이 세트 수만 봐요.
     <br>최고 기록과 중량 그래프는 1RM(추정 1회 최대 중량)으로 견줘요. 100kg×1회와 90kg×8회를 바르게 비교하려고요.
@@ -2205,6 +2216,7 @@ function focusFinishHtml() {
         <button data-focus-move="-1">‹ 세트 다시 보기</button>
         <button data-focus-addex>+ 운동 추가</button>
       </div>
+      <button class="focus-share" data-share-day="${currentDate}">${ic('share')}오운완 카드</button>
     </div>`;
 }
 
@@ -2863,6 +2875,7 @@ function calDetailHtml(date) {
     <div class="cal-actions">
       ${date !== currentDate ? `<button type="button" data-copy-day="${date}">↩ ${into} 운동으로 불러오기</button>` : ''}
       ${mealBtn}
+      <button type="button" data-share-day="${date}">${ic('share')}오운완 카드</button>
       <button type="button" data-move-day="${date}">다른 날로 옮기기</button>
       <button type="button" data-goto="${date}">이 날 열기</button>
     </div>`;
@@ -4062,6 +4075,7 @@ document.addEventListener('keydown', (e) => {
   else if (layers.at(-1) === 'timer') closeTimer();
   else if (layers.at(-1) === 'weight' || layers.at(-1) === 'lift') closeChartSheet(layers.at(-1));
   else if (layers.at(-1) === 'data') closeData();
+  else if (layers.at(-1) === 'share') closeShare();
   else if (layers.at(-1) === 'pick') closePicker();
   else if (layers.at(-1) === 'plate') closePlates();
   else if (layers.at(-1) === 'move') closeMove();

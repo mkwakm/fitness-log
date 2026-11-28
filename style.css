@@ -612,6 +612,15 @@ body.sheet-open { overflow: hidden; }
   font-size: 1rem; font-weight: 700; border-radius: var(--r-lg);
 }
 .focus-entry[hidden] { display: none; }
+/* 오운완 카드: 운동 카드 아래 버튼, 집중 모드 마무리 버튼, 미리보기 창 */
+.share-entry { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 48px; margin-bottom: 12px; font-weight: 700; }
+.share-entry[hidden] { display: none; }
+.focus-share { display: inline-flex; align-items: center; justify-content: center; width: 100%; min-height: 48px; margin-top: 10px; }
+.share-body { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.share-img { width: 100%; max-width: 420px; aspect-ratio: 4 / 5; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--card); }
+.share-btns { display: flex; gap: 8px; width: 100%; max-width: 420px; }
+.share-btns button { flex: 1; min-height: 52px; font-size: 1rem; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+.share-btns button[hidden] { display: none; }
 .focus-entry span { font-size: 0.8rem; font-weight: 600; opacity: 0.8; }
 .focus-entry b { display: inline-flex; align-items: center; font-weight: 700; }
 .sheet.focus { z-index: 29; }          /* 운동 상세(30)를 위에 겹쳐 열 수 있게 */

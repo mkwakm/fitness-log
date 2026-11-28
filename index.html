@@ -36,6 +36,7 @@
     <symbol id="i-scale" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16"/><path d="M8 10.5a4.6 4.6 0 0 1 8 0M12 10.5l1.6-2.4"/></symbol>
     <symbol id="i-trend" viewBox="0 0 24 24"><path d="M3.5 20h17M4.5 15.5l4.5-4.5 3.5 3 7-7M15 7h4.5v4.5"/></symbol>
     <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7.2 18.5h10a3.8 3.8 0 0 0 .5-7.57 5.7 5.7 0 0 0-11-.9A4.25 4.25 0 0 0 7.2 18.5Z"/><path d="M12 16v-5M9.8 13.2 12 11l2.2 2.2"/></symbol>
+    <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 3.5v11M8 7.3l4-3.8 4 3.8M5 11v9.5h14V11"/></symbol>
     <symbol id="i-install" viewBox="0 0 24 24"><path d="M12 4v10.5M7.8 10.3 12 14.5l4.2-4.2M5 19.5h14"/></symbol>
   </svg>
   <header class="top">
@@ -112,6 +113,8 @@
       <!-- 운동 중엔 카드가 주인공이라 맨 위에. 운동 추가 폼은 그 아래("다음 운동"), 소모 칼로리·설정은 맨 아래 -->
       <div class="card" id="planCard" hidden></div>
       <div id="workoutList"></div>
+      <!-- 오운완 카드: 운동 카드 아래(카드 위에 얹지 않는다). 완료한 세트가 있을 때만 -->
+      <button id="shareDayBtn" class="share-entry" data-share-day hidden><svg class="ic" aria-hidden="true"><use href="#i-share"/></svg>오운완 카드</button>
       <form id="workoutForm" class="card form">
         <!-- 운동이 200가지가 넘어서 자동완성만으론 뭐가 있는지 모른다. "목록" 버튼으로 부위별 목록을 연다 -->
         <div class="ex-name-row">
@@ -257,6 +260,21 @@
     </div>
   </div>
 
+  <!-- 오운완 카드: 그 날 운동을 이미지 한 장으로 (share.js) -->
+  <div id="shareSheet" class="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="shareTitle">
+    <div class="sheet-head">
+      <h2 id="shareTitle">오운완 카드</h2>
+      <button class="del" id="shareClose" aria-label="닫기">✕</button>
+    </div>
+    <div class="sheet-body share-body">
+      <img id="shareImg" class="share-img" alt="오운완 카드 미리보기">
+      <div class="share-btns">
+        <button id="shareSend" class="primary"><svg class="ic" aria-hidden="true"><use href="#i-share"/></svg>공유</button>
+        <button id="shareSave">이미지 저장</button>
+      </div>
+    </div>
+  </div>
+
   <div id="dataSheet" class="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="dataTitle">
     <div class="sheet-head">
       <h2 id="dataTitle">동기화·백업</h2>
@@ -392,6 +410,7 @@
   <script src="sync.js"></script>
   <script src="report.js"></script>
   <script src="app.js"></script>
+  <script src="share.js"></script>
   <script src="vision.js"></script>
 </body>
 </html>
