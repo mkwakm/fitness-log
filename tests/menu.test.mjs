@@ -15,7 +15,7 @@ export default async function (t) {
   await page.click('#menuBtn');
   t.ok(await page.locator('#menuSheet').isVisible(), '三을 누르면 메뉴');
   t.eq(await page.evaluate(() => [...document.querySelectorAll('.drawer-item:not([hidden]) .drawer-tx')].map((e) => e.firstChild.textContent.trim())),
-    ['운동 시간', '체중 그래프', '1RM 그래프', '동기화·백업', 'Theme', '도움말'], '메뉴 항목');
+    ['운동 시간', '몸 변화', '1RM 그래프', '동기화·백업', 'Theme', '도움말'], '메뉴 항목');
   t.ok(await page.locator('#installBtn').isHidden(), '설치할 수 없으면 "홈 화면에 설치"는 숨김');
   const box = await page.locator('.drawer-item').first().boundingBox();
   t.ok(box.height >= 44, `메뉴 항목은 누르기 쉬운 높이 (${box.height}px)`);
@@ -103,7 +103,7 @@ export default async function (t) {
   t.ok((await text(page, '#dataOpen')).includes('아직 사본 없음'), '메뉴에 마지막 사본');
   await page.click('#weightOpen');
   await wait(page, 80);
-  t.ok(await page.locator('#weightSheet').isVisible() && await page.locator('#menuSheet').isHidden(), '메뉴 → 체중 그래프 창');
+  t.ok(await page.locator('#weightSheet').isVisible() && await page.locator('#menuSheet').isHidden(), '메뉴 → 몸 변화 창');
   t.eq(await page.locator('#weightChart circle').count(), 6, '창 안에 체중 그래프 (6번)');
   await page.click('#weightSheet [data-range="30"]');
   t.eq(await page.evaluate(() => range), 30, '창에서 기간을 바꿈');

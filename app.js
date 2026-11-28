@@ -257,7 +257,8 @@ function markDeleted(id, date = currentDate) {
   (d.deleted ??= []).push(id);
 }
 function isEmptyDay(d) {
-  return !d || (d.meals.length === 0 && d.workouts.length === 0 && !d.note && !d.weight && !d.water && !d.sessionMin);
+  return !d || (d.meals.length === 0 && d.workouts.length === 0 && !d.note && !d.weight && !d.water && !d.sessionMin
+    && !d.fat && !d.muscle && !d.waist && !d.bodyPhotos?.length);
 }
 function fmtDate(str) {
   return str.slice(5).replace('-', '/');   // 2026-09-21 → 09/21
@@ -429,6 +430,23 @@ function bodyWeight(date = currentDate) {
   return fallback > 0 ? fallback : DEFAULT_WEIGHT;
 }
 // 체중을 적은 날만 (추이 그래프용)
+// 몸 변화: 체중(day.weight)과 함께 체지방률·골격근량·허리 둘레를 날짜별로 (인바디 결과를 옮겨 적는다)
+const BODY_METRICS = [
+  { key: 'weight', label: '체중', unit: 'kg', step: 0.1 },
+  { key: 'fat', label: '체지방', unit: '%', step: 0.1 },
+  { key: 'muscle', label: '골격근', unit: 'kg', step: 0.1 },
+  { key: 'waist', label: '허리', unit: 'cm', step: 0.5 },
+];
+function bodyEntries(key) {
+  return Object.keys(state.days)
+    .filter((d) => Number(state.days[d][key]) > 0)
+    .sort()
+    .map((date) => ({ date, value: Number(state.days[date][key]) }));
+}
+// "체중 79kg · 체지방 18%" (달력 그 날 보기·정리 글)
+function bodyText(d) {
+  return BODY_METRICS.filter((m) => Number(d?.[m.key]) > 0).map((m) => `${m.label} ${Number(d[m.key])}${m.unit}`).join(' · ');
+}
 function weightEntries() {
   return Object.keys(state.days)
     .filter((d) => Number(state.days[d].weight) > 0)
@@ -1030,7 +1048,8 @@ function renderMenuDot() {
 // 메뉴 항목 밑 작은 글: 마지막 체중, 마지막 사본(끊겼으면 빨갛게)
 function renderMenuNotes() {
   const last = weightEntries().at(-1);
-  $('#menuWeightText').textContent = last ? `${last.weight}kg · ${fmtDate(last.date)}` : '';
+  const fat = bodyEntries('fat').at(-1);
+  $('#menuWeightText').textContent = last ? `${last.weight}kg · ${fat ? `체지방 ${fat.value}%` : fmtDate(last.date)}` : (fat ? `체지방 ${fat.value}%` : '');
   const trouble = typeof syncTrouble === 'function' ? syncTrouble() : '';
   const copy = lastCopyAt();
   const el = $('#menuDataText');
@@ -1044,7 +1063,7 @@ function syncRangeSeg() {
 }
 function openChartSheet(name) {
   syncRangeSeg();
-  if (name === 'weight') renderWeightChart(); else renderLiftChart();
+  if (name === 'weight') renderBodyPanel(); else renderLiftChart();
   $(`#${name}Sheet`).hidden = false;
   layerOpened(name);
 }
@@ -1223,6 +1242,7 @@ function render() {
   renderSafety();
   if (focusOn) renderFocus();
   if (exSheetName) renderExSheet();   // 열어 둔 상세도 같이 갱신 (안 하면 방금 적은 세트가 안 보인다)
+  if (!$('#weightSheet').hidden) renderBodyPanel();   // 되돌리기·동기화로 바뀌어도 맞게
 }
 
 function renderMeals() {
@@ -1606,20 +1626,91 @@ function lineChart(points, { unit, cls, fmt }) {
     ${grid}<path d="${path}" class="${cls}-line"/>${dots}${ends}${xLabels}</svg>`;
 }
 
+let bodyMetric = 'weight';   // 몸 변화 창에서 그래프로 보는 지표
 function renderWeightChart() {
-  const all = weightEntries();
+  const m = BODY_METRICS.find((x) => x.key === bodyMetric) || BODY_METRICS[0];
+  document.querySelectorAll('[data-body-metric]').forEach((b) => b.classList.toggle('on', b.dataset.bodyMetric === m.key));
+  const all = bodyEntries(m.key);
   const from = shiftDate(currentDate, -(range - 1));
-  const points = all.filter((e) => e.date >= from && e.date <= currentDate)
-    .map((e) => ({ date: e.date, value: e.weight }));
+  const points = all.filter((e) => e.date >= from && e.date <= currentDate);
   if (points.length < 2) {
-    $('#weightChart').innerHTML = `<p class="muted">${!all.length ? '아직 적은 체중이 없어요. 운동 탭의 소모 칼로리 카드에 체중을 적으면 그려져요.'
-      : points.length ? '이 기간에 기록이 하나뿐이에요.' : '이 기간에 적은 체중이 없어요.'}</p>`;
+    $('#weightChart').innerHTML = `<p class="muted">${!all.length ? `아직 적은 ${m.label} 기록이 없어요.`
+      : points.length ? '이 기간에 기록이 하나뿐이에요.' : `이 기간에 적은 ${m.label} 기록이 없어요.`}</p>`;
     return;
   }
   const diff = Math.round((points[points.length - 1].value - points[0].value) * 10) / 10;
   $('#weightChart').innerHTML =
-    `<p class="muted">${points.length}번 기록 · ${diff > 0 ? '+' : ''}${diff} kg</p>` +
-    lineChart(points, { unit: 'kg', cls: 'w', fmt: (v) => v.toFixed(1) });
+    `<p class="muted">${points.length}번 기록 · ${diff > 0 ? '+' : ''}${diff} ${m.unit}</p>` +
+    lineChart(points, { unit: m.unit, cls: 'w', fmt: (v) => v.toFixed(1) });
+}
+// 몸 변화 창: 보고 있는 날의 칸 4개 + 그래프 + 눈바디
+function renderBodyPanel() {
+  renderBodyInputs();
+  renderWeightChart();
+  renderBodyPhotos();
+}
+function renderBodyInputs() {
+  const box = $('#bodyInputs');
+  if (box.contains(document.activeElement)) return;   // 치는 중에 다시 그리면 입력이 끊긴다
+  const d = state.days[currentDate] || {};
+  const when = currentDate === todayStr() ? '오늘' : fmtDate(currentDate);
+  box.innerHTML = `<p class="body-when">${when}</p>` + BODY_METRICS.map((m) => {
+    const prev = bodyEntries(m.key).filter((e) => e.date < currentDate).at(-1);   // 칸이 비었으면 지난 값을 흐리게
+    return `<label class="body-field"><span>${m.label}</span>
+      <span class="body-num"><input type="number" inputmode="decimal" min="0" step="${m.step}" data-body-key="${m.key}"
+        value="${Number(d[m.key]) > 0 ? Number(d[m.key]) : ''}" placeholder="${prev ? prev.value : ''}" aria-label="${m.label} (${m.unit})"><em>${m.unit}</em></span></label>`;
+  }).join('');
+}
+// 눈바디: 날짜별 사진(day.bodyPhotos = [{ id }], 사진은 photos.js의 IndexedDB). 전·후 둘을 나란히
+let bodyCmp = [null, null];   // 고른 전·후 사진 id (없으면 처음·최근)
+let bodyPhotoUrls = [];        // 식단 사진(fillPhotos)과 따로 정리한다 — 같이 쓰면 식단 사진 URL까지 지워진다
+function bodyPhotoList() {
+  return Object.keys(state.days).sort()
+    .flatMap((date) => (Array.isArray(state.days[date].bodyPhotos) ? state.days[date].bodyPhotos : []).map((p) => ({ date, id: p.id })));
+}
+function renderBodyPhotos() {
+  const box = $('#bodyPhotos');
+  const list = bodyPhotoList();
+  if (!list.length) { box.innerHTML = ''; return; }
+  const find = (id, fb) => list.find((p) => p.id === id) || fb;
+  const pair = [find(bodyCmp[0], list[0]), find(bodyCmp[1], list.at(-1))];
+  const name = (p) => {
+    const same = list.filter((x) => x.date === p.date);
+    return `${fmtDate(p.date)}${same.length > 1 ? ` (${same.indexOf(p) + 1})` : ''}`;
+  };
+  const kg = (p) => (Number(state.days[p.date]?.weight) > 0 ? `${state.days[p.date].weight}kg` : '');
+  box.innerHTML = `
+    <div class="body-cmp">${pair.map((p, i) => `
+      <figure>
+        <img data-body-photo="${p.id}" alt="${i ? '후' : '전'} ${fmtDate(p.date)}">
+        <figcaption>
+          <select data-body-cmp="${i}" aria-label="${i ? '후' : '전'} 사진">${list.map((x) => `<option value="${x.id}"${x === p ? ' selected' : ''}>${name(x)}</option>`).join('')}</select>
+          <span>${kg(p)}</span>
+        </figcaption>
+      </figure>`).join('')}
+    </div>
+    <div class="body-strip">${list.slice().reverse().map((p) => `
+      <div class="body-thumb"><img data-body-photo="${p.id}" alt="${fmtDate(p.date)} 눈바디"><span>${name(p)}</span>
+        <button class="del" data-body-del="${p.date}|${p.id}" aria-label="${fmtDate(p.date)} 사진 지우기">✕</button></div>`).join('')}
+    </div>`;
+  fillBodyPhotos();
+}
+async function fillBodyPhotos() {
+  bodyPhotoUrls.forEach((u) => URL.revokeObjectURL(u));
+  bodyPhotoUrls = [];
+  const urls = new Map();
+  for (const img of $('#bodyPhotos').querySelectorAll('img[data-body-photo]')) {
+    const id = img.dataset.bodyPhoto;
+    try {
+      if (!urls.has(id)) {
+        const url = await getPhotoUrl(id);
+        if (url) bodyPhotoUrls.push(url);
+        urls.set(id, url);
+      }
+      if (urls.get(id)) img.src = urls.get(id);
+      else img.classList.add('missing');      // 다른 기기에서 넘어온 기록 (사진은 "사진까지 내보내기"로 옮긴다)
+    } catch { img.classList.add('missing'); }
+  }
 }
 
 // 그 운동을 한 날마다 그날의 최고 1RM.
@@ -2025,6 +2116,9 @@ const HELP = [
     <br>식단 탭 하루 목표에서 <b>목표 + 소모 − 섭취 = 남은 칼로리</b>로 알려줘요.
     <br>체중 칸엔 마지막으로 적은 체중이 들어가 있어요. 바뀌었을 때만 고치면 그 날 체중으로 기록돼요.
 `],
+  ['몸 변화', `三 메뉴 → <b>몸 변화</b>에 체중·체지방률·골격근량·허리 둘레를 날짜별로 적어요(인바디 결과를 옮겨 적으면 돼요). 칸이 비어 있으면 지난 값이 흐리게 보여요.
+    체중만으론 근육이 늘고 지방이 빠지는 변화가 안 보여서 지표마다 그래프를 따로 봐요. <b>눈바디</b>는 같은 자세로 찍은 사진을 날짜별로 모아 전·후 둘을 나란히 견줘요.
+    사진은 이 기기에만 있고 평소 동기화엔 안 들어가요(<b>사진까지 내보내기</b>로 옮겨요).`],
   ['오운완 카드', `운동 카드 아래(완료한 세트가 있을 때)·집중 모드 마무리 화면·기록 탭 달력의 그 날 보기에서 <b>오운완 카드</b>를 누르면 그 날 운동이 이미지 한 장으로 나와요.
     시간·볼륨·세트·소모와 운동마다 가장 센 세트, 신기록(PR)이 들어가요. <b>공유</b>로 인스타 스토리·카톡에 바로 올리거나 <b>이미지 저장</b>으로 사진첩에 저장하세요.`],
   ['기록·통계', `달력에서 날짜를 누르면 그 날 운동이 아래에 펼쳐져요. 달력 위 돋보기로 운동·음식·메모를 검색할 수 있어요.
@@ -2848,7 +2942,7 @@ function calDetailHtml(date) {
   const extra = [
     d?.note ? `<p class="cal-line"><span class="note-tag">메모</span> ${esc(d.note)}</p>` : '',
     mealHtml,
-    d?.weight ? `<p class="cal-line muted">체중 ${d.weight}kg</p>` : '',
+    bodyText(d) || d?.bodyPhotos?.length ? `<p class="cal-line muted">${[bodyText(d), d?.bodyPhotos?.length ? `눈바디 사진 ${d.bodyPhotos.length}장` : ''].filter(Boolean).join(' · ')}</p>` : '',
   ].join('');
   const mealBtn = meals.length && date !== currentDate ? `<button type="button" data-copy-meals="${date}">↩ ${into} 식단으로 불러오기</button>` : '';
   if (!ws.length) {
@@ -3733,6 +3827,59 @@ $('#bodyWeight').addEventListener('input', (e) => {
   if (v > 0) state.profile.weight = v;    // 기본값 캐시
   saveSoon();
   refreshTotals();
+});
+
+// 몸 변화 창: 칸 4개 (치는 동안엔 그래프만, 다 치면 전체)
+$('#bodyInputs').addEventListener('input', (e) => {
+  const key = e.target.dataset.bodyKey;
+  if (!key) return;
+  const v = Number(e.target.value);
+  day()[key] = v > 0 ? v : null;
+  if (key === 'weight' && v > 0) state.profile.weight = v;   // 기본값 캐시 (소모 칼로리 체중 칸과 같은 규칙)
+  bodyMetric = key;                                          // 고치는 지표의 그래프를 보여 준다
+  saveSoon();
+  renderWeightChart();
+});
+// change는 다음 칸으로 포커스가 옮겨 가는 도중에 온다 — 바로 다시 그리면 치려던 칸이 바뀌어 입력이 사라진다(테스트에서 났다)
+$('#bodyInputs').addEventListener('change', () => { flushSave(); setTimeout(render, 0); });
+$('#bodySeg').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-body-metric]');
+  if (!b) return;
+  bodyMetric = b.dataset.bodyMetric;
+  renderWeightChart();
+});
+$('#bodyPhotoFile').addEventListener('click', (e) => { e.target.value = ''; });   // 같은 사진을 다시 고를 수 있게 먼저 비운다
+$('#bodyPhotoFile').addEventListener('change', async (e) => {
+  const f = e.target.files?.[0];
+  if (!f) return;
+  try {
+    const id = await savePhoto(f);
+    (day().bodyPhotos ??= []).push({ id });
+    bodyCmp[1] = id;                // 방금 찍은 사진을 "후"로
+    save();
+    renderBodyPhotos();
+  } catch {
+    alert('사진을 저장하지 못했어요. 기기 저장 공간을 확인해 주세요.');
+  }
+});
+$('#bodyPhotos').addEventListener('change', (e) => {
+  const s = e.target.closest('[data-body-cmp]');
+  if (!s) return;
+  bodyCmp[Number(s.dataset.bodyCmp)] = s.value;
+  renderBodyPhotos();
+});
+$('#bodyPhotos').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-body-del]');
+  if (!b) return;
+  const [date, id] = b.dataset.bodyDel.split('|');
+  if (!confirm(`${fmtDate(date)} 눈바디 사진을 지울까요?`)) return;
+  pushUndo('눈바디 사진 삭제함');
+  const d = state.days[date];
+  d.bodyPhotos = (d.bodyPhotos || []).filter((p) => p.id !== id);
+  markDeleted(id, date);            // 다른 기기와 합칠 때도 지워지게
+  photosToDrop.push(id);            // 되돌리기 시간이 지나면 사진도 지운다
+  save();
+  renderBodyPhotos();
 });
 
 $('#exName').addEventListener('input', updateExHint);

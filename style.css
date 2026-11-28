@@ -992,6 +992,26 @@ body.has-dock main { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
 .lift-pick { width: 100%; min-height: 44px; margin-bottom: 10px; }
 #liftDetail[hidden], .lift-pick[hidden] { display: none; }
 .data-body { display: flex; flex-direction: column; gap: 12px; }
+/* 몸 변화 창: 칸 4개(2×2) · 지표 고르기 · 그래프 · 눈바디 전/후 + 사진 줄 */
+.body-inputs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 10px; margin-bottom: 14px; }
+.body-when { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: 0.85rem; }
+.body-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; font-size: 0.82rem; color: var(--muted); }
+.body-num { display: flex; align-items: center; gap: 6px; }
+.body-num input { flex: 1; width: 100%; min-width: 0; min-height: 44px; padding: 8px 10px; }
+.body-num em { font-style: normal; color: var(--muted); font-size: 0.85rem; width: 22px; }
+.body-seg { margin-bottom: 8px; }
+.body-seg button { flex: 1; padding: 8px 4px; }
+.body-h { margin: 22px 0 8px; }
+.body-cmp { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.body-cmp figure { margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.body-cmp img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; background: var(--card); border: 1px solid var(--line); border-radius: var(--r); }
+.body-cmp figcaption { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--muted); }
+.body-cmp select { flex: 1; min-width: 0; min-height: 40px; padding: 6px 8px; }
+.body-strip { display: flex; gap: 8px; overflow-x: auto; padding: 10px 0 4px; }
+.body-thumb { position: relative; flex: none; width: 72px; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 0.75rem; color: var(--muted); }
+.body-thumb img { width: 72px; height: 96px; object-fit: cover; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-sm); }
+.body-thumb .del { position: absolute; top: 2px; right: 2px; min-width: 32px; min-height: 32px; padding: 0; background: rgba(0, 0, 0, 0.55); color: #fff; border: 0; border-radius: var(--r-sm); }
+.body-photo-add { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 48px; margin-top: 12px; }
 .data-body > .card { margin: 0; }
 
 /* 운동 시간 창: 위에 시계, 아래에 크게 숫자 (읽는 건 숫자로) */

@@ -116,6 +116,11 @@
   - 같은 모델을 동시에 돌리면 실패할 수 있어 `embed`는 한 장씩 줄을 세운다. 사진을 담는 동안엔 "식단 추가"를 잠근다(누르면 버리는 중인 앞 사진이 기록에 붙었다).
   - `sw.js`: AI 라이브러리(jsdelivr)는 `fitness-log-ai` 캐시에 두고 **앱 버전을 올려도 안 지운다**(안 그러면 고칠 때마다 50MB를 다시 받는다). 모델 파일(huggingface)은 transformers.js가 스스로 캐시하므로 SW가 건드리지 않는다.
   - 한 장에 0.6~0.8초(클라우드 세션 CPU, 실제 모델로 앱에서 잼). 양(반 그릇/한 그릇)은 사진으로 못 맞히고, 한 사진에 음식 하나만 알아본다.
+- **몸 변화**(三 메뉴 → `#weightOpen`·`#weightSheet`, 예전 "체중 그래프" 창, 2026-11-28): 체중(`day.weight`) + 체지방률(`day.fat`)·골격근량(`day.muscle`)·허리(`day.waist`)를 날짜별로(`BODY_METRICS`, `bodyEntries`, `bodyText`). 체중만으론 "근육은 늘고 지방은 빠지는" 변화가 안 보여서 넣었다(추천 목록 2번).
+  - 창: 보고 있는 날의 칸 4개(`renderBodyInputs`, 비었으면 지난 값을 placeholder로) → 지표 고르기(`bodyMetric`) → 기간 → 그래프 하나(`renderWeightChart`, 색은 `--chart-3` 그대로, 축 하나) → 눈바디. 칸을 고치면 그 지표 그래프로 바뀐다. 체중 칸은 소모 칼로리 체중 칸과 같은 규칙(`profile.weight` 캐시).
+  - **change는 다음 칸으로 포커스가 옮겨 가는 도중에 온다** — 바로 `render()`하면 칸이 새로 그려져 치려던 값이 사라졌다. `setTimeout(render, 0)`(집중 모드와 같은 이유). 칸 2×2는 `minmax(0, 1fr)` — 그냥 `1fr`이면 number 칸 기본 폭 때문에 375px에서 둘째 칸이 밖으로 밀려났다.
+  - 눈바디(`day.bodyPhotos = [{ id }]`, id = photos.js의 사진 id): 전·후 둘을 나란히(`bodyCmp`, 기본 처음·최근, select로 바꿈) + 사진 줄(✕로 지우기 → `pushUndo`·`markDeleted`·`photosToDrop`). URL은 `bodyPhotoUrls`로 **식단 사진(`fillPhotos`)과 따로** 정리한다 — `fillPhotos`는 부를 때마다 모든 URL을 지운다.
+  - **몸 사진도 "쓰는 사진"이다**: `usedPhotoIds`에 넣지 않으면 "안 쓰는 사진 정리"가 지우고 "사진까지 내보내기"에서 빠진다. `mergeDay`는 `bodyPhotos`도 id로 합치고(두 기기에서 찍은 것 둘 다), `safeDay`는 망가진 값을 빈 목록으로. 정리 글(report.js)엔 날짜별 "체중 · 체지방 · 골격근 · 허리"와 요약에 처음·마지막 값.
 - **오운완 카드**(`share.js`: `shareCardData`·`drawShareCard`·`openShare`, `#shareSheet`, `layers`의 `'share'`, 2026-11-28): 그 날 운동을 1080×1350(4:5) PNG로 그려 공유(`navigator.share` 파일)하거나 저장(내려받기). 사용자가 추천 목록을 "전부" 고른 첫 번째. 한국의 #오운완 문화 — 계속 쓰게 하고 앱이 퍼지는 통로.
   - 여는 곳: 운동 카드 **아래**(`#shareDayBtn`, 카드 위에 얹지 않는다 — `canShareDay`: 운동이 있고 완료한 세트가 있거나 지난 날짜), 집중 모드 마무리 화면, 기록 탭 달력의 그 날 보기(`data-share-day="날짜"`). 클릭은 `[data-share-day]` 하나로 받는다.
   - 숫자는 화면과 같은 집계(`countedSets`·`volumeOf`·`sessionSeconds`→없으면 `minutesOf` 추정·`dayBurn`), 운동마다 그 날 가장 센 세트(1RM 기준, 맨몸은 횟수), 신기록은 **예전 기록을 넘긴 것만**(`personalBest(...).date === date && lastRecord(name, date)`). 운동이 7개 넘으면 6개 + "+ N개 더". 색은 지금 테마의 CSS 변수를 읽는다(밝은 화면이면 밝은 카드).

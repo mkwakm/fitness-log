@@ -47,6 +47,7 @@ function safeDay(d) {
     meals: Array.isArray(d.meals) ? d.meals.filter((x) => x && x.id) : [],
     workouts: Array.isArray(d.workouts) ? d.workouts.filter((x) => x && x.id && Array.isArray(x.sets)) : [],
     note: typeof d.note === 'string' ? d.note : '',
+    ...('bodyPhotos' in d ? { bodyPhotos: Array.isArray(d.bodyPhotos) ? d.bodyPhotos.filter((x) => x && typeof x.id === 'string') : [] } : {}),
     ...(Array.isArray(d.deleted) && d.deleted.length ? { deleted: d.deleted } : {}),
     // 운동 시간: 하루(1,440분)를 넘는 값, 하루 넘게 켜져 있던 타이머는 "끝내기"를 잊은 흔적이라 버린다
     ...(Number(d.sessionMin) > 1440 ? { sessionMin: null } : {}),
@@ -63,6 +64,9 @@ function mergeDay(mine, theirs) {
     ...newer,                       // note·체중처럼 값이 하나뿐인 건 최근에 고친 쪽
     meals: mergeList(mine.meals || [], theirs.meals || [], theirsNewer, deleted),
     workouts: mergeList(mine.workouts || [], theirs.workouts || [], theirsNewer, deleted),
+    // 눈바디 사진도 id로 합친다 (집에서 찍은 것, 헬스장에서 찍은 것 둘 다 남게)
+    ...(mine.bodyPhotos?.length || theirs.bodyPhotos?.length
+      ? { bodyPhotos: mergeList(mine.bodyPhotos || [], theirs.bodyPhotos || [], theirsNewer, deleted) } : {}),
     // 빈 deleted를 굳이 넣으면 내용이 같은 날도 "바뀜"으로 보여서,
     // 동기화할 때마다 모든 날의 수정시각이 밀리고 상대 기기의 최신 메모를 덮어쓴다.
     ...(deleted.size ? { deleted: [...deleted] } : {}),

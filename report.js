@@ -121,6 +121,10 @@ function rpSummary(dates, workDates, today) {
   const wDate = dates.filter((d) => Number(state.days[d].weight) > 0).at(-1);
   if (wDate) out.push(`- 체중: ${state.days[wDate].weight}kg (${fmtDate(wDate)} 기록)`);
   else if (Number(state.profile.weight) > 0) out.push(`- 체중: ${state.profile.weight}kg`);
+  for (const m of BODY_METRICS.slice(1)) {        // 체지방·골격근·허리: 처음과 마지막을 같이 (변화가 보이게)
+    const e = bodyEntries(m.key);
+    if (e.length) out.push(`- ${m.label}: ${e.at(-1).value}${m.unit} (${fmtDate(e.at(-1).date)} 기록${e.length > 1 ? `, 처음 ${e[0].value}${m.unit} ${fmtDate(e[0].date)}` : ''})`);
+  }
   const split = splitCfg();
   if (split) {
     const days = split.days.filter(Boolean);
@@ -183,7 +187,7 @@ function rpDay(date, ex) {
     const items = d.meals.map((m) => `${m.type ? `${m.type} ` : ''}${m.name || '?'}${m.amount ? ` ${m.amount}` : ''}${nonNeg(m.kcal) ? ` ${rpNum(nonNeg(m.kcal))}kcal` : ''}`);
     out.push(`- 식단 ${rpNum(dayIntake(d))}kcal · 단백질 ${dayProtein(d)}g: ${items.join(', ')}`);
   }
-  if (Number(d.weight) > 0) out.push(`- 체중 ${d.weight}kg`);
+  if (bodyText(d)) out.push(`- ${bodyText(d)}`);   // 체중 79kg · 체지방 18% · 골격근 35kg · 허리 82cm
   if (Number(d.water) > 0) out.push(`- 물 ${d.water}잔`);
   if (d.note) out.push(`- 메모: ${d.note}`);
   return out;

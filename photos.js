@@ -103,9 +103,11 @@ async function dataUrlToBlob(url) {
 // 지금 기록에서 쓰는 사진만 모은다 (지웠다 남은 것까지 싸지 않게)
 function usedPhotoIds() {
   const ids = new Set();
-  Object.values(state.days).forEach((d) => (d.meals || []).forEach((m) => {
-    if (m.photo) ids.add(m.photo);
-  }));
+  Object.values(state.days).forEach((d) => {
+    (d.meals || []).forEach((m) => { if (m.photo) ids.add(m.photo); });
+    // 눈바디 사진도 기록에서 쓰는 사진이다 — 빠뜨리면 "안 쓰는 사진 정리"가 지워 버린다
+    (Array.isArray(d.bodyPhotos) ? d.bodyPhotos : []).forEach((p) => { if (p?.id) ids.add(p.id); });
+  });
   return [...ids];
 }
 
